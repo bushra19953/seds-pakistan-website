@@ -8,12 +8,14 @@ import LazySection from '@/components/ui/lazy-section';
 // home page's first-load chunk.
 const Footer = dynamic(() => import('@/components/layout/footer'), { ssr: false });
 
-// Dynamically import the heavy hero section to exclude Framer Motion + Firestore
-// from the critical JS bundle. The skeleton reserves vertical space to prevent CLS.
+// Dynamically import the hero section so Framer Motion stays in its own
+// chunk, but keep SSR on: the hero H1 is the LCP element, so its markup
+// must ship in the initial HTML. With ssr:false, first paint was only the
+// skeleton and LCP waited on the chunk fetch plus a client render. The
+// skeleton still covers client-side navigations and reserves space (CLS).
 const InductionHeroSection = dynamic(
   () => import('@/components/sections/induction-hero-section'),
   {
-    ssr: false,
     loading: () => (
       <div
         className="relative flex items-center justify-center min-h-[500px] h-[85vh] max-h-[900px] w-full"
@@ -39,7 +41,6 @@ const AnnouncementCarousel = dynamic(
   { ssr: false, loading: () => <div className="h-16 w-full bg-muted/10 rounded-lg animate-pulse" /> }
 );
 const HomePageIntro = dynamic(() => import('@/components/home/home-page-intro'), { ssr: false });
-// InductionHeroSection is imported statically above for LCP
 const ShowcaseGallery = dynamic(() => import('@/components/sections/showcase-gallery'), { ssr: false });
 const AboutSection = dynamic(() => import('@/components/sections/about-section'));
 const SkillsFeaturedSection = dynamic(() => import('@/components/sections/skills-featured-section'));

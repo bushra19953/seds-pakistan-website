@@ -31,16 +31,24 @@ const orbitron = Orbitron({
 // Unicode coverage: Noto Sans covers Latin and wide Unicode symbol ranges,
 // Noto Nastaliq Urdu (arabic subset) covers Urdu glyphs. Both ship with
 // display: swap so Urdu project names never block on font download.
+// preload is OFF for both: they are glyph-coverage fallbacks in every
+// stack (see globals.css), not first-paint fonts — with the default
+// preload:true, next/font force-downloaded every weight and subset of
+// both families on every page, ahead of the hero paint. The fonts that
+// actually paint above-the-fold text (Orbitron, Courier Prime, Bebas
+// Neue) keep preloading.
 const notoSans = Noto_Sans({
   subsets: ['latin', 'latin-ext'],
   weight: ['400', '500', '700'],
   display: 'swap',
+  preload: false,
   variable: '--font-noto-sans',
 });
 const notoNastaliq = Noto_Nastaliq_Urdu({
   subsets: ['arabic', 'latin'],
   weight: ['400', '700'],
   display: 'swap',
+  preload: false,
   variable: '--font-noto-nastaliq',
 });
 // Moved to dynamic import in AppClientShell to avoid loading VantaBackground on admin routes

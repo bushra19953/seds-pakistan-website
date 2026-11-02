@@ -210,6 +210,30 @@ describe('next.config security headers (audit items 18 + 7)', () => {
     expect(directive('connect-src')).toContain('https://www.gstatic.com');
   });
 
+  test('CSP script-src allows the Cloudflare Web Analytics beacon (2026-11-02 founder console)', async () => {
+    const rules = await loadRules();
+    const allPaths = rules.find((r) => r.source === '/((?!api/).*)')!;
+    const csp = headerMap(allPaths).get('content-security-policy')!;
+    const directive = (name: string) =>
+      csp
+        .split(';')
+        .map((d) => d.trim())
+        .find((d) => d.startsWith(`${name} `)) ?? '';
+    // Cloudflare edge-injects its Web Analytics beacon from
+    // static.cloudflareinsights.com into every proxied HTML page; the
+    // site adds no such script itself. Without this entry the beacon
+    // script is blocked by script-src on the live domain (founder
+    // console evidence). The beacon's RUM POST needs no connect-src
+    // entry: the injected tag carries a data-cf-beacon version field,
+    // so the beacon POSTs to the site's own /cdn-cgi/rum, covered by
+    // connect-src 'self'; it only falls back to
+    // https://cloudflareinsights.com/cdn-cgi/rum when no version is
+    // set, which the edge-injected tag always sets.
+    expect(directive('script-src')).toContain(
+      'https://static.cloudflareinsights.com',
+    );
+  });
+
   test('public asset directories get week-long browser caching (PERF 2026-10-30)', async () => {
     const rules = await loadRules();
     // Only the three asset directories carry the long-cache value:

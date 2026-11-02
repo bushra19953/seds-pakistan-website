@@ -53,6 +53,16 @@ export function getLastGoodPublic<T = unknown>(key: string): T | undefined {
   return entry ? (entry.body as T) : undefined;
 }
 
+/**
+ * Remove one last-good entry. For callers whose reads can end in a
+ * DEFINITIVE negative (a blog post that now 404s because it was
+ * unpublished or deleted): serving that body later, during a backend
+ * failure, would resurrect content the platform has withdrawn.
+ */
+export function forgetLastGoodPublic(key: string): void {
+  entries.delete(key);
+}
+
 /** Test hook. */
 export function resetPublicStaleCache(): void {
   entries.clear();

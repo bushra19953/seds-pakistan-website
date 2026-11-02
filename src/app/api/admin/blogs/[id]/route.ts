@@ -5,6 +5,7 @@ import { withAuth } from '@/lib/auth-middleware';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { resolveBlogSlug } from '@/lib/blog-slug';
 import { blogSupaEnabled, mirrorBlogUpdate, supaDocData, supaGetBlog, updateBlogPrimaryFirst } from '@/lib/server/blog-supa';
+import { invalidateBlogPublicCache } from '@/lib/server/blog-public-cache';
 
 export async function GET(
   request: NextRequest,
@@ -178,6 +179,11 @@ export async function PUT(
         await mirrorBlogUpdate(id, updateData as Record<string, any>);
       }
 
+      // Bust the public read cache synchronously (blog-public-cache
+      // invalidation contract): the update is visible publicly on
+      // the very next read.
+      invalidateBlogPublicCache();
+
       return NextResponse.json({
         id,
         message: 'Blog post updated successfully'
@@ -254,6 +260,11 @@ export async function DELETE(
         await docRef.update(deleteData);
         await mirrorBlogUpdate(id, deleteData as Record<string, any>);
       }
+
+      // Bust the public read cache synchronously (blog-public-cache
+      // invalidation contract): the soft delete is visible publicly
+      // on the very next read.
+      invalidateBlogPublicCache();
 
       return NextResponse.json({
         id,

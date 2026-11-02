@@ -355,6 +355,7 @@ export function TaskHistory({ userId }: TaskHistoryProps) {
                                             {task.assignerId && (
                                                 <Link
                                                     href={`/profile/unified?uid=${task.assignerId}`}
+                                                    prefetch={false}
                                                     onClick={e => e.stopPropagation()}
                                                     className="flex items-center gap-2 p-2 rounded-lg hover:bg-muted/50 transition-colors"
                                                 >

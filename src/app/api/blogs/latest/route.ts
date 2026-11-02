@@ -3,8 +3,31 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { EmorationalBlogPost } from '@/lib/blog-types';
 import { blogDateToDate, blogSupaEnabled, supaDocData, supaListBlogs } from '@/lib/server/blog-supa';
+import {
+  blogLatestCacheKey,
+  serveBlogPublic,
+} from '@/lib/server/blog-public-cache';
 
+// Wave-2 perf (2026-10-30): same treatment as the list and post
+// routes — the homepage strip read runs uncached below as
+// getLatestBlogsUncached, wrapped by serveBlogPublic (in-process
+// TTL cache + in-flight dedupe + last-good stale shelter; see
+// src/lib/server/blog-public-cache.ts). An invalid limit delegates
+// straight through so the 400 is never cached.
 export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const limitCount = parseInt(searchParams.get('limit') || '3');
+  if (Number.isNaN(limitCount) || limitCount < 1 || limitCount > 20) {
+    return getLatestBlogsUncached(request);
+  }
+  return serveBlogPublic(
+    blogLatestCacheKey(limitCount),
+    'public, s-maxage=60, stale-while-revalidate=300',
+    () => getLatestBlogsUncached(request)
+  );
+}
+
+async function getLatestBlogsUncached(request: NextRequest) {
   try {
     console.log('[API:Blogs] Starting latest blogs fetch...');
     const { searchParams } = new URL(request.url);

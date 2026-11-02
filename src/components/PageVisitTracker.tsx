@@ -1,7 +1,7 @@
 'use client';
 import { useEffect } from 'react';
 import { usePathname } from 'next/navigation';
-import { useUser } from '@/firebase';
+import { useUser } from '@/firebase/auth/use-user';
 import { serverWrite } from '@/lib/client/server-write';
 import { collapseDynamicPath } from '@/components/page-visit-path';
 

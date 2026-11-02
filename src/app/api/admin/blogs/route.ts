@@ -4,6 +4,7 @@ import { verifyAuthentication } from '@/lib/auth-middleware';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { mirrorBlogCreate } from '@/lib/server/blog-supa';
+import { invalidateBlogPublicCache } from '@/lib/server/blog-public-cache';
 
 /**
  * POST /api/admin/blogs — WS10 create route for the ADMIN blog/new
@@ -80,6 +81,11 @@ export async function POST(req: NextRequest) {
 
   const ref = await db.collection('blogs').add(firestoreData);
   await mirrorBlogCreate(ref.id, mirrorData);
+
+  // Bust the public read cache synchronously (blog-public-cache
+  // invalidation contract): the create is visible publicly on the
+  // very next read.
+  invalidateBlogPublicCache();
 
   return NextResponse.json({ ok: true, id: ref.id }, { status: 201 });
 }

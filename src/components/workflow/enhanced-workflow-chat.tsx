@@ -576,7 +576,7 @@ function EnhancedWorkflowChat({
                     <TooltipProvider key={user.userId}>
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <Link href={`/profile/unified?uid=${user.userId}`}>
+                          <Link href={`/profile/unified?uid=${user.userId}`} prefetch={false}>
                             <Avatar className="h-6 w-6 hover:opacity-80 transition-opacity">
                               <AvatarImage src={user.userPhoto} alt={user.userName} />
                               <AvatarFallback className="text-xs">
@@ -614,7 +614,7 @@ function EnhancedWorkflowChat({
                       className={`flex items-start gap-3 ${msg.senderId === user?.uid ? 'flex-row-reverse' : ''
                         }`}
                     >
-                      <Link href={`/profile/unified?uid=${msg.senderId}`} className="flex-shrink-0">
+                      <Link href={`/profile/unified?uid=${msg.senderId}`} prefetch={false} className="flex-shrink-0">
                         <Avatar className="h-8 w-8 hover:opacity-80 transition-opacity">
                           <AvatarImage src={userProfiles[msg.senderId]?.photoURL} alt={userProfiles[msg.senderId]?.name || msg.senderId} />
                           <AvatarFallback className="text-xs">
@@ -626,7 +626,7 @@ function EnhancedWorkflowChat({
                       <div className={`flex-1 min-w-0 ${msg.senderId === user?.uid ? 'text-right' : ''
                         }`}>
                         <div className="flex items-center gap-2 mb-1">
-                          <Link href={`/profile/unified?uid=${msg.senderId}`} className="text-sm font-medium hover:underline">
+                          <Link href={`/profile/unified?uid=${msg.senderId}`} prefetch={false} className="text-sm font-medium hover:underline">
                             {userProfiles[msg.senderId]?.name || msg.senderId}
                           </Link>
                           <span className="text-xs text-muted-foreground">

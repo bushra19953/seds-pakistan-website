@@ -42,6 +42,17 @@ function resolveBuildId() {
 //   (Draco/meshopt): without it their Wasm compile is blocked and the
 //   3D models never render. It is NOT the blanket 'unsafe-eval' —
 //   that stays banned (the security-headers test pins its absence).
+//   static.cloudflareinsights.com (2026-11-02, founder console
+//   evidence) is Cloudflare's Web Analytics beacon host: the edge
+//   injects the beacon script into every proxied HTML page (the site
+//   adds no such script itself), so without this entry the beacon is
+//   blocked by script-src on the live domain. The beacon's RUM POST
+//   needs no connect-src entry: the injected tag carries a
+//   data-cf-beacon version field, so the beacon POSTs to the site's
+//   own /cdn-cgi/rum, covered by connect-src 'self'. It only falls
+//   back to https://cloudflareinsights.com/cdn-cgi/rum when no
+//   version is set, which the edge-injected tag always sets, so that
+//   host is deliberately NOT added to connect-src.
 // - style-src: Tailwind plus pervasive inline style attributes and the
 //   <style> blocks next/font emits ('unsafe-inline'); fonts.googleapis.com
 //   is the Google Fonts CSS host observed on live pages.
@@ -84,7 +95,7 @@ const CONTENT_SECURITY_POLICY = [
   "base-uri 'self'",
   "object-src 'none'",
   "frame-ancestors 'none'",
-  "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob: https://unpkg.com https://apis.google.com https://www.gstatic.com",
+  "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob: https://unpkg.com https://apis.google.com https://www.gstatic.com https://static.cloudflareinsights.com",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "img-src 'self' data: blob: https: http:",
   "media-src 'self' data: blob: https: http:",

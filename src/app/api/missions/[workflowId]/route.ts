@@ -188,7 +188,6 @@ export async function GET(
       } catch { /* ignore */ }
     }
 
-    const firstTask = tasks[0] as any;
     const totalSteps = tasks.length;
     const { completedSteps, progressPercentage, isCompleted: allApproved } =
       computeWorkflowProgress(tasks.map(t => t.status));
@@ -214,6 +213,25 @@ export async function GET(
       };
     });
 
+    // Header deadline (founder extension seam, 2026-11-02): the workflow
+    // deadline lives denormalized on every step as `deadline`, but the
+    // admin Edit dialog and deadline extensions write only each step's
+    // `individualDeadline`. Taking firstTask.deadline here printed the
+    // stale pre-extension date on the public mission header. The header
+    // date is the LATEST effective date in play: max of the workflow
+    // deadline and every step's effective (individual || workflow) date.
+    // Bilateral keeps its 2027-03-31 header (workflow date is the max);
+    // the extended crucible pods show 2026-11-03 (their steps' max).
+    const headerDeadline = (() => {
+      const times: number[] = [];
+      for (const t of tasks) {
+        const eff = t.individualDeadline || t.deadline;
+        if (eff) { const ms = new Date(eff).getTime(); if (!Number.isNaN(ms)) times.push(ms); }
+        if (t.deadline) { const ms = new Date(t.deadline).getTime(); if (!Number.isNaN(ms)) times.push(ms); }
+      }
+      return times.length ? new Date(Math.max(...times)).toISOString() : null;
+    })();
+
     // s-maxage lets the shared edge cache serve repeat polls for 60s, so
     // the Firestore reads behind this route (~10-25 per call) collapse
     // across all viewers instead of scaling with open tabs.
@@ -229,7 +247,7 @@ export async function GET(
         progressPercentage,
         isCompleted: allApproved,
         createdAt: tasks[0]?.createdAt || null,
-        deadline: firstTask?.deadline || firstTask?.individualDeadline || null,
+        deadline: headerDeadline,
         steps,
       },
     }, {

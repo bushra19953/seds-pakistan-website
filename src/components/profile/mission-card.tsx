@@ -149,12 +149,21 @@ export function MissionCard({
     const isUrgent = !isCompleted;
     const statusColor = isCompleted ? getStatusBorderColor('completed') : getStatusBorderColor(task.status);
     
+    // Effective deadline (founder extension seam, 2026-11-02): a step task
+    // carries TWO dates, the workflow-level `deadline` denormalized onto
+    // every step and the step's own `individualDeadline`. The admin Edit
+    // dialog and the 48h extension write ONLY individualDeadline, so any
+    // surface reading `deadline` alone shows the stale workflow date and
+    // marks extended tasks OVERDUE/closed. The submit page already reads
+    // individualDeadline first; every date computation here does the same.
+    const effectiveDeadline = task.individualDeadline || task.deadline;
+
     // Safe date calculations
     const deadlineDate = React.useMemo(() => {
-        if (!task.deadline) return null;
-        const d = new Date(task.deadline);
+        if (!effectiveDeadline) return null;
+        const d = new Date(effectiveDeadline);
         return isNaN(d.getTime()) ? null : d;
-    }, [task.deadline]);
+    }, [effectiveDeadline]);
 
     // Deadline fairness (founder rule, 2026-10-26): a task waiting on
     // its reviewer (submitted-for-review) never shows OVERDUE; the
@@ -179,10 +188,10 @@ export function MissionCard({
                             <h3 className="text-2xl font-black text-foreground tracking-tight leading-none mb-2">{task.title}</h3>
                             <p className="text-muted-foreground line-clamp-2 text-sm max-w-2xl">{task.description || "No briefing provided for this mission."}</p>
                         </div>
-                        {task.deadline && !isCompleted && (
+                        {effectiveDeadline && !isCompleted && (
                             <div className="flex flex-col items-end">
                                 <span className="text-[10px] uppercase tracking-widest text-primary font-bold mb-1">T-Minus</span>
-                                <CountdownTimer expiryDate={task.deadline} className="text-4xl font-black font-mono tracking-tighter" />
+                                <CountdownTimer expiryDate={effectiveDeadline} className="text-4xl font-black font-mono tracking-tighter" />
                             </div>
                         )}
                     </div>
@@ -248,8 +257,8 @@ export function MissionCard({
                 </div>
                 <div className="flex items-center gap-4">
                     {(() => {
-                        if (!task.deadline || isCompleted) return <span className="text-xs text-muted-foreground">—</span>;
-                        const d = new Date(task.deadline);
+                        if (!effectiveDeadline || isCompleted) return <span className="text-xs text-muted-foreground">—</span>;
+                        const d = new Date(effectiveDeadline);
                         if (isNaN(d.getTime())) return <span className="text-xs text-muted-foreground">—</span>;
                         
                         return (

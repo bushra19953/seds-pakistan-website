@@ -210,6 +210,49 @@ export function toDatetimeLocal(iso?: string): string {
   }
 }
 
+// Persisted task docs do not always match the form's contract. Docs written
+// outside the API (direct console writes, legacy shapes, synthetic proof
+// tasks) can carry a single resource object instead of an array, a bare URL
+// string, null resource entries, or a non-string title/description. The form
+// used to dereference those shapes directly (.trim() on title/description,
+// .map() on assigneeIds/resources) and throw during the first render, so the
+// Edit dialog never appeared for those tasks. Normalize once, here, at the
+// only place initial values enter form state. Well-formed docs pass through
+// untouched, and a normalized value is always one the API already accepts.
+type FormResource = NonNullable<TaskFormValues['resources']>[number];
+
+const RESOURCE_TYPES: FormResource['type'][] = ['link', 'drive', 'github', 'doc', 'video', 'other'];
+
+function toFormText(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function toFormIdList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.filter((v): v is string => typeof v === 'string' && v.length > 0);
+  return typeof value === 'string' && value.length > 0 ? [value] : [];
+}
+
+function toFormResource(value: unknown): FormResource | null {
+  if (typeof value === 'string') return value ? { title: '', url: value, type: 'link' } : null;
+  if (!value || typeof value !== 'object') return null;
+  const entry = value as Record<string, unknown>;
+  return {
+    title: toFormText(entry.title),
+    url: toFormText(entry.url),
+    type: RESOURCE_TYPES.includes(entry.type as FormResource['type']) ? (entry.type as FormResource['type']) : 'link',
+  };
+}
+
+function toFormResources(value: unknown): FormResource[] {
+  const list = Array.isArray(value) ? value : (value === null || value === undefined ? [] : [value]);
+  const out: FormResource[] = [];
+  for (const entry of list) {
+    const normalized = toFormResource(entry);
+    if (normalized) out.push(normalized);
+  }
+  return out;
+}
+
 export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, submitLabel = "Save Task", initialWorkflowSteps, preSelectedAssignee, editMode = false }: TaskFormProps) {
   const firestore = useFirestore();
   const { user } = useUser();
@@ -221,11 +264,11 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
   // Smart initialization: use preSelectedAssignee if provided, else initialValues
   const initialAssigneeIds = preSelectedAssignee
     ? [preSelectedAssignee.id]
-    : (initialValues?.assigneeIds ?? []);
+    : toFormIdList(initialValues?.assigneeIds);
 
   const [values, setValues] = React.useState<TaskFormValues>({
-    title: initialValues?.title ?? "",
-    description: initialValues?.description ?? "",
+    title: toFormText(initialValues?.title),
+    description: toFormText(initialValues?.description),
     assigneeIds: initialAssigneeIds,
     completionBadgeId: initialValues?.completionBadgeId ?? "",
     finalWorkflowCompletionBadgeId: (initialValues as any)?.finalWorkflowCompletionBadgeId ?? "",
@@ -241,7 +284,7 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
     status: initialValues?.status ?? 'pending',
     deadline: initialValues?.deadline ?? "",
     report: initialValues?.report ?? "",
-    resources: initialValues?.resources ?? [],
+    resources: toFormResources(initialValues?.resources),
     guidance: initialValues?.guidance ?? undefined,
     reviewerId: initialValues?.reviewerId ?? "",
     requiresOnSitePresence: initialValues?.requiresOnSitePresence === true,
@@ -443,7 +486,10 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
           .map((s) => s.id)
           .filter((v): v is string => typeof v === 'string' && v.length > 0)
       );
-      setWorkflowSteps(initialWorkflowSteps);
+      // Step resources come from persisted docs too, so they get the same
+      // normalization; a null entry in a step's resources would crash the
+      // step editor the same way a top-level one crashed the form.
+      setWorkflowSteps(initialWorkflowSteps.map((s) => ({ ...s, resources: toFormResources((s as any).resources) })));
       setPlanGenerated(true);
     }
   }, [initialWorkflowSteps]);

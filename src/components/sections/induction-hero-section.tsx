@@ -57,6 +57,38 @@ export default function InductionHeroSection() {
   // active & homepage filter below is unchanged.
   useEffect(() => {
     const fetchOrbits = async () => {
+      // PRO MAX: Technical Domain Partners (Dynamic SVGs). Hoisted
+      // out of the try (perf batch-3 lead decision (c)): the catch
+      // sets this static list on fetch failure, so the orbit shows
+      // true content instead of zero partners; the success path
+      // still merges it ahead of the DB partners, unchanged.
+      const techPartners: Partner[] = [
+        {
+          id: 'tech-cubesat',
+          name: 'CubeSat Development',
+          type: 'Technology',
+          rawSvg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-full h-full p-1"><rect x="7" y="7" width="10" height="10" /><path d="M7 12H3m14 0h4M12 7V3m0 14v4" /><path d="M12 12l-3-3m6 6l-3-3m0 0l3-3m-3 3l-3 3" /></svg>`
+        },
+        {
+          id: 'tech-rover',
+          name: 'Planetary Rover',
+          type: 'Technology',
+          rawSvg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-full h-full p-1"><path d="M4 14h16v3H4zM4 17h16m-14 3a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm12 0a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm-6 0a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" /><path d="M12 14V9m0 0l-3 3m3-3l3 3" /></svg>`
+        },
+        {
+          id: 'tech-mission',
+          name: 'Mission Design',
+          type: 'Technology',
+          rawSvg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-full h-full p-1"><path d="M12 2v20m-7-7l7 7 7-7" /><path d="M12 2l-7 7 7 7 7-7-7-7z" /><circle cx="12" cy="12" r="3" /></svg>`
+        },
+        {
+          id: 'tech-collab',
+          name: 'International Collaboration',
+          type: 'Technology',
+          rawSvg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-full h-full p-1"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/><path d="M2 12h20"/></svg>`
+        }
+      ];
+
       try {
         const orgs = await fetchHomepageOrganizations();
 
@@ -71,38 +103,11 @@ export default function InductionHeroSection() {
           type: o.type
         }));
 
-        // PRO MAX: Technical Domain Partners (Dynamic SVGs)
-        const techPartners: Partner[] = [
-          {
-            id: 'tech-cubesat',
-            name: 'CubeSat Development',
-            type: 'Technology',
-            rawSvg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-full h-full p-1"><rect x="7" y="7" width="10" height="10" /><path d="M7 12H3m14 0h4M12 7V3m0 14v4" /><path d="M12 12l-3-3m6 6l-3-3m0 0l3-3m-3 3l-3 3" /></svg>`
-          },
-          {
-            id: 'tech-rover',
-            name: 'Planetary Rover',
-            type: 'Technology',
-            rawSvg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-full h-full p-1"><path d="M4 14h16v3H4zM4 17h16m-14 3a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm12 0a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm-6 0a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" /><path d="M12 14V9m0 0l-3 3m3-3l3 3" /></svg>`
-          },
-          {
-            id: 'tech-mission',
-            name: 'Mission Design',
-            type: 'Technology',
-            rawSvg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-full h-full p-1"><path d="M12 2v20m-7-7l7 7 7-7" /><path d="M12 2l-7 7 7 7 7-7-7-7z" /><circle cx="12" cy="12" r="3" /></svg>`
-          },
-          {
-            id: 'tech-collab',
-            name: 'International Collaboration',
-            type: 'Technology',
-            rawSvg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-full h-full p-1"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/><path d="M2 12h20"/></svg>`
-          }
-        ];
-
         setPartners([...techPartners, ...dbPartners]);
 
       } catch (err) {
         console.error("Orbit fetch failed", err);
+        setPartners(techPartners);
       }
     };
     fetchOrbits();

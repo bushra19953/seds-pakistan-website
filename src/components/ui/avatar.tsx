@@ -23,11 +23,17 @@ Avatar.displayName = AvatarPrimitive.Root.displayName
 const AvatarImage = React.forwardRef<
   React.ElementRef<typeof AvatarPrimitive.Image>,
   React.ComponentPropsWithoutRef<typeof AvatarPrimitive.Image>
->(({ className, referrerPolicy = 'no-referrer', crossOrigin = 'anonymous', ...props }, ref) => (
+>(({ className, referrerPolicy = 'no-referrer', crossOrigin, ...props }, ref) => (
   <AvatarPrimitive.Image
     ref={ref}
     className={cn("aspect-square h-full w-full", className)}
-    // Improve reliability for Google-hosted avatars
+    // referrerPolicy 'no-referrer' improves reliability for Google-hosted avatars.
+    // crossOrigin deliberately has NO default (T2-4, 2026-11-02): a CORS-mode load
+    // requires Access-Control-Allow-Origin, which Google profile-photo (a-/) URLs do
+    // not reliably send, so the old 'anonymous' default hard-failed images that a
+    // plain <img> loads fine, and every re-render re-logged the failure. A future
+    // consumer that genuinely needs CORS-clean pixels must opt in explicitly with
+    // crossOrigin="anonymous" and tolerate the fallback when the header is absent.
     referrerPolicy={referrerPolicy as any}
     crossOrigin={crossOrigin as any}
     {...props}

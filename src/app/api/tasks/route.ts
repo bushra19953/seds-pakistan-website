@@ -33,6 +33,9 @@ import {
   mirrorTaskDocsFromData,
   mirrorTaskDeletesByIds,
   resolveForPrimaryWrite,
+  tasksPrimaryActive,
+  isSimpleSeamOnlyEdit,
+  buildSeamOnlyEditImage,
   type SupaWhereClause,
   type SeamSnapshotDoc,
 } from '@/lib/supa/seam-tasks-route';
@@ -454,12 +457,45 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
     const { taskId, updates } = parsed.data;
 
     const taskRef = db.collection('tasks').doc(taskId);
-    const beforeSnap = await taskRef.get();
-    if (!beforeSnap.exists) {
-      return NextResponse.json({ error: 'Task not found' }, { status: 404 });
+    // Task read, seam-first (MSG22 fix #2, same ladder as the acceptance
+    // handler): tasks are a Supabase-PRIMARY surface, so when the seam
+    // serves, its answer is authoritative. A doc held ONLY in the seam
+    // used to 404 here even though the list and the editor can see it;
+    // it is now loaded from the seam and flagged seamOnlyTask, and the
+    // save for it is routed below. Flag OFF keeps the legacy Firestore
+    // read exactly as before.
+    let taskBefore: Record<string, any>;
+    let seamOnlyTask = false;
+    {
+      let seamDoc: { exists: boolean; data: Record<string, any> | null } | null = null;
+      let seamServedTask = false;
+      if (isTasksSupaFlagOn()) {
+        try {
+          seamDoc = await getTaskDocViaSeam(taskId);
+          if (seamDoc) seamServedTask = true;
+        } catch (seamErr) {
+          console.error('[tasks:route] Update task read via the seam failed; falling back to Firestore:', seamErr);
+        }
+      }
+      if (seamServedTask && seamDoc) {
+        if (!seamDoc.exists) {
+          return NextResponse.json({ error: 'Task not found' }, { status: 404 });
+        }
+        const beforeSnap = await taskRef.get();
+        if (beforeSnap.exists) {
+          taskBefore = beforeSnap.data() || {};
+        } else {
+          seamOnlyTask = true;
+          taskBefore = seamDoc.data || {};
+        }
+      } else {
+        const beforeSnap = await taskRef.get();
+        if (!beforeSnap.exists) {
+          return NextResponse.json({ error: 'Task not found' }, { status: 404 });
+        }
+        taskBefore = beforeSnap.data() || {};
+      }
     }
-
-    const taskBefore = beforeSnap.data() || {};
     const beforeStatus: string | undefined = taskBefore.status;
 
     // HIERARCHY-AWARE REVIEW: If caller is not yet authorized via role/claims,
@@ -503,6 +539,80 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
       }
     }
     
+    // SEAM-ONLY SAVE (MSG22 fix #2): the doc exists only in the primary
+    // store, so the Firestore batch below can never write it (its update
+    // would fail on a missing doc). A simple field edit (deadline,
+    // title, assignees, ...) from a task manager is committed directly
+    // through the adapter as the primary write, then mirrored into
+    // Firestore best-effort with a merge-set (which materializes the
+    // mirror copy). Anything beyond a simple edit is refused LOUDLY:
+    // status transitions and workflow step writes carry validation,
+    // gamification, and counter semantics that live on the full path,
+    // and silently dropping them would be worse than an explicit error.
+    if (seamOnlyTask) {
+      if (!canManage) {
+        return NextResponse.json(
+          { error: 'Forbidden: only task managers may edit this task', error_code: 'task_seam_only_forbidden' },
+          { status: 403 }
+        );
+      }
+      if (!(await tasksPrimaryActive())) {
+        return NextResponse.json(
+          {
+            error: 'This task exists only in the primary store, but primary writes are not active, so it cannot be saved safely. No changes were made.',
+            error_code: 'task_seam_only_primacy_inactive',
+          },
+          { status: 409 }
+        );
+      }
+      if (!isSimpleSeamOnlyEdit(taskBefore, updates as Record<string, any>)) {
+        return NextResponse.json(
+          {
+            error: 'This task exists only in the primary store. Status changes and workflow step edits cannot be saved for it yet; only field edits (deadline, title, assignees) can. No changes were made.',
+            error_code: 'task_seam_only_complex_edit',
+          },
+          { status: 409 }
+        );
+      }
+      const adapter = await resolveTasksSupaAdapter();
+      if (!adapter) {
+        return NextResponse.json(
+          { error: 'Primary store unavailable. No changes were made.', error_code: 'task_seam_only_unavailable' },
+          { status: 503 }
+        );
+      }
+      const seamImage = buildSeamOnlyEditImage(taskBefore, updates as Record<string, any>);
+      await adapter.setDoc('tasks', taskId, seamImage);
+      // Post-commit Firestore mirror, best-effort (the same direction
+      // as every other primary write in this route): a merge-set
+      // materializes the mirror copy with real Timestamps. A mirror
+      // failure never fails the committed primary write.
+      try {
+        const fsImage: Record<string, any> = { ...seamImage };
+        for (const field of ['createdAt', 'updatedAt', 'deadline', 'individualDeadline', 'completedAt', 'submittedAt', 'approvedAt', 'rejectedAt', 'acceptedAt', 'startedAt', 'availabilityConfirmedAt']) {
+          if (typeof fsImage[field] === 'string') {
+            const d = new Date(fsImage[field]);
+            if (!Number.isNaN(d.getTime())) fsImage[field] = admin.firestore.Timestamp.fromDate(d);
+          }
+        }
+        await taskRef.set(fsImage, { merge: true });
+      } catch (mirrorErr) {
+        console.warn('[tasks:route] Seam-only save: Firestore mirror set failed (primary write already committed):', mirrorErr);
+      }
+      return NextResponse.json({
+        ok: true,
+        taskId,
+        badgeAwarded: false,
+        pointsAwardedTotal: 0,
+        completedOnTime: false,
+        transitionedToCompleted: false,
+        seamOnly: true,
+        taskBefore,
+        taskAfter: seamImage,
+        uid: decoded.uid,
+      });
+    }
+
     // Normalize fields where helpful (e.g., deadline may come as ISO string)
     const updatesToApply: Record<string, any> = { ...updates };
     // Normalize multi-assignee edits: persist the full array and keep the

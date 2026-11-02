@@ -549,6 +549,12 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
     // status transitions and workflow step writes carry validation,
     // gamification, and counter semantics that live on the full path,
     // and silently dropping them would be worse than an explicit error.
+    // MSG22 fix #3: one steps shape is also simple — a deadline-only
+    // change to this task's OWN workflow step (a step task's dialog
+    // save always carries its plan steps; see isDeadlineOnlyOwnStepEdit
+    // in seam-tasks-route.ts). Its deadline fields fold into this doc's
+    // image in buildSeamOnlyEditImage; every other steps payload keeps
+    // the loud refusal.
     if (seamOnlyTask) {
       if (!canManage) {
         return NextResponse.json(
@@ -565,10 +571,10 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
           { status: 409 }
         );
       }
-      if (!isSimpleSeamOnlyEdit(taskBefore, updates as Record<string, any>)) {
+      if (!isSimpleSeamOnlyEdit(taskBefore, updates as Record<string, any>, taskId)) {
         return NextResponse.json(
           {
-            error: 'This task exists only in the primary store. Status changes and workflow step edits cannot be saved for it yet; only field edits (deadline, title, assignees) can. No changes were made.',
+            error: 'This task exists only in the primary store. Status changes and workflow step edits cannot be saved for it yet; only field edits (deadline, title, assignees) and a deadline-only change to this task\'s own workflow step can. No changes were made.',
             error_code: 'task_seam_only_complex_edit',
           },
           { status: 409 }

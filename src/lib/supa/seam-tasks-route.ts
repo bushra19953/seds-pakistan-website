@@ -401,13 +401,22 @@ export async function getTaskDocViaSeam(
  * plain edit (e.g. a deadline change), so an unchanged status passes;
  * 'approved' never passes because the main path canonicalizes it to
  * the 'completed' decision.
+ *
+ * MSG22 fix #3: a workflow-step task's dialog save ALWAYS carries its
+ * Workflow Plan steps (the form routes to the plan submitter whenever
+ * steps remain), so the blanket steps refusal above made even a pure
+ * deadline change on a seam-only step task unsavable. When the caller
+ * passes the id of the task being saved, a steps payload is instead
+ * accepted iff it is a deadline-only change to THIS task's own step
+ * (isDeadlineOnlyOwnStepEdit). Without a taskId the fix #2 behavior is
+ * unchanged: any non-empty steps payload is refused.
  */
 export function isSimpleSeamOnlyEdit(
   before: Record<string, any>,
-  updates: Record<string, any>
+  updates: Record<string, any>,
+  taskId?: string
 ): boolean {
   if (!updates || typeof updates !== 'object') return false;
-  if (Array.isArray((updates as any).steps) && (updates as any).steps.length > 0) return false;
   if (Array.isArray((updates as any).removedStepIds) && (updates as any).removedStepIds.length > 0) return false;
   if ((updates as any).status !== undefined) {
     const next = String((updates as any).status).toLowerCase();
@@ -415,6 +424,117 @@ export function isSimpleSeamOnlyEdit(
     const current = typeof before?.status === 'string' ? before.status.toLowerCase() : '';
     if (next !== current) return false;
   }
+  const steps = (updates as any).steps;
+  if (Array.isArray(steps) && steps.length > 0) {
+    if (!taskId) return false;
+    return isDeadlineOnlyOwnStepEdit(before, updates, taskId);
+  }
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Deadline-only own-step allowance (MSG22 fix #3)
+//
+// The dialog's steps payload for a workflow step task is assembled by
+// handleUpdateWorkflowSteps (src/app/admin/tasks/page.tsx) from the
+// form's WorkflowStep list, which handleEditTask hydrated from the
+// workflow's step docs: every entry carries its step doc id. The step
+// whose id equals the id of the task being saved IS this doc, so its
+// stored image is `before` and its fields can be verified exactly.
+// Any OTHER step's stored image is not available to this save, so a
+// payload naming any other step (alone or alongside) cannot be
+// verified and is refused: the allowance covers exactly the
+// single-step payload [own step].
+//
+// Field comparison mirrors how the dialog round-trips a stored step:
+// a missing assigneeIds reads as [assigneeId]; a null/absent badge
+// reads as absent; a non-array resources reads as []. The legacy
+// both-stores step write persists title, description, assigneeId,
+// assigneeIds, stepSpecificBadgeId, resources and individualDeadline
+// for an existing step; points/role are carried by the payload but
+// ignored by that write, so here they are verified when present
+// (a difference is a change this allowance does not cover) and never
+// applied. Any other key on the step is unverifiable and refuses.
+// The only fields allowed to differ are the deadline-class fields
+// (deadline / individualDeadline).
+// ---------------------------------------------------------------------------
+
+const STEP_KNOWN_FIELDS = new Set([
+  'id',
+  'title',
+  'description',
+  'role',
+  'assigneeId',
+  'assigneeIds',
+  'individualDeadline',
+  'deadline',
+  'stepSpecificBadgeId',
+  'points',
+  'resources',
+  'estimatedDuration',
+  'isLimitingStep',
+]);
+
+function normStepText(value: any): string {
+  return value == null ? '' : String(value);
+}
+
+function normStepNullable(value: any): string | null {
+  return value == null || value === '' ? null : String(value);
+}
+
+function effectiveAssigneeIds(doc: Record<string, any>): string[] {
+  if (Array.isArray(doc?.assigneeIds) && doc.assigneeIds.length > 0) {
+    return doc.assigneeIds.map((v: any) => String(v));
+  }
+  return doc?.assigneeId ? [String(doc.assigneeId)] : [];
+}
+
+function normStepResources(value: any): Array<{ type: string; url: string; title: string }> {
+  if (!Array.isArray(value)) return [];
+  return value.map((r: any) => ({
+    type: normStepText(r?.type),
+    url: normStepText(r?.url),
+    title: normStepText(r?.title),
+  }));
+}
+
+export function isDeadlineOnlyOwnStepEdit(
+  before: Record<string, any>,
+  updates: Record<string, any>,
+  taskId: string
+): boolean {
+  const steps = (updates as any)?.steps;
+  if (!Array.isArray(steps) || steps.length !== 1) return false;
+  const step = steps[0];
+  if (!step || typeof step !== 'object') return false;
+  // The own step must be identifiable: its id is this task's id.
+  if (typeof step.id !== 'string' || step.id !== taskId) return false;
+  for (const key of Object.keys(step)) {
+    if (!STEP_KNOWN_FIELDS.has(key)) return false;
+  }
+  const stored: Record<string, any> = before || {};
+  if (normStepText(step.title) !== normStepText(stored.title)) return false;
+  if (normStepText(step.description) !== normStepText(stored.description)) return false;
+  if (normStepText(step.assigneeId) !== normStepText(stored.assigneeId)) return false;
+  const stepIds = effectiveAssigneeIds(step);
+  const storedIds = effectiveAssigneeIds(stored);
+  if (stepIds.length !== storedIds.length || stepIds.some((v, i) => v !== storedIds[i])) return false;
+  if (normStepNullable(step.stepSpecificBadgeId) !== normStepNullable(stored.stepSpecificBadgeId)) return false;
+  if (normStepNullable(step.role) !== normStepNullable(stored.role)) return false;
+  if (
+    JSON.stringify(normStepResources(step.resources)) !==
+    JSON.stringify(normStepResources(stored.resources))
+  ) {
+    return false;
+  }
+  // Carried-but-not-applied fields: verified when present, exactly as
+  // the stored doc holds them.
+  if (step.points !== undefined && step.points !== null) {
+    if (typeof step.points !== 'number' || step.points !== stored.points) return false;
+  }
+  if (step.estimatedDuration !== undefined && step.estimatedDuration !== stored.estimatedDuration) return false;
+  if (step.isLimitingStep !== undefined && step.isLimitingStep !== stored.isLimitingStep) return false;
   return true;
 }
 
@@ -435,6 +555,24 @@ export function buildSeamOnlyEditImage(
   nowIso: string = new Date().toISOString()
 ): Record<string, any> {
   const merged: Record<string, any> = { ...(before || {}) };
+  // MSG22 fix #3: fold a validated deadline-only own-step payload's
+  // deadline-class fields into this doc's image FIRST. The caller has
+  // already classified the payload (isDeadlineOnlyOwnStepEdit), so the
+  // single step here is this doc itself. Task-level updates merge over
+  // it below and win on conflict, mirroring the legacy both-stores
+  // batch order for a step task (step writes queue first, the master
+  // task update applies last). This matters for the real dialog
+  // shape: persisted steps are exempt from the form's deadline
+  // re-split, so an admin who changes only the dialog's main deadline
+  // field sends the NEW value at task level and the step's stored
+  // override unchanged; the new value must land.
+  const ownSteps = (updates as any)?.steps;
+  if (Array.isArray(ownSteps) && ownSteps.length === 1 && ownSteps[0] && typeof ownSteps[0] === 'object') {
+    for (const field of ['deadline', 'individualDeadline'] as const) {
+      const v = ownSteps[0][field];
+      if (v !== undefined && v !== null) merged[field] = v;
+    }
+  }
   for (const [key, value] of Object.entries(updates || {})) {
     if (key === 'steps' || key === 'removedStepIds' || key === 'reviewDeadline') continue;
     if (value === undefined) continue;

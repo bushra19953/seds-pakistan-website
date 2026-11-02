@@ -55,8 +55,11 @@
  * the list it filters. No extra network calls, no new endpoints.
  *
  * Ordering is never re-sorted here: the feed already returns
- * sections and members in rank order, and this page renders them as
- * delivered.
+ * sections and members in rank order, and the chart renders bands
+ * as delivered. The list view alone re-groups at render time
+ * (MSG31: statutory entries before customs, feed order preserved
+ * inside each group) — a display grouping, not a re-sort: no
+ * level, no F2 key, and no feed order changes.
  */
 
 import React, {
@@ -148,11 +151,61 @@ function PersonAvatar({
   );
 }
 
-function RolePill({ title }: { title: string }) {
+/** MSG31: a custom entry counts as subordinate unless it is the
+ *  section head (level 0: the Founder, or a chapter president at
+ *  the lowest present level), even when the head's stored primary
+ *  is itself a custom slug. Data-derived: isCustomRole + level,
+ *  never a name, uid, or title string. */
+function isSubordinateCustom(member: PublicHierarchyPerson): boolean {
+  return member.isCustomRole && member.level !== 0;
+}
+
+/** MSG31 display rule, applied at every render grouping:
+ *  statutory/catalog entries first, customs after, feed order
+ *  preserved inside each group (Array.sort is stable). Display
+ *  only: no level, no F2 key, and no feed order is changed. */
+function statutoryFirstIndices(
+  section: PublicHierarchySection,
+  indices: number[]
+): number[] {
+  return [...indices].sort(
+    (a, b) =>
+      Number(isSubordinateCustom(section.members[a])) -
+      Number(isSubordinateCustom(section.members[b]))
+  );
+}
+
+function statutoryFirstMembers(
+  members: PublicHierarchyPerson[]
+): PublicHierarchyPerson[] {
+  return [...members].sort(
+    (a, b) =>
+      Number(isSubordinateCustom(a)) - Number(isSubordinateCustom(b))
+  );
+}
+
+/* MSG28: role titles render in full and wrap; nothing on a person
+ *  card truncates. The pill keeps min-w-0 so wrapping engages
+ *  inside a flex row instead of pushing the marker out, and
+ *  centers its lines so a stacked custom title wraps at word
+ *  boundaries instead of splitting words. Muted is the MSG31
+ *  subordinate treatment for custom cards. */
+function RolePill({
+  title,
+  muted = false,
+}: {
+  title: string;
+  muted?: boolean;
+}) {
   return (
     <span
       title={title}
-      className="min-w-0 max-w-full truncate rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
+      className={cn(
+        'min-w-0 max-w-full whitespace-normal break-words rounded-full px-2 py-0.5 text-center text-xs font-medium',
+        muted
+          ? 'bg-muted text-muted-foreground'
+          : 'bg-primary/10 text-primary'
+      )}
     >
       {title}
     </span>
@@ -164,12 +217,17 @@ function RolePill({ title }: { title: string }) {
 function PersonRow({ person }: { person: PublicHierarchyPerson }) {
   /* Stacked on purpose: the card's job is to identify the PERSON,
      so the name gets its own line and never truncates; the role
-     chip sits on the line below and is the element that yields
-     (it truncates, with the full title on hover). On one shared
-     flex line the chip won and names collapsed to "AD..." —
-     founder screenshot, 2026-10-30. */
+     title wraps in full below it (MSG28: no truncation anywhere
+     on a person card). A subordinate custom row reads muted, on
+     a dashed border, with the prominent CUSTOM label (MSG31). */
+  const subordinate = isSubordinateCustom(person);
   return (
-    <li className="flex items-start gap-3 rounded-md border border-border/40 bg-background/60 px-3 py-2">
+    <li
+      className={cn(
+        'flex items-start gap-3 rounded-md border border-border/40 bg-background/60 px-3 py-2',
+        subordinate && 'border-dashed'
+      )}
+    >
       <PersonAvatar
         person={person}
         className="size-9 shrink-0"
@@ -183,9 +241,9 @@ function PersonRow({ person }: { person: PublicHierarchyPerson }) {
           {person.name}
         </Link>
         <span className="mt-1 flex min-w-0 items-center gap-1.5">
-          <RolePill title={person.roleTitle} />
+          <RolePill title={person.roleTitle} muted={subordinate} />
           {person.isCustomRole ? (
-            <CustomRoleMarker className="shrink-0" />
+            <CustomRoleMarker className="shrink-0 font-semibold" />
           ) : null}
         </span>
       </div>
@@ -206,6 +264,11 @@ function NodeCard({
   tone?: 'root' | 'officer' | 'deputy';
   matched?: boolean;
 }) {
+  /* MSG31: a custom card that is not the section head renders
+     subordinate: smaller (deputy tone), dashed border, muted
+     body and title pill, prominent CUSTOM label. The head card
+     (tone root) never takes the subordinate treatment. */
+  const subordinate = tone !== 'root' && person.isCustomRole;
   return (
     <div
       id={nodeId}
@@ -215,6 +278,7 @@ function NodeCard({
         tone === 'root'
           ? 'border-primary/50 bg-primary/5'
           : 'border-border/60',
+        subordinate && 'border-dashed bg-muted/40',
         matched && 'bg-primary/10 ring-2 ring-primary ring-offset-2 ring-offset-background'
       )}
     >
@@ -229,17 +293,27 @@ function NodeCard({
       >
         {person.name}
       </Link>
-      <span className="flex w-full min-w-0 max-w-full items-center justify-center gap-1.5">
-        <RolePill title={person.roleTitle} />
+      <span
+        className={cn(
+          'flex w-full items-center justify-center gap-1.5',
+          subordinate
+            ? 'flex-col gap-1'
+            : 'min-w-0 max-w-full'
+        )}
+      >
+        <RolePill title={person.roleTitle} muted={subordinate} />
         {person.isCustomRole ? (
-          <CustomRoleMarker className="shrink-0" />
+          <CustomRoleMarker className="shrink-0 font-semibold" />
         ) : null}
       </span>
     </div>
   );
 }
 
-/** A vertical chain of deputy nodes hanging under one chair node. */
+/** A vertical chain of deputy nodes hanging under one chair node.
+ *  MSG31: the chain is a custom attachment, so its connector is
+ *  dashed, and its entries render statutory-first (a no-op while
+ *  chains hold customs only, and the invariant if that changes). */
 function DeputyChain({
   section,
   indices,
@@ -249,15 +323,16 @@ function DeputyChain({
   indices: number[];
   matches: Set<number> | null;
 }) {
-  if (indices.length === 0) return null;
+  const ordered = statutoryFirstIndices(section, indices);
+  if (ordered.length === 0) return null;
   return (
     <div className="relative mt-3 flex flex-col items-center">
       <span
         aria-hidden="true"
-        className="absolute left-1/2 top-0 h-full w-0 -translate-x-1/2 border-l-2 border-border"
+        className="absolute left-1/2 top-0 h-full w-0 -translate-x-1/2 border-l-2 border-dashed border-border"
       />
       <ul className="flex flex-col items-center gap-2">
-        {indices.map((i) => (
+        {ordered.map((i) => (
           <li key={`${section.members[i].id}-${section.members[i].roleTitle}`} className="relative">
             <NodeCard
               person={section.members[i]}
@@ -333,6 +408,23 @@ function ChartTree({
    * node renders with its DeputyChain, so a VP-parented deputy
    * still hangs under the VP. National and unassigned sections
    * render exactly as before.
+   *
+   * Staff rail (MSG31): a custom entry parented to the section
+   * head — the F1 root, i.e. the chapter President or, nationally,
+   * the Founder — never hangs in the vertical chain above the VP
+   * (where it would read as outranking the VP). It attaches to
+   * the side of the head's card instead. The head is identified
+   * by index (parents[i] === rootIndex), never by name, uid, or
+   * title string, so the rule holds for any staff-type custom
+   * role. The head's vertical chain is therefore always empty:
+   * every root-parented custom is staff by this definition.
+   *
+   * Statutory-first (MSG31): every rendered grouping passes
+   * through the stable partition, so statutory entries precede
+   * customs with feed order preserved inside each group. Chart
+   * bands and chains are single-kind by construction today, so
+   * the partition is a no-op there and the invariant if that
+   * changes; the list view is where it bites.
    */
   const model = useMemo(() => {
     const rootIndex = rootMemberIndex(section.members);
@@ -378,6 +470,11 @@ function ChartTree({
       band,
       childrenOf,
       vpIndex,
+      // Every root-parented custom is staff (MSG31): the head's
+      // vertical chain is empty by definition, so the rail takes
+      // the whole childrenOf[rootIndex] list, unpartitioned (it
+      // holds customs only).
+      staffIndices: childrenOf.get(rootIndex) ?? [],
     };
   }, [section]);
 
@@ -450,17 +547,35 @@ function ChartTree({
             <div className="org-tree">
               <ul className="org-tree-root">
                 <li>
-                  <NodeCard
-                    person={root}
-                    nodeId={`hnode-${section.id}-${model.rootIndex}`}
-                    tone="root"
-                    matched={matched(model.rootIndex)}
-                  />
-                  <DeputyChain
-                    section={section}
-                    indices={model.childrenOf.get(model.rootIndex) ?? []}
-                    matches={matches}
-                  />
+                  <div className="flex items-start gap-3">
+                    <NodeCard
+                      person={root}
+                      nodeId={`hnode-${section.id}-${model.rootIndex}`}
+                      tone="root"
+                      matched={matched(model.rootIndex)}
+                    />
+                    {model.staffIndices.length > 0 ? (
+                      <div
+                        data-testid={`staff-rail-${section.id}`}
+                        className="mt-1 flex flex-col gap-2 border-l-2 border-dashed border-border pl-3"
+                      >
+                        <p className="text-xs font-medium text-muted-foreground">
+                          Staff
+                        </p>
+                        <div className="flex flex-col gap-2">
+                          {model.staffIndices.map((i) => (
+                            <NodeCard
+                              key={`${section.members[i].id}-${section.members[i].roleTitle}`}
+                              person={section.members[i]}
+                              nodeId={`hnode-${section.id}-${i}`}
+                              tone="deputy"
+                              matched={matched(i)}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
                   {model.vpIndex !== -1 ? (
                     <ul>
                       <li
@@ -483,7 +598,7 @@ function ChartTree({
                   ) : null}
                   {model.officerBands.map(([level, indices]) => (
                     <ul key={level}>
-                      {indices.map((i) => (
+                      {statutoryFirstIndices(section, indices).map((i) => (
                         <li
                           key={`${section.members[i].id}-${section.members[i].roleTitle}`}
                         >
@@ -511,7 +626,7 @@ function ChartTree({
                   section
                 </p>
                 <ul className="flex flex-wrap justify-center gap-2">
-                  {model.band.map((i) => (
+                  {statutoryFirstIndices(section, model.band).map((i) => (
                     <li
                       key={`${section.members[i].id}-${section.members[i].roleTitle}`}
                     >
@@ -766,12 +881,17 @@ export default function HierarchyPage() {
   const searching = query.trim() !== '' || roleFilter !== 'all';
   const filtering = searching || chapterFilter !== 'all';
 
-  /** List view: sections and members after every filter. */
+  /** List view: sections and members after every filter.
+   *  MSG31: members render statutory-first (stable partition);
+   *  counts and filters are unaffected. */
   const visibleSections = useMemo(() => {
     if (!sections) return [];
     return sections
       .filter((s) => chapterFilter === 'all' || s.id === chapterFilter)
-      .map((s) => ({ ...s, members: s.members.filter(personMatches) }))
+      .map((s) => ({
+        ...s,
+        members: statutoryFirstMembers(s.members.filter(personMatches)),
+      }))
       .filter((s) => s.members.length > 0);
   }, [sections, chapterFilter, personMatches]);
 

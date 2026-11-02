@@ -428,9 +428,12 @@ describe('/hierarchy page visual org chart', () => {
     ).toBe(false);
 
     // The orphan deputy is in the dashed level band, in no subtree.
+    // (Selected by its top border: MSG31 dashed the deputy-chain
+    // connectors too, so .border-dashed alone no longer identifies
+    // the band.)
     const orphanLink = screen.getByRole('link', { name: 'Orphan Dep' });
     expect(vpBranch!.contains(orphanLink)).toBe(false);
-    const band = container.querySelector('.border-dashed');
+    const band = container.querySelector('.border-t-2');
     expect(band).not.toBeNull();
     expect(band!.contains(orphanLink)).toBe(true);
   });
@@ -480,10 +483,11 @@ describe('/hierarchy page visual org chart', () => {
  * full while names were cut to a few letters ("AD...", "Bilal...",
  * "Didar ..."). A directory card exists to identify the PERSON:
  * the name must never be the element that truncates, in either
- * view; the role chip is the element that yields, and it needs
- * min-w-0 for its truncation to engage inside a flex row. jsdom
- * performs no layout, so these tests pin the class contract the
- * layout depends on.
+ * view. MSG28 supersedes the second half of the original rule:
+ * the role title no longer yields either — it wraps in full, and
+ * the pill keeps min-w-0 so wrapping engages inside a flex row.
+ * jsdom performs no layout, so these tests pin the class contract
+ * the layout depends on.
  */
 const LONG_NAME_PAYLOAD = {
   sections: [
@@ -507,7 +511,7 @@ describe('/hierarchy page: name wins over the role chip', () => {
     jest.restoreAllMocks();
   });
 
-  it('list view: the name never truncates; the role chip does', async () => {
+  it('list view: the name never truncates, and neither does the role title (MSG28)', async () => {
     global.fetch = mockFetchOk(LONG_NAME_PAYLOAD) as any;
     render(<HierarchyPage />);
     await screen.findByText('Hammad Bilal Siddiqui');
@@ -523,11 +527,12 @@ describe('/hierarchy page: name wins over the role chip', () => {
     const chip = within(row!).getByText(
       'Outreach Deputy - Departmental CR Liaison'
     );
-    expect(chip.className).toContain('truncate');
+    expect(chip.className).not.toContain('truncate');
+    expect(chip.className).toContain('break-words');
     expect(chip.className).toContain('min-w-0');
   });
 
-  it('chart view: node names never truncate; the role chip does', async () => {
+  it('chart view: node names never truncate, and neither does the role title (MSG28)', async () => {
     global.fetch = mockFetchOk(LONG_NAME_PAYLOAD) as any;
     render(<HierarchyPage />);
     await screen.findByText('Hammad Bilal Siddiqui');
@@ -543,7 +548,8 @@ describe('/hierarchy page: name wins over the role chip', () => {
     const chip = within(node!).getByText(
       'Outreach Deputy - Departmental CR Liaison'
     );
-    expect(chip.className).toContain('truncate');
+    expect(chip.className).not.toContain('truncate');
+    expect(chip.className).toContain('break-words');
     expect(chip.className).toContain('min-w-0');
   });
 });

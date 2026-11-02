@@ -147,7 +147,16 @@ export default function GrandPrixRegisterPage() {
       style={{ color: IVORY }}
     >
       <StarryBackground />
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_55%_40%_at_50%_-5%,rgba(201,164,92,0.16),transparent),linear-gradient(180deg,rgba(6,9,16,0.25),rgba(6,9,16,0.6))]" />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 opacity-55"
+        style={{
+          backgroundImage: 'url(/assets/grand-prix-nebula.jpg)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center top',
+        }}
+      />
+      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_55%_40%_at_50%_-5%,rgba(201,164,92,0.14),transparent),linear-gradient(180deg,rgba(6,9,16,0.35),rgba(6,9,16,0.78))]" />
       <main className="container relative z-10 mx-auto flex-1 px-4 py-16 sm:py-20">
         <div className="mx-auto max-w-3xl">
           <div className="flex items-center justify-center gap-4">

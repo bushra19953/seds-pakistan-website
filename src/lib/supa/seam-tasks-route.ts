@@ -379,6 +379,100 @@ export async function getTaskDocViaSeam(
 }
 
 // ---------------------------------------------------------------------------
+// Seam-only edit save (MSG22 fix #2)
+//
+// A task doc can exist ONLY in this seam (the store of record while
+// tasks is SUPA_PRIMARY) with no Firestore counterpart: the seam-served
+// list shows it and the seam-first edit read opens it, but the PATCH
+// handler's Firestore batch cannot write it (a batch update on a
+// missing doc fails, and its Firestore pre-read 404s). For a SIMPLE
+// admin edit the handler therefore writes the merged image directly
+// through the adapter as the primary commit. Anything beyond a simple
+// edit (status transitions, workflow step writes) keeps the full
+// Firestore path's semantics (validation gates, gamification
+// transaction, counters) and is refused loudly on a seam-only doc
+// rather than silently mis-saved.
+// ---------------------------------------------------------------------------
+
+/**
+ * True when a PATCH updates payload is a simple field edit of the doc
+ * as it stands: no workflow step writes or removals, and no status
+ * transition. The edit dialog always sends the stored status back on a
+ * plain edit (e.g. a deadline change), so an unchanged status passes;
+ * 'approved' never passes because the main path canonicalizes it to
+ * the 'completed' decision.
+ */
+export function isSimpleSeamOnlyEdit(
+  before: Record<string, any>,
+  updates: Record<string, any>
+): boolean {
+  if (!updates || typeof updates !== 'object') return false;
+  if (Array.isArray((updates as any).steps) && (updates as any).steps.length > 0) return false;
+  if (Array.isArray((updates as any).removedStepIds) && (updates as any).removedStepIds.length > 0) return false;
+  if ((updates as any).status !== undefined) {
+    const next = String((updates as any).status).toLowerCase();
+    if (next === 'approved') return false;
+    const current = typeof before?.status === 'string' ? before.status.toLowerCase() : '';
+    if (next !== current) return false;
+  }
+  return true;
+}
+
+/**
+ * Build the post-edit primary-store image for a seam-only doc: the
+ * pre-edit seam image merged with the updates, following the main
+ * PATCH path's conventions for the fields a simple edit can carry
+ * (explicit null clears chapterId / reviewer stamps; null project and
+ * badge relations leave the stored value untouched; reviewerId and
+ * reviewerIds stay in sync; updatedAt is stamped). The result passes
+ * through resolveForPrimaryWrite, so Dates and Timestamp-like values
+ * become ISO strings and FieldValue sentinels resolve exactly as for
+ * a primary create.
+ */
+export function buildSeamOnlyEditImage(
+  before: Record<string, any>,
+  updates: Record<string, any>,
+  nowIso: string = new Date().toISOString()
+): Record<string, any> {
+  const merged: Record<string, any> = { ...(before || {}) };
+  for (const [key, value] of Object.entries(updates || {})) {
+    if (key === 'steps' || key === 'removedStepIds' || key === 'reviewDeadline') continue;
+    if (value === undefined) continue;
+    if (value === null && (key === 'chapterId' || key === 'reviewerId')) {
+      delete merged[key];
+      if (key === 'reviewerId') delete merged.reviewerIds;
+      continue;
+    }
+    if (
+      value === null &&
+      (key === 'projectId' || key === 'completionBadgeId' || key === 'finalWorkflowCompletionBadgeId')
+    ) {
+      continue;
+    }
+    merged[key] = value;
+  }
+  // Reviewer sync, same precedence as the main PATCH path: an explicit
+  // reviewerIds array wins (empty array clears both stamps), otherwise
+  // a named reviewerId stamps reviewerIds = [reviewerId].
+  if (Array.isArray((updates as any).reviewerIds)) {
+    const ids = Array.from(
+      new Set(((updates as any).reviewerIds as any[]).map((v: any) => String(v).trim()).filter(Boolean))
+    );
+    if (ids.length > 0) {
+      merged.reviewerIds = ids;
+      merged.reviewerId = ids[0];
+    } else {
+      delete merged.reviewerId;
+      delete merged.reviewerIds;
+    }
+  } else if (typeof (updates as any).reviewerId === 'string' && (updates as any).reviewerId) {
+    merged.reviewerIds = [(updates as any).reviewerId];
+  }
+  merged.updatedAt = nowIso;
+  return resolveForPrimaryWrite(merged, nowIso);
+}
+
+// ---------------------------------------------------------------------------
 // Mirror-on-write (never throws)
 // ---------------------------------------------------------------------------
 

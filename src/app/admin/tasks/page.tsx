@@ -507,10 +507,29 @@ function AdminTasksPageInner() {
   };
 
   const handleEditTask = useCallback(async (taskId: string) => {
+    // MSG22 fix #2: clear the previous task BEFORE fetching. editingTask
+    // decides CREATE vs EDIT for the whole dialog, and it used to survive
+    // from the last successful edit, so a failed fetch rendered either a
+    // blank CREATE form (fresh session) or the PREVIOUS task's data.
+    setEditingTask(null);
+    setEditingWorkflowSteps([]);
     try {
       setIsEditingLoading(true);
       setIsDialogOpen(true);
       const task = await getTask(firestore, taskId);
+      if (!task) {
+        // Loud failure, never a fake CREATE form: the task is listed
+        // (the list is seam-served) but could not be loaded for editing
+        // from any store. Close the dialog instead of presenting the
+        // blank create state as if it were this task.
+        toast({
+          variant: "destructive",
+          title: "Task Not Found",
+          description: "This task could not be loaded for editing. It may have been deleted, or it exists only in a store the editor cannot reach. No changes were made.",
+        });
+        setIsDialogOpen(false);
+        return;
+      }
       if (task) {
         // Normalize potential Firestore Timestamp into native Date for edit flow.
         // Local-wall-clock conversion (toDatetimeLocal) then renders correctly
@@ -663,6 +682,9 @@ function AdminTasksPageInner() {
         title: "Error",
         description: "Failed to fetch task for editing.",
       });
+      // MSG22 fix #2: a failed edit must not leave the dialog open over
+      // a blank CREATE form or stale data from a previous task.
+      setIsDialogOpen(false);
     }
     finally {
       setIsEditingLoading(false);

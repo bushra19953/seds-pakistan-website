@@ -13,7 +13,8 @@ import { getAuth } from 'firebase/auth';
 /**
  * Supabase migration (tasks cluster, group 3): the data-fetching helpers
  * below first try their seam-backed server endpoints
- * (GET /api/tasks/all, GET /api/tasks/by-user), which serve Supabase reads
+ * (GET /api/tasks/all, GET /api/tasks/by-user, GET /api/tasks/by-id),
+ * which serve Supabase reads
  * through src/lib/supa/seam-admin-tasks.ts when the 'tasks' surface flag
  * is ON. This file is a CLIENT module: it holds no adapter reference and
  * no Supabase credentials.
@@ -77,19 +78,59 @@ export async function createTask(
 }
 
 /**
+ * Single-doc variant of fetchTasksViaApi (MSG22 fix #2): asks the
+ * seam-backed GET /api/tasks/by-id endpoint for one task. Returns
+ * { served: true, task } when the endpoint answered authoritatively
+ * (task is null when the seam holds no such doc), or null when the
+ * endpoint did not serve (flag OFF 404, no signed-in user, any error),
+ * in which case the caller falls back to Firestore exactly like the
+ * sibling helpers do.
+ */
+async function fetchTaskViaApi(
+  taskId: string
+): Promise<{ served: true; task: Task | null } | null> {
+  try {
+    const currentUser = getAuth().currentUser;
+    if (!currentUser) return null;
+    const token = await currentUser.getIdToken();
+    const res = await fetch(`/api/tasks/by-id?taskId=${encodeURIComponent(taskId)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return null;
+    const json: any = await res.json();
+    if (!json || !('task' in json)) return null;
+    return { served: true, task: json.task ? reviveApiTask(json.task) : null };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Get a single task by ID
+ *
+ * Seam-first (MSG22 fix #2): this helper was the one read in the file
+ * that never got a seam path, so the admin Edit dialog asked Firestore
+ * directly while the task LIST is seam-served. A doc that exists only
+ * in the Supabase mirror (the store of record while tasks is
+ * SUPA_PRIMARY) listed fine but read back null here, and the edit
+ * dialog silently degraded to a blank CREATE form. The seam-backed
+ * endpoint is tried first, in the same style as the siblings below;
+ * any non-serve falls back to the exact Firestore read.
  */
 export async function getTask(
   firestore: Firestore,
   taskId: string
 ): Promise<Task | null> {
+  const viaApi = await fetchTaskViaApi(taskId);
+  if (viaApi) return viaApi.task;
+
   const taskRef = doc(firestore, 'tasks', taskId);
   const taskSnap = await getDoc(taskRef);
-  
+
   if (!taskSnap.exists()) {
     return null;
   }
-  
+
   return {
     id: taskSnap.id,
     ...taskSnap.data()

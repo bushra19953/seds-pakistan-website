@@ -188,6 +188,7 @@ export async function GET(
       } catch { /* ignore */ }
     }
 
+    const firstTask = tasks[0] as any;
     const totalSteps = tasks.length;
     const { completedSteps, progressPercentage, isCompleted: allApproved } =
       computeWorkflowProgress(tasks.map(t => t.status));
@@ -216,18 +217,23 @@ export async function GET(
     // Header deadline (founder extension seam, 2026-11-02): the workflow
     // deadline lives denormalized on every step as `deadline`, but the
     // admin Edit dialog and deadline extensions write only each step's
-    // `individualDeadline`. Taking firstTask.deadline here printed the
-    // stale pre-extension date on the public mission header. The header
-    // date is the LATEST effective date in play: max of the workflow
-    // deadline and every step's effective (individual || workflow) date.
-    // Bilateral keeps its 2027-03-31 header (workflow date is the max);
-    // the extended crucible pods show 2026-11-03 (their steps' max).
+    // `individualDeadline`, so firstTask.deadline alone printed the stale
+    // pre-extension date on the public mission header. The workflow date
+    // of record stays firstTask.deadline (the same doc the title and
+    // description come from); a step extension can only push the header
+    // LATER, never earlier: header = max(workflow deadline, every step's
+    // individualDeadline). Bilateral keeps 2027-03-31; the extended
+    // crucible pods show 2026-11-03.
     const headerDeadline = (() => {
       const times: number[] = [];
+      const wfMs = firstTask?.deadline ? new Date(firstTask.deadline).getTime() : NaN;
+      if (!Number.isNaN(wfMs)) times.push(wfMs);
       for (const t of tasks) {
-        const eff = t.individualDeadline || t.deadline;
-        if (eff) { const ms = new Date(eff).getTime(); if (!Number.isNaN(ms)) times.push(ms); }
-        if (t.deadline) { const ms = new Date(t.deadline).getTime(); if (!Number.isNaN(ms)) times.push(ms); }
+        if (t.individualDeadline) { const ms = new Date(t.individualDeadline).getTime(); if (!Number.isNaN(ms)) times.push(ms); }
+      }
+      if (!times.length && firstTask?.individualDeadline) {
+        const ms = new Date(firstTask.individualDeadline).getTime();
+        if (!Number.isNaN(ms)) times.push(ms);
       }
       return times.length ? new Date(Math.max(...times)).toISOString() : null;
     })();

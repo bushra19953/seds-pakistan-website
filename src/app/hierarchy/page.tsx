@@ -35,9 +35,11 @@
  * definition (parentRoleKey) when exactly one person in the chapter
  * holds it. Everyone else is placed by LEVEL, from the feed's rank
  * order — the chapter's top-ranked holder (its president) roots the
- * tree, the remaining officers form the level beneath, and deputies
- * whose chair is vacant or co-held sit in a dashed level band at the
- * bottom, connected to the level, never to an invented person.
+ * tree, the chapter vice president sits in his own band directly
+ * under the president (MSG24), the remaining officers form the
+ * levels beneath, and deputies whose chair is vacant or co-held
+ * sit in a dashed level band at the bottom, connected to the level,
+ * never to an invented person.
  *
  * SCALE (20+ chapters, 500+ role-holders): there is never one
  * mega-tree. Each chapter is its own subtree inside its own card;
@@ -316,12 +318,32 @@ function ChartTree({
    * officers row mixing chairs with units); a custom entry hangs
    * under the member the feed's parents map names; a custom entry
    * with no mapped parent goes to the level band.
+   *
+   * VP band (MSG24, chapter sections only): the Chapter Vice
+   * President gets his own band directly under the root, ahead of
+   * the remaining officers, so the chart reads President, VP,
+   * officers, deputies. The VP keeps spec level 4 — the band is
+   * visual only, not a new level, so the HIERARCHY_CHART_MAX_LEVEL
+   * cutoff (which counts spec levels at the projection layer;
+   * levels 7-8 never reach this page) is untouched. The feed
+   * payload carries no role key, so the VP is identified by
+   * office title; seats are one per chapter, and only the first
+   * match is lifted, so a synthetic fixture with several
+   * VP-titled members keeps the rest in their level band. The VP
+   * node renders with its DeputyChain, so a VP-parented deputy
+   * still hangs under the VP. National and unassigned sections
+   * render exactly as before.
    */
   const model = useMemo(() => {
     const rootIndex = rootMemberIndex(section.members);
     const officerBands = new Map<number, number[]>();
     const band: number[] = [];
     const childrenOf = new Map<number, number[]>();
+    // Chapter sections only: National has its own officers and
+    // the unassigned section is not a chapter.
+    const isChapterSection =
+      section.id !== 'national' && section.id !== 'unassigned';
+    let vpIndex = -1;
     section.members.forEach((member, i) => {
       if (i === rootIndex) return;
       const parent = section.parents?.[String(i)];
@@ -333,6 +355,12 @@ function ChartTree({
         } else {
           band.push(i);
         }
+      } else if (
+        isChapterSection &&
+        vpIndex === -1 &&
+        member.roleTitle === 'Chapter Vice President'
+      ) {
+        vpIndex = i;
       } else {
         const list = officerBands.get(member.level) ?? [];
         list.push(i);
@@ -344,7 +372,13 @@ function ChartTree({
     const officerBandList = [...officerBands.entries()].sort(
       (a, b) => a[0] - b[0]
     );
-    return { rootIndex, officerBands: officerBandList, band, childrenOf };
+    return {
+      rootIndex,
+      officerBands: officerBandList,
+      band,
+      childrenOf,
+      vpIndex,
+    };
   }, [section]);
 
   const root =
@@ -427,6 +461,26 @@ function ChartTree({
                     indices={model.childrenOf.get(model.rootIndex) ?? []}
                     matches={matches}
                   />
+                  {model.vpIndex !== -1 ? (
+                    <ul>
+                      <li
+                        key={`${section.members[model.vpIndex].id}-${section.members[model.vpIndex].roleTitle}`}
+                      >
+                        <NodeCard
+                          person={section.members[model.vpIndex]}
+                          nodeId={`hnode-${section.id}-${model.vpIndex}`}
+                          matched={matched(model.vpIndex)}
+                        />
+                        <DeputyChain
+                          section={section}
+                          indices={
+                            model.childrenOf.get(model.vpIndex) ?? []
+                          }
+                          matches={matches}
+                        />
+                      </li>
+                    </ul>
+                  ) : null}
                   {model.officerBands.map(([level, indices]) => (
                     <ul key={level}>
                       {indices.map((i) => (

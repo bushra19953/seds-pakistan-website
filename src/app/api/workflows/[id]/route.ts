@@ -7,6 +7,7 @@ import { ensureAdminInitialized, getDb, admin } from '@/lib/server/firebase-admi
 import { deleteWorkflowCascade } from '@/lib/server/workflow-cascade';
 import { logWorkflowAudit } from '@/lib/server/workflow-audit';
 import { mirrorWorkflowTaskDocFromData } from '@/lib/server/workflow-write-mirror';
+import { listMissionStepsViaSupa, getMissionReadsSupaAdapter, TASKS_COLLECTION } from '@/lib/server/mission-reads-supa';
 
 // Done states that block deletion unless forced. Keep in sync with the
 // status strings used in src/app/api/workflows/route.ts ('pending',
@@ -167,6 +168,101 @@ export async function PATCH(
       typeof body?.reason === 'string' && body.reason.trim()
         ? body.reason.trim().slice(0, 500)
         : null;
+
+    // Seam-first resolve (MSG26 Job 1, same ladder as MSG22 fix #2's
+    // getTask and the missions detail route): the mission detail
+    // route serves steps through listMissionStepsViaSupa, but this
+    // handler resolved only through Firestore, so a workflow whose
+    // steps live only in the Supabase mirror 404'd here while
+    // reading fine. A non-null, non-empty seam result is served
+    // from the seam through the adapter as the primary write; null
+    // (flag OFF / unconfigured / adapter error) or empty falls
+    // back to exactly today's Firestore path below, so every
+    // workflow that edits fine today keeps editing fine.
+    // Deliberate deviation from getTask's authoritative miss: the
+    // workflows surface is not declared Supabase-primary and the
+    // Missions tab list is Firestore-served (/api/workflows), so a
+    // seam-empty fallback preserves Firestore-only workflows
+    // instead of newly 404ing them. Mirror-only workflows always
+    // have non-empty seam steps, so the reported bug is fixed in
+    // all cases. If the lead wants strict authoritative-miss, the
+    // fallback is the single `else` branch below.
+    const supaSteps = await listMissionStepsViaSupa(id);
+    const seamAdapter =
+      supaSteps !== null && supaSteps.length > 0
+        ? await getMissionReadsSupaAdapter()
+        : null;
+    if (seamAdapter && supaSteps !== null && supaSteps.length > 0) {
+      // Bounded like the Firestore path (limit 500): one workflow's
+      // steps, sorted so the first step carries the header deadline.
+      const seamSteps = supaSteps
+        .slice(0, 500)
+        .sort((a: any, b: any) => (((a.data as any)?.sequenceIndex ?? 0) - ((b.data as any)?.sequenceIndex ?? 0)));
+      const firstSeamData = seamSteps[0].data as any;
+      const seamPreviousDeadline = deadlineToIso(firstSeamData?.deadline) || deadlineToIso(firstSeamData?.individualDeadline);
+
+      // Primary write: one adapter updateDoc per step. The mirror
+      // stores ISO strings, and a primary write cannot defer
+      // updatedAt to a Firestore serverTimestamp, so it resolves
+      // to the current instant (same rule as resolveForPrimaryWrite
+      // in seam-tasks-route).
+      const newDeadlineIso = newDeadline.toISOString();
+      const updatedAtIso = new Date().toISOString();
+      for (const step of seamSteps) {
+        await seamAdapter.updateDoc(TASKS_COLLECTION, step.id, {
+          deadline: newDeadlineIso,
+          individualDeadline: newDeadlineIso,
+          updatedAt: updatedAtIso,
+        });
+      }
+
+      // Best-effort Firestore mirror (MSG22 fix #2's seam-only save
+      // direction): a full-image merge-set materializes the mirror
+      // copy with real Timestamps. A mirror failure never fails
+      // the committed primary write.
+      for (const step of seamSteps) {
+        try {
+          const fsImage: Record<string, any> = {
+            ...((step.data as any) || {}),
+            deadline: newDeadline,
+            individualDeadline: newDeadline,
+            updatedAt: new Date(),
+          };
+          for (const field of ['createdAt', 'updatedAt', 'deadline', 'individualDeadline', 'completedAt', 'submittedAt', 'approvedAt', 'rejectedAt', 'acceptedAt', 'startedAt', 'availabilityConfirmedAt']) {
+            const v = fsImage[field];
+            if (typeof v === 'string') {
+              const d = new Date(v);
+              if (!Number.isNaN(d.getTime())) fsImage[field] = admin.firestore.Timestamp.fromDate(d);
+            } else if (v instanceof Date && !Number.isNaN(v.getTime())) {
+              fsImage[field] = admin.firestore.Timestamp.fromDate(v);
+            }
+          }
+          await db.collection('tasks').doc(step.id).set(fsImage, { merge: true });
+        } catch (mirrorErr) {
+          console.warn('[workflows:route] Seam deadline move: Firestore mirror set failed (primary write already committed):', mirrorErr);
+        }
+      }
+
+      await logWorkflowAudit(db, {
+        action: 'workflow_deadline_updated',
+        workflowId: id,
+        actorUid: auth.user.userId,
+        details: {
+          oldDeadline: seamPreviousDeadline,
+          newDeadline: newDeadlineIso,
+          stepsUpdated: seamSteps.length,
+          reason,
+        },
+      });
+
+      return NextResponse.json({
+        ok: true,
+        workflowId: id,
+        deadline: newDeadlineIso,
+        previousDeadline: seamPreviousDeadline,
+        stepsUpdated: seamSteps.length,
+      });
+    }
 
     // A workflow is a virtual aggregate: tasks sharing a workflowId string.
     // Bounded (census 05, unbounded list #5): one workflow's steps.

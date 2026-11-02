@@ -42,7 +42,7 @@ export function StoreSearchFacets({ values, onChange, onClear, showClear }: Stor
 
   return (
     <form role="search" onSubmit={(e) => e.preventDefault()} className="mb-8">
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-[auto_1fr_1fr_1fr] lg:items-end">
         <div className="space-y-2 md:col-span-2 lg:col-span-4">
           <Label htmlFor="store-q">Search products</Label>
           <Input

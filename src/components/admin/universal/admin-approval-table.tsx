@@ -440,7 +440,7 @@ export function AdminApprovalTable<T extends { id: string; status: string;[key: 
 
             {/* Configurable Review Dialog */}
             <Dialog open={reviewDialogOpen} onOpenChange={setReviewDialogOpen}>
-                <DialogContent className="sm:max-w-[500px]">
+                <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-[500px]">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
                             {reviewAction?.type === 'approve' ? <Check className="text-green-500" /> : <X className="text-red-500" />}
@@ -553,7 +553,14 @@ export function AdminApprovalTable<T extends { id: string; status: string;[key: 
                             />
                         </div>
 
-                        <div className="flex gap-2 justify-end pt-2">
+                        {/* flex-wrap (T2-5 item 3): at 375px the nowrap row
+                            overflowed the dialog — the bulk confirm button
+                            ("Confirm Bulk " + label) ran ~19px past the
+                            viewport edge and was clipped. Wrapping lets the
+                            confirm button take its own line on narrow
+                            screens; on sm+ widths the row fits on one line
+                            and renders exactly as before. */}
+                        <div className="flex flex-wrap gap-2 justify-end pt-2">
                             <Button variant="ghost" onClick={() => setReviewDialogOpen(false)}>Cancel</Button>
                             <Button
                                 onClick={handleExecuteReview}

@@ -109,7 +109,25 @@ function StorePageInner() {
   const clearFilters = () => setFacets(DEFAULT_FACETS);
 
   return (
-    <div className="min-h-screen">
+    <div
+      className="min-h-screen"
+      // Page-carried starfield (T2-3): the global background is a deferred,
+      // viewport-fixed WebGL layer (Vanta, init after ~3s + idle) with a CSS
+      // fallback — in captures and on slow loads it can arrive late or appear
+      // to end mid-page, leaving the lower page flat black. This tiled,
+      // transparent, CSS-only star layer is painted by the page root itself,
+      // so it spans the full document height by construction and the global
+      // layers still show through between the stars. Zero JS, zero weight.
+      style={{
+        backgroundImage:
+          'radial-gradient(1px 1px at 20px 40px, rgba(255,255,255,0.9), transparent 100%), ' +
+          'radial-gradient(1.5px 1.5px at 130px 90px, rgba(255,255,255,0.75), transparent 100%), ' +
+          'radial-gradient(1px 1px at 70px 150px, rgba(255,255,255,0.6), transparent 100%), ' +
+          'radial-gradient(2px 2px at 210px 30px, rgba(255,255,255,0.8), transparent 100%), ' +
+          'radial-gradient(1px 1px at 260px 130px, rgba(255,255,255,0.65), transparent 100%)',
+        backgroundSize: '300px 220px',
+      }}
+    >
       <PageHero title="Store" subtitle="Parts and tools for your builds, priced in PKR." />
       <main className="container mx-auto px-4 py-10 md:px-6">
         <StoreSearchFacets
@@ -147,7 +165,7 @@ function StorePageInner() {
                 ))}
               </div>
             ) : resultsFiltersActive ? (
-              <div className="max-w-xl space-y-4">
+              <div className="mx-auto w-full max-w-xl space-y-4 lg:max-w-2xl lg:rounded-2xl lg:border lg:border-border lg:bg-card/40 lg:p-10">
                 <h2 className="text-xl font-semibold">No products match your search</h2>
                 <p className="text-muted-foreground">
                   {debouncedQ.trim()
@@ -164,7 +182,7 @@ function StorePageInner() {
                 />
               </div>
             ) : (
-              <div className="max-w-xl space-y-4">
+              <div className="mx-auto w-full max-w-xl space-y-4 lg:max-w-2xl lg:rounded-2xl lg:border lg:border-border lg:bg-card/40 lg:p-10">
                 <h2 className="text-xl font-semibold">The store is not open yet</h2>
                 <p className="text-muted-foreground">
                   No products are listed right now. Tell us what you are looking for and we

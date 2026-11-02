@@ -192,7 +192,13 @@ export function consentGateHttpError(err: unknown): {
 export function canonicaliseRoleKey(roleKey: string): string {
   const clean = String(roleKey ?? '').trim().toLowerCase();
   const mapped = LEGACY_ROLE_MAP[clean];
-  return mapped ? mapped.role : clean;
+  // LEGACY_ROLE_MAP values are plain catalog-key strings (role-catalog
+  // LEGACY_TO_CATALOG), not { role } objects: the old `mapped.role`
+  // read returned undefined for every mapped key, so every
+  // legacy-mapped role canonicalised to undefined and read as NOT
+  // Category B. Return the mapped string itself; unmapped stays
+  // identity, exactly as before.
+  return mapped ?? clean;
 }
 
 /**

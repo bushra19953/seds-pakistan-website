@@ -547,3 +547,178 @@ describe('/hierarchy page: name wins over the role chip', () => {
     expect(chip.className).toContain('min-w-0');
   });
 });
+
+/**
+ * VP structure (MSG24): in a chapter the Vice President reads as
+ * one officer among equals when he shares the flat level-4 band
+ * with the secretary, treasurer and chairs. The chart now gives
+ * him his own band directly under the Chapter President, with the
+ * officers band below him, so the tree reads President, VP,
+ * officers, deputies. The VP keeps spec level 4: the band is
+ * visual only, and the level-6 cutoff still counts spec levels.
+ * The feed payload carries no role key, so the page identifies
+ * the VP by office title; seats are one per chapter.
+ */
+function vpPerson(
+  id: string,
+  name: string,
+  roleTitle: string,
+  level: number,
+  isCustomRole = false
+) {
+  return {
+    id,
+    name,
+    roleTitle,
+    photoURL: null,
+    profilePath: `/profile/unified/${id}`,
+    isCustomRole,
+    level,
+  };
+}
+
+const VP_PAYLOAD = {
+  sections: [
+    {
+      id: 'national',
+      name: 'National',
+      members: [
+        vpPerson('u-founder', 'The Founder', 'Founder and Patron-in-Chief', 0),
+        vpPerson('u-nat-vp', 'Nat VP', 'National Vice President', 2),
+        vpPerson('u-nat-sec', 'Nat Sec', 'National Secretary', 2),
+      ],
+    },
+    {
+      id: 'seds-ist-chapter',
+      name: 'IST Chapter',
+      parents: { '4': 1, '5': 1 },
+      members: [
+        vpPerson('u-prez', 'The President', 'Chapter President', 3),
+        vpPerson('u-vp', 'The VP', 'Chapter Vice President', 4),
+        vpPerson('u-sec', 'The Secretary', 'Chapter Secretary', 4),
+        vpPerson('u-treas', 'The Treasurer', 'Chapter Treasurer', 4),
+        vpPerson('u-dep-a', 'Dep A', 'Chapter VP Deputy - Technical Systems', 5, true),
+        vpPerson('u-dep-b', 'Dep B', 'Chapter VP Deputy - Workshop Logistics', 5, true),
+        vpPerson('u-orphan', 'Orphan Dep', 'Alumni Deputy - Database Archival', 5, true),
+      ],
+    },
+    {
+      id: 'seds-lhr-chapter',
+      name: 'Lahore Chapter',
+      members: [
+        vpPerson('u-lhr-prez', 'Lhr President', 'Chapter President', 3),
+        vpPerson('u-lhr-sec', 'Lhr Secretary', 'Chapter Secretary', 4),
+        vpPerson('u-lhr-treas', 'Lhr Treasurer', 'Chapter Treasurer', 4),
+      ],
+    },
+    {
+      id: 'seds-qta-chapter',
+      name: 'Quetta Chapter',
+      members: [
+        vpPerson('u-qta-vp', 'Qta VP', 'Chapter Vice President', 4),
+        vpPerson('u-qta-sec', 'Qta Secretary', 'Chapter Secretary', 4),
+        vpPerson('u-qta-treas', 'Qta Treasurer', 'Chapter Treasurer', 4),
+      ],
+    },
+  ],
+};
+
+function childUls(el: Element): Element[] {
+  return [...el.children].filter((child) => child.tagName === 'UL');
+}
+
+function childLis(el: Element): Element[] {
+  return [...el.children].filter((child) => child.tagName === 'LI');
+}
+
+function linkNames(li: Element): string[] {
+  return childLis(li).map(
+    (child) => child.querySelector('a')?.textContent ?? ''
+  );
+}
+
+describe('/hierarchy page VP structure (MSG24)', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  async function renderVp() {
+    global.fetch = mockFetchOk(VP_PAYLOAD) as any;
+    const utils = render(<HierarchyPage />);
+    await screen.findByText('The President');
+    return utils;
+  }
+
+  it('VP alone in his own band under the President, officers below him in unchanged order', async () => {
+    await renderVp();
+
+    const presidentLink = screen.getByRole('link', { name: 'The President' });
+    const rootLi = presidentLink.closest('li')!;
+    // The root's direct band lists: VP band first, officers band
+    // second. (The DeputyChain is a div, not a list; the dashed
+    // band lives outside the tree, so neither appears here.)
+    const bands = childUls(rootLi);
+    expect(bands).toHaveLength(2);
+
+    const vpBand = bands[0];
+    expect(childLis(vpBand)).toHaveLength(1);
+    expect(vpBand.contains(screen.getByRole('link', { name: 'The VP' }))).toBe(true);
+
+    const officersBand = bands[1];
+    expect(officersBand.contains(screen.getByRole('link', { name: 'The VP' }))).toBe(false);
+    expect(linkNames(officersBand)).toEqual(['The Secretary', 'The Treasurer']);
+
+    // The VP band precedes the officers band in the tree.
+    expect(
+      Boolean(
+        vpBand.compareDocumentPosition(officersBand) &
+          Node.DOCUMENT_POSITION_FOLLOWING
+      )
+    ).toBe(true);
+  });
+
+  it('a VP-parented deputy still hangs under the VP', async () => {
+    await renderVp();
+
+    const vpBranch = screen
+      .getByRole('link', { name: 'The VP' })
+      .closest('li')!;
+    expect(vpBranch.contains(screen.getByRole('link', { name: 'Dep A' }))).toBe(true);
+    expect(vpBranch.contains(screen.getByRole('link', { name: 'Dep B' }))).toBe(true);
+    // The orphan deputy is in the dashed band, not under the VP.
+    expect(vpBranch.contains(screen.getByRole('link', { name: 'Orphan Dep' }))).toBe(false);
+  });
+  it('National keeps its officers in one band: the VP rule is chapter-only', async () => {
+    await renderVp();
+
+    const founderLink = screen.getByRole('link', { name: 'The Founder' });
+    const rootLi = founderLink.closest('li')!;
+    const bands = childUls(rootLi);
+    expect(bands).toHaveLength(1);
+    expect(linkNames(bands[0])).toEqual(['Nat VP', 'Nat Sec']);
+  });
+
+  it('a chapter with no VP leaves its officers band unchanged', async () => {
+    await renderVp();
+
+    const lhrLink = screen.getByRole('link', { name: 'Lhr President' });
+    const rootLi = lhrLink.closest('li')!;
+    const bands = childUls(rootLi);
+    expect(bands).toHaveLength(1);
+    expect(linkNames(bands[0])).toEqual(['Lhr Secretary', 'Lhr Treasurer']);
+  });
+
+  it('a VP with no president above him is the root, not a band', async () => {
+    await renderVp();
+
+    // Quetta has no president, so its VP (lowest level present,
+    // first in feed order) roots the tree; there is no VP band to
+    // lift him into, and the officers band holds the rest.
+    const qtaLink = screen.getByRole('link', { name: 'Qta VP' });
+    const rootLi = qtaLink.closest('li')!;
+    const bands = childUls(rootLi);
+    expect(bands).toHaveLength(1);
+    expect(linkNames(bands[0])).toEqual(['Qta Secretary', 'Qta Treasurer']);
+    expect(bands[0].contains(qtaLink)).toBe(false);
+  });
+});

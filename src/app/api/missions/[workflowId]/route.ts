@@ -218,22 +218,19 @@ export async function GET(
     // deadline lives denormalized on every step as `deadline`, but the
     // admin Edit dialog and deadline extensions write only each step's
     // `individualDeadline`, so firstTask.deadline alone printed the stale
-    // pre-extension date on the public mission header. The workflow date
-    // of record stays firstTask.deadline (the same doc the title and
-    // description come from); a step extension can only push the header
-    // LATER, never earlier: header = max(workflow deadline, every step's
-    // individualDeadline). Bilateral keeps 2027-03-31; the extended
-    // crucible pods show 2026-11-03.
+    // pre-extension date on the public mission header (a header EARLIER
+    // than a step's own due date reads as "closed" while steps are still
+    // pending, the founder's exact complaint). The mission ends when its
+    // last step is due: header = max over every step's effective date
+    // (individualDeadline || deadline) and every workflow-deadline copy.
+    // Bilateral keeps 2027-03-31 (its final step); the extended crucible
+    // pods show 2026-11-03 (their steps' extended individual dates).
     const headerDeadline = (() => {
       const times: number[] = [];
-      const wfMs = firstTask?.deadline ? new Date(firstTask.deadline).getTime() : NaN;
-      if (!Number.isNaN(wfMs)) times.push(wfMs);
       for (const t of tasks) {
-        if (t.individualDeadline) { const ms = new Date(t.individualDeadline).getTime(); if (!Number.isNaN(ms)) times.push(ms); }
-      }
-      if (!times.length && firstTask?.individualDeadline) {
-        const ms = new Date(firstTask.individualDeadline).getTime();
-        if (!Number.isNaN(ms)) times.push(ms);
+        const eff = t.individualDeadline || t.deadline;
+        if (eff) { const ms = new Date(eff).getTime(); if (!Number.isNaN(ms)) times.push(ms); }
+        if (t.deadline) { const ms = new Date(t.deadline).getTime(); if (!Number.isNaN(ms)) times.push(ms); }
       }
       return times.length ? new Date(Math.max(...times)).toISOString() : null;
     })();

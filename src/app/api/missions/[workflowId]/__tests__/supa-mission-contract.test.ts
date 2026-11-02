@@ -134,7 +134,13 @@ describe('contract 1: mission GET payload shape', () => {
     expect(m.chapterName).toBe('SEDS IST');
     expect(m.totalSteps).toBe(3);
     expect(m.createdAt).toBe('2026-10-17T08:00:00.000Z');
-    expect(m.deadline).toBe('2026-10-20T10:00:00.000Z');
+    // Header deadline = when the mission ends (2026-11-02 extension seam):
+    // the LAST step's effective date, not the first step's workflow copy.
+    // Fixture steps are due Oct 19 / 21 / 22, so the header is Oct 22.
+    // The old pin (Oct 20, firstTask.deadline) encoded the stale-header bug
+    // the founder hit after the 48h extension: header earlier than a
+    // pending step's own due date reads as "closed".
+    expect(m.deadline).toBe('2026-10-22T10:00:00.000Z');
     expect(m.steps).toHaveLength(3);
     expect(Object.keys(m.steps[0]).sort()).toEqual(
       [

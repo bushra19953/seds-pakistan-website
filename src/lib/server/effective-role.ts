@@ -137,6 +137,38 @@ async function attachCustomRoles(
   return { customPrimary, customAdditionalRoles };
 }
 
+/**
+ * Stored-doc custom-role resolution for seam-served surfaces.
+ *
+ * getEffectiveRole(uid) opens with a raw Firestore users-doc read on
+ * every call. Surfaces that ALREADY hold the user's stored doc as
+ * served by the seam (Supa mirror under the migration flag, Firestore
+ * in legacy) — the profile route and the public portfolio route —
+ * must not pay a second users read: it breaks the supa-shell
+ * contract (route-supa-profile pins zero Firestore user-doc gets
+ * under the flag) and the read-budget discipline behind it.
+ *
+ * This resolver performs the SAME custom extraction as the legacy
+ * branch of getEffectiveRole (attachCustomRoles over the doc's role /
+ * additionalRoles, with the doc itself as the grant record for the
+ * contracts s.2.2 read-time expiry check) but takes the stored doc
+ * from the caller: ZERO users-doc reads. The only reads it can cause
+ * are definition lookups via getCustomRoleDefinition (the
+ * roleDefinitions collection — the contracts 4.2 single server read
+ * path), and only when a custom_ candidate is present; with no
+ * candidate it performs zero reads at all.
+ */
+export async function resolveCustomRolesFromStoredDoc(
+  storedDoc: Record<string, unknown> | undefined,
+): Promise<{
+  customPrimary: CustomRoleResolution | null;
+  customAdditionalRoles: CustomRoleResolution[];
+}> {
+  const db = getDb();
+  if (!db) return { customPrimary: null, customAdditionalRoles: [] };
+  return attachCustomRoles(db, storedDoc?.role, storedDoc?.additionalRoles, storedDoc);
+}
+
 export async function getEffectiveRole(uid: string): Promise<EffectiveRoleResult> {
   const db = getDb();
   if (!db)

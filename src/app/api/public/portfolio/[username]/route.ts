@@ -17,6 +17,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
+import { resolveCustomRolesFromStoredDoc } from '@/lib/server/effective-role';
 import {
   buildMissionTimeline,
   computeTelemetry,
@@ -124,6 +125,24 @@ export async function GET(
 
     // Skill labels for display; failures degrade to raw skill ids.
     const profile = sanitizePublicProfile(resolved.data, resolved.uid);
+
+    // T2-4 (display only): a live custom-role GRANT title — resolved
+    // from the stored doc this request already holds (resolved.data,
+    // seam-served) via resolveCustomRolesFromStoredDoc
+    // (definition-backed, expired grants excluded at read time) —
+    // takes precedence over the stored free-text customTitle, so the
+    // public profile header shows the grant the member actually
+    // holds. Deliberately NOT getEffectiveRole(uid): it opens with a
+    // raw Firestore users-doc read this surface does not need. Any
+    // failure degrades to the stored field, exactly the pre-T2-4
+    // behaviour.
+    try {
+      const custom = await resolveCustomRolesFromStoredDoc(resolved.data);
+      const grantTitle = custom.customAdditionalRoles[0]?.title;
+      if (grantTitle) profile.customTitle = grantTitle;
+    } catch {
+      // Keep the stored customTitle / base-role rendering.
+    }
     const skillNames: Record<string, string> = {};
     if (profile.skillIds.length > 0) {
       try {

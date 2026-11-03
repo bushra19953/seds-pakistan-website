@@ -207,15 +207,20 @@ export function ProfileHub({ uid }: { uid: string }) {
               </h1>
               <p className="text-sm text-muted-foreground mt-1 flex items-center gap-1.5">
                 <span>
-                  {getRoleDisplayName(profile.role || 'member', uid)}
+                  {profile.customGrantTitle || getRoleDisplayName(profile.role || 'member', uid)}
                   {chapter?.name ? ` · ${chapter.name}` : ''}
                 </span>
                 {(() => {
-                  // Custom role marker (consumers Surface 5 / D5): only
-                  // when the displayed role is a validated custom
-                  // definition (same gate as optimized-profile).
+                  // Custom role marker (consumers Surface 5 / D5):
+                  // when the displayed title is a validated custom
+                  // definition — the role itself is a custom slug, or
+                  // a live custom-role grant title is shown (T2-4:
+                  // profile.customGrantTitle, resolved server-side
+                  // from the same effective-role source as the
+                  // hierarchy; base role renders as before when null).
                   const slug = normalizeRoleSlug(profile.role || '');
-                  return isCustomRoleSlug(slug) && getCustomRoleTitleSync(slug) ? (
+                  return profile.customGrantTitle ||
+                    (isCustomRoleSlug(slug) && getCustomRoleTitleSync(slug)) ? (
                     <CustomRoleMarker />
                   ) : null;
                 })()}

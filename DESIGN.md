@@ -24,6 +24,10 @@ typography:
     fontFamily: "Courier Prime, Noto Sans, monospace"
     fontSize: "1rem"
     lineHeight: 1.6
+  label:
+    fontFamily: "Orbitron, Noto Sans, sans-serif"
+    fontSize: "0.75rem"
+    letterSpacing: "0.2em"
   urdu:
     fontFamily: "Noto Nastaliq Urdu, Noto Sans, serif"
 rounded:

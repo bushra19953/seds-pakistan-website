@@ -234,7 +234,7 @@ describe('PATCH /api/notifications', () => {
     await expect(res.json()).resolves.toEqual({ ok: true, updated: 1 });
     expect(store.get('a-created').isRead).toBe(true);
     expect(calls.updateDoc).toEqual([
-      ['users/user-1/notifications', 'a-created', { isRead: true }],
+      ['users/user-1/notifications', 'a-created', { isRead: true, read: true }],
     ]);
   });
 
@@ -256,7 +256,7 @@ describe('PATCH /api/notifications', () => {
     expect(res.status).toBe(404);
   });
 
-  it('mark-all mirrors NotificationCenter semantics: only isRead === false docs update', async () => {
+  it('mark-all mirrors NotificationCenter semantics: only normalized-unread docs update', async () => {
     const { db, updates } = makeDb(SEED);
     dbHolder.db = db;
     const res = await PATCH(req('PATCH', 'http://x/api/notifications', { all: true }));

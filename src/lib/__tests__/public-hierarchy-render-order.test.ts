@@ -321,3 +321,66 @@ describe('hierarchy render order (F3)', () => {
     expect(payload.sections).toEqual([]);
   });
 });
+
+describe('hierarchy render order (F4)', () => {
+  const DESIGN_DEPUTY = 'custom_design_media_deputy_digital_web_assets';
+  const ALUMNI_DEPUTY = 'custom_alumni_deputy_database_archival';
+
+  function deputyDef(slug: string, name: string, parentRoleKey: string) {
+    return {
+      isCustom: true,
+      slug,
+      name,
+      description: '',
+      parentRoleKey,
+      chapterId: IST,
+      permissions: [],
+      isActive: true,
+      defaultTermDays: null,
+    };
+  }
+
+  it('attaches a design deputy under a co-held design chair deterministically, to the first holder by name', () => {
+    const defs = new Map<string, Record<string, unknown>>([
+      [DESIGN_DEPUTY, deputyDef(DESIGN_DEPUTY, 'Design Media Deputy - Digital Web Assets', 'chapter_design_chair')],
+    ]);
+    const grants = new Map<string, unknown>([['u-dep', [DESIGN_DEPUTY]]]);
+    const users = [
+      user({ id: 'u-design-zed', displayName: 'Zed Design', role: 'chapter_design_chair', chapterId: IST }),
+      user({ id: 'u-dep', displayName: 'The Deputy', role: 'member_basic', chapterId: IST }),
+      user({ id: 'u-design-amy', displayName: 'Amy Design', role: 'chapter_design_chair', chapterId: IST }),
+    ];
+    // Both chairs share level 4 and XP 9, so the name decides:
+    // Amy Design first, whatever the input order.
+    const payload = build(users, defs, grants);
+    const ist = payload.sections.find((s) => s.id === IST);
+    expect(ist?.members.map((m) => m.id)).toEqual([
+      'u-design-amy',
+      'u-design-zed',
+      'u-dep',
+    ]);
+    expect(ist?.parents).toEqual({ '2': 0 });
+    expect(ist!.members[2].parentTitle).toBeUndefined();
+    // Reversed input order attaches to the same chair.
+    const payload2 = build([...users].reverse(), defs, grants);
+    const ist2 = payload2.sections.find((s) => s.id === IST);
+    expect(ist2?.parents).toEqual({ '2': 0 });
+  });
+
+  it('labels a deputy whose alumni chair parent is vacant with the vacant office, and emits no edge', () => {
+    const defs = new Map<string, Record<string, unknown>>([
+      [ALUMNI_DEPUTY, deputyDef(ALUMNI_DEPUTY, 'Alumni Deputy - Database Archival', 'chapter_alumni_chair')],
+    ]);
+    const grants = new Map<string, unknown>([['u-dep', [ALUMNI_DEPUTY]]]);
+    const payload = build(
+      [user({ id: 'u-dep', displayName: 'The Deputy', role: 'member_basic', chapterId: IST })],
+      defs,
+      grants
+    );
+    const ist = payload.sections.find((s) => s.id === IST);
+    expect(ist?.members).toHaveLength(1);
+    expect(ist?.parents).toBeUndefined();
+    expect(ist!.members[0].parentTitle).toBe('Chapter Alumni Chair');
+    expect(ist!.members[0].level).toBe(5);
+  });
+});

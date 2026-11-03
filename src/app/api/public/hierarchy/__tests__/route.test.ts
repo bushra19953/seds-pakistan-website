@@ -160,6 +160,10 @@ describe('GET /api/public/hierarchy', () => {
     expect(ist.members[0].roleTitle).toBe('Chapter President');
     expect(ist.members[1].roleTitle).toBe('Chapter VP Deputy - Technical Systems');
     expect(ist.members[1].isCustomRole).toBe(true);
+    // No VP holder in IST: the deputy is vacant-parent, so the API
+    // carries the vacant-office label (F4) through to the band.
+    expect(ist.members[1].parentTitle).toBe('Chapter Vice President');
+    expect(ist.members[0].parentTitle).toBeUndefined();
 
     // The plain member is not a role-holder and never appears.
     const allIds = body.sections.flatMap((s: any) => s.members.map((m: any) => m.id));
@@ -207,6 +211,8 @@ describe('GET /api/public/hierarchy', () => {
       profilePath: '/profile/unified/u-grantee',
       isCustomRole: true,
       level: 5,
+      // Vacant VP parent (F4): the label rides the API payload.
+      parentTitle: 'Chapter Vice President',
     });
 
     // The grant merge does not widen the payload: still contact-free.

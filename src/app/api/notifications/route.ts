@@ -35,7 +35,10 @@
  *                               center's own window) read
  *                               -> 200 { ok: true, updated: <count> }
  *     anything else             -> 400
- *     "Unread" mirrors the center's check exactly: isRead === false.
+ *     "Unread" is the normalized predicate (MSG30): read iff either
+ *     spelling is exactly true, so a `read: false` doc (no `isRead`
+ *     field, the helper/webhooks family) counts as unread and is
+ *     selected here. Every mark write sets BOTH spellings true.
  *
  *   DELETE ?id=<id>  (or JSON body { id })
  *     Delete that one notification from the caller's own
@@ -65,6 +68,10 @@ import {
   sortAndLimitNotifications,
   userNotificationsPath,
 } from '@/lib/server/notifications-supa-seam';
+import {
+  isNotificationUnread,
+  MARK_NOTIFICATION_READ_UPDATE,
+} from '@/lib/notification-read-state';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -184,28 +191,32 @@ export async function PATCH(request: NextRequest) {
   try {
     if (body?.all === true || body?.markAllRead === true) {
       // Mirror NotificationCenter.markAllPersonalRead: within its
-      // loaded window, update every doc whose isRead === false.
+      // loaded window, update every normalized-unread doc (MSG30:
+      // the old isRead-only selection never touched the `read:`
+      // family, so those docs survived every "mark all done").
       // List through the seam first (same window, same shape as GET:
       // newest-first, limit 50, both timestamp families merged); the
       // seam returns null when OFF / unconfigured / erroring, and only
       // then does this arm pay the Firestore list (2 bounded queries).
       const supaCurrent = await listSupaUserNotifications(uid, MAX_LIMIT);
       const current = supaCurrent ?? (await fetchFirestoreNotifications(db, uid, MAX_LIMIT));
-      const unread = current.filter((n) => n.isRead === false);
+      const unread = current.filter(isNotificationUnread);
       await Promise.all(
         unread.map(async (n) => {
           // WRITE PRIMACY (cutover W4): adapter first + throw on
           // failure under isSupaPrimary('notifications'); Firestore
           // update becomes the best-effort mirror. OFF: as before.
-          if (await updateNotificationPrimaryFirst(path, n.id, { isRead: true })) {
+          // The mark payload sets BOTH spellings true (spread: the
+          // frozen constant itself is never handed to a store).
+          if (await updateNotificationPrimaryFirst(path, n.id, { ...MARK_NOTIFICATION_READ_UPDATE })) {
             try {
-              await col.doc(n.id).update({ isRead: true });
+              await col.doc(n.id).update({ ...MARK_NOTIFICATION_READ_UPDATE });
             } catch (e) {
               console.warn('[api/notifications] Firestore mirror after primary mark-read failed:', e);
             }
           } else {
-            await col.doc(n.id).update({ isRead: true });
-            await mirrorNotificationUpdate(path, n.id, { isRead: true });
+            await col.doc(n.id).update({ ...MARK_NOTIFICATION_READ_UPDATE });
+            await mirrorNotificationUpdate(path, n.id, { ...MARK_NOTIFICATION_READ_UPDATE });
           }
         }),
       );
@@ -224,15 +235,15 @@ export async function PATCH(request: NextRequest) {
       // the adapter update lands FIRST; its failure (incl. not-found)
       // takes the same 404 as a failed Firestore update today. The
       // Firestore update then runs as the best-effort mirror.
-      if (await updateNotificationPrimaryFirst(path, id, { isRead: true })) {
+      if (await updateNotificationPrimaryFirst(path, id, { ...MARK_NOTIFICATION_READ_UPDATE })) {
         try {
-          await col.doc(id).update({ isRead: true });
+          await col.doc(id).update({ ...MARK_NOTIFICATION_READ_UPDATE });
         } catch (e) {
           console.warn('[api/notifications] Firestore mirror after primary mark-read failed:', e);
         }
       } else {
-        await col.doc(id).update({ isRead: true });
-        await mirrorNotificationUpdate(path, id, { isRead: true });
+        await col.doc(id).update({ ...MARK_NOTIFICATION_READ_UPDATE });
+        await mirrorNotificationUpdate(path, id, { ...MARK_NOTIFICATION_READ_UPDATE });
       }
     } catch {
       return NextResponse.json({ error: 'Notification not found' }, { status: 404 });

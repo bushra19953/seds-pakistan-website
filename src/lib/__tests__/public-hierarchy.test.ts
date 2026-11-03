@@ -271,13 +271,17 @@ describe('buildPublicHierarchy', () => {
       profilePath: '/profile/unified/u-grantee',
       isCustomRole: true,
       level: 5,
+      // Vacant VP parent (F4): the label rides the payload.
+      parentTitle: 'Chapter Vice President',
     });
-    // The payload person object keeps exactly its 7 keys.
+    // A vacant-parent deputy carries 8 keys (the 7 base keys plus
+    // parentTitle); attached deputies keep exactly 7.
     expect(Object.keys(deputy).sort()).toEqual([
       'id',
       'isCustomRole',
       'level',
       'name',
+      'parentTitle',
       'photoURL',
       'profilePath',
       'roleTitle',
@@ -398,8 +402,10 @@ describe('buildPublicHierarchy', () => {
 
   // ─── Parent edges for the visual org chart ─────────────────────
   // An edge exists only where the data supports it: the deputy
-  // definition names parentRoleKey chapter_vice_president, and
-  // exactly one entry in the same section holds that role.
+  // definition names parentRoleKey chapter_vice_president. A held
+  // parent attaches to the first holder by level, XP desc, name
+  // asc (F4); a vacant or cross-section parent gives no edge and
+  // a parentTitle label instead (F4).
 
   it('derives a deputy -> chair edge from the definition parentRoleKey', () => {
     const defs = new Map([[DEPUTY_SLUG, DEPUTY_DEF]]);
@@ -428,26 +434,33 @@ describe('buildPublicHierarchy', () => {
     ]);
   });
 
-  it('emits no edge when the parent role is co-held by two people', () => {
+  it('attaches a co-held parent to the first holder by level, XP desc, name asc (F4)', () => {
     const defs = new Map([[DEPUTY_SLUG, DEPUTY_DEF]]);
     const grants = new Map<string, unknown>([['u-dep', [DEPUTY_SLUG]]]);
+    // Both chairs share level 4 and XP 16, so the name decides:
+    // Chair A first, whatever the input order.
     const payload = build(
       [
-        user({ id: 'u-chair-a', displayName: 'Chair A', role: 'chapter_vice_president', chapterId: IST }),
         user({ id: 'u-chair-b', displayName: 'Chair B', role: 'chapter_vice_president', chapterId: IST }),
         user({ id: 'u-dep', displayName: 'The Deputy', role: 'member_basic', chapterId: IST }),
+        user({ id: 'u-chair-a', displayName: 'Chair A', role: 'chapter_vice_president', chapterId: IST }),
       ],
       defs,
       grants
     );
     const ist = payload.sections.find((s) => s.id === IST);
-    expect(ist?.members).toHaveLength(3);
-    // Attaching the deputy to either co-chair would invent a
-    // reporting line; the chart band-places deputies with no edge.
-    expect(ist?.parents).toBeUndefined();
+    expect(ist?.members.map((m) => m.id)).toEqual([
+      'u-chair-a',
+      'u-chair-b',
+      'u-dep',
+    ]);
+    // Member index 2 (the deputy) hangs under index 0 (Chair A).
+    expect(ist?.parents).toEqual({ '2': 0 });
+    // Attached deputies carry no vacant-parent label.
+    expect(ist!.members[2].parentTitle).toBeUndefined();
   });
 
-  it('emits no edge when the parent role is vacant in the section', () => {
+  it('emits no edge when the parent role is vacant in the section, and labels the deputy with the vacant office (F4)', () => {
     const defs = new Map([[DEPUTY_SLUG, DEPUTY_DEF]]);
     const grants = new Map<string, unknown>([['u-dep', [DEPUTY_SLUG]]]);
     const payload = build(
@@ -458,9 +471,10 @@ describe('buildPublicHierarchy', () => {
     const ist = payload.sections.find((s) => s.id === IST);
     expect(ist?.members).toHaveLength(1);
     expect(ist?.parents).toBeUndefined();
+    expect(ist!.members[0].parentTitle).toBe('Chapter Vice President');
   });
 
-  it('emits no edge when the parent holder sits in another chapter', () => {
+  it('emits no edge when the parent holder sits in another chapter, and labels the deputy with the vacant office (F4)', () => {
     const defs = new Map([[DEPUTY_SLUG, DEPUTY_DEF]]);
     const grants = new Map<string, unknown>([['u-dep', [DEPUTY_SLUG]]]);
     const payload = build(
@@ -474,6 +488,7 @@ describe('buildPublicHierarchy', () => {
     const ist = payload.sections.find((s) => s.id === IST);
     expect(ist?.members.map((m) => m.id)).toEqual(['u-dep']);
     expect(ist?.parents).toBeUndefined();
+    expect(ist!.members[0].parentTitle).toBe('Chapter Vice President');
     const lums = payload.sections.find((s) => s.id === LUMS);
     expect(lums?.parents).toBeUndefined();
   });

@@ -24,34 +24,9 @@ import { buildProjectRoadmap, type RoadmapStep } from '@/lib/project-roadmap';
 import { Users, Github, BookOpen, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 
-function MemberAvatar({ memberId }: { memberId: string }) {
-  const firestore = useFirestore();
-  const userDocRef = useMemoFirebase(() => doc(firestore, 'users', memberId), [firestore, memberId]);
-  const { data: userProfile, loading } = useDoc(userDocRef);
-
-  if (loading) {
-    return <Skeleton className="h-10 w-10 rounded-full" />;
-  }
-
-  if (!userProfile) return null;
-
-  const getInitials = (name: string | null | undefined) => {
-    if (!name) return 'U';
-    return name.split(' ').map((n) => n[0]).join('');
-  };
-
-  return (
-    <Link href={`/profile/unified/${memberId}`} prefetch={false} passHref>
-      <Avatar className="h-10 w-10 border-2 border-transparent hover:border-primary transition-colors cursor-pointer">
-        <AvatarImage src={userProfile.photoURL} alt={userProfile.displayName} />
-        <AvatarFallback>{getInitials(userProfile.displayName)}</AvatarFallback>
-      </Avatar>
-    </Link>
-  );
-}
-
 // One assignee of a roadmap step: avatar + name, linked to the
-// profile. Same per-user doc read pattern as MemberAvatar above.
+// profile. Also reused for the team roster so members are named,
+// not just faces.
 function AssigneeChip({ memberId }: { memberId: string }) {
   const firestore = useFirestore();
   const userDocRef = useMemoFirebase(() => doc(firestore, 'users', memberId), [firestore, memberId]);
@@ -255,8 +230,14 @@ function ProjectDetailContent() {
     return (
       <div className="relative flex min-h-screen flex-col">
         <StarryBackground />
-        <main className="flex-1 flex items-center justify-center">
-          <h2 className="text-2xl font-bold">Project not found</h2>
+        <main className="flex-1 flex items-center justify-center px-4">
+          <div className="text-center py-12 px-6 border-2 border-dashed border-accent/20 rounded-2xl bg-card/20 max-w-md w-full">
+            <h2 className="text-2xl font-bold">Project not found</h2>
+            <p className="text-sm text-muted-foreground mt-2">This project may have been removed, or the link may be wrong.</p>
+            <Link href="/projects" className="inline-flex items-center gap-2 text-sm text-primary hover:underline mt-4">
+              Back to projects
+            </Link>
+          </div>
         </main>
         <Footer />
       </div>
@@ -316,9 +297,18 @@ function ProjectDetailContent() {
                     />
                   </div>
                 ) : (
-                  // Fallback or No Image
-                  <div className="w-full aspect-video rounded-xl bg-card/50 border border-accent/20 flex items-center justify-center">
-                    <span className="text-muted-foreground">No image provided</span>
+                  // Fallback: same logo placeholder as the projects grid
+                  <div className="w-full aspect-video rounded-xl bg-gradient-to-br from-[#0B0F19] via-[#111827] to-[#0B0F19] border border-accent/20 flex flex-col items-center justify-center gap-3">
+                    <Image
+                      src="/assets/logo.png"
+                      alt="SEDS Pakistan"
+                      width={220}
+                      height={124}
+                      className="w-40 h-auto opacity-90"
+                    />
+                    <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                      SEDS Pakistan
+                    </span>
                   </div>
                 );
               })()}
@@ -329,7 +319,7 @@ function ProjectDetailContent() {
             <div className="md:col-span-2 space-y-8">
               {/* Description */}
               <div
-                className="prose prose-invert max-w-none font-body text-lg text-muted-foreground leading-relaxed"
+                className="prose prose-invert max-w-[65ch] font-body text-lg text-muted-foreground leading-relaxed"
                 dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
               />
 
@@ -340,6 +330,7 @@ function ProjectDetailContent() {
                     src={project.video_url.replace('watch?v=', 'embed/')}
                     className="w-full h-full"
                     title="Project Video"
+                    loading="lazy"
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                     allowFullScreen
                   />
@@ -354,19 +345,27 @@ function ProjectDetailContent() {
                   <CardTitle>Team Members</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {/* Team Lead (if available) */}
-                  {teamLeaderId && (
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs px-2 py-1 rounded bg-primary/20 text-primary border border-primary/30">Team Lead</span>
-                      <MemberAvatar memberId={teamLeaderId} />
-                    </div>
+                  {teamLeaderId || teamMembers.length > 0 ? (
+                    <>
+                      {/* Team Lead (if available) */}
+                      {teamLeaderId && (
+                        <div className="flex flex-wrap items-center gap-3">
+                          <span className="text-xs px-2 py-1 rounded bg-primary/20 text-primary border border-primary/30">Team Lead</span>
+                          <AssigneeChip memberId={teamLeaderId} />
+                        </div>
+                      )}
+                      {/* Team Members */}
+                      {teamMembers.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {teamMembers.map((memberId: string) => (
+                            <AssigneeChip key={memberId} memberId={memberId} />
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No team members listed yet.</p>
                   )}
-                  {/* Team Members */}
-                  <div className="flex flex-wrap gap-2">
-                    {teamMembers && teamMembers.map((memberId: string) => (
-                      <MemberAvatar key={memberId} memberId={memberId} />
-                    ))}
-                  </div>
                 </CardContent>
               </Card>
 

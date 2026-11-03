@@ -351,12 +351,12 @@ export default function ProjectsPage() {
             <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 blur-[100px] -mr-32 -mt-32 pointer-events-none" />
             <div className="absolute bottom-0 left-0 w-48 h-48 bg-emerald-500/5 blur-[80px] -ml-24 -mb-24 pointer-events-none" />
             
-            <CardHeader className="pb-8 pt-8 px-8">
+            <CardHeader className="pb-8 pt-8 px-5 md:px-8">
               <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
                 <div className="space-y-1">
                   <div className="flex items-center gap-3">
                     <div className="p-2 bg-primary/10 rounded-xl border border-primary/20 shadow-[0_0_15px_rgba(59,130,246,0.1)]">
-                      <Rocket className="h-6 w-6 text-primary animate-pulse" />
+                      <Rocket className="h-6 w-6 text-primary animate-pulse motion-reduce:animate-none" />
                     </div>
                     <CardTitle className="text-3xl font-accent font-black tracking-tighter uppercase text-foreground selection:bg-primary/30">
                       National Mission Command
@@ -371,7 +371,7 @@ export default function ProjectsPage() {
                    <div className="px-4 py-2 rounded-xl border border-emerald-500/30 bg-card/80 shadow-inner flex items-center gap-3">
                       <div className="relative">
                         <div className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(34,197,94,0.6)]" />
-                        <div className="absolute inset-0 h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
+                        <div className="absolute inset-0 h-2 w-2 rounded-full bg-emerald-500 animate-ping motion-reduce:animate-none" />
                       </div>
                       <span className="text-[12px] font-black text-foreground/90 uppercase tracking-[0.2em]">Live Data</span>
                    </div>
@@ -379,7 +379,7 @@ export default function ProjectsPage() {
               </div>
             </CardHeader>
             
-            <CardContent className="px-8 pb-8">
+            <CardContent className="px-5 md:px-8 pb-8">
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 relative z-10">
                 {/* HUD STATS PANEL */}
                 <div className="lg:col-span-3 space-y-6">
@@ -451,7 +451,7 @@ export default function ProjectsPage() {
                            })}
                          </div>
 
-                         <div className="flex justify-between items-center">
+                         <div className="flex flex-wrap justify-between items-center gap-3">
                            <div className="flex items-center gap-3">
                              <div className="flex -space-x-2.5">
                                {wf.participants.slice(0, 3).map((p: any, i: number) => (
@@ -484,7 +484,7 @@ export default function ProjectsPage() {
                      )) : (
                        <div className="text-center py-12 border-2 border-dashed border-slate-800 rounded-2xl bg-card/20">
                          <Activity className="h-10 w-10 text-slate-700 mx-auto mb-3 opacity-50" />
-                         <p className="text-xs font-black uppercase tracking-widest text-slate-600">No active national missions</p>
+                         <p className="text-xs font-black uppercase tracking-widest text-slate-400">No active national missions</p>
                        </div>
                      )}
                    </div>
@@ -498,7 +498,7 @@ export default function ProjectsPage() {
                   <div className="space-y-3">
                     {missionStats.recentActivity.length > 0 ? missionStats.recentActivity.map((task, i) => (
                       <div key={task.id || i} className="group/feed flex items-center gap-4 p-3.5 bg-card/40 rounded-xl border border-slate-800 hover:border-primary/40 transition-all duration-300 relative overflow-hidden">
-                         <div className={`h-2 w-2 rounded-full shrink-0 ${task.status === 'completed' ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-amber-500 animate-pulse shadow-[0_0_10px_rgba(245,158,11,0.5)]'}`} />
+                         <div className={`h-2 w-2 rounded-full shrink-0 ${task.status === 'completed' ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-amber-500 animate-pulse motion-reduce:animate-none shadow-[0_0_10px_rgba(245,158,11,0.5)]'}`} />
                          <div className="flex-1 min-w-0">
                            <p className="text-[12px] font-black text-foreground/90 truncate uppercase tracking-tight">{task.title || 'Untitled task'}</p>
                            <p className="text-[12px] text-muted-foreground font-mono tracking-tighter mt-1 uppercase">{task.status === 'completed' ? 'Completed' : task.status === 'in-progress' ? 'Active' : task.status === 'submitted-for-review' ? 'In Review' : 'Standby'}</p>
@@ -506,7 +506,7 @@ export default function ProjectsPage() {
                       </div>
                     )) : (
                       <div className="p-6 text-center bg-card/20 rounded-xl border border-slate-800 border-dashed">
-                        <p className="text-[12px] text-slate-600 font-black uppercase tracking-widest">No recent signal activity</p>
+                        <p className="text-[12px] text-slate-400 font-black uppercase tracking-widest">No recent signal activity</p>
                       </div>
                     )}
                   </div>
@@ -518,7 +518,7 @@ export default function ProjectsPage() {
                 <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-4">
                   <div className="space-y-1">
                     <h3 className="text-[12px] font-black uppercase tracking-[0.4em] text-muted-foreground flex items-center gap-3">
-                      <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse motion-reduce:animate-none" />
                       National Mission Readiness (NMR)
                     </h3>
                     <p className="text-xs text-foreground/50 font-medium">Share of workflow tasks completed across all active missions.</p>
@@ -536,10 +536,10 @@ export default function ProjectsPage() {
                   <div className="w-full h-4 bg-card/80 rounded-full border border-slate-800 overflow-hidden p-1 shadow-inner">
                     {/* Primary Progress Fill */}
                     <div 
-                      className="h-full bg-gradient-to-r from-emerald-900 via-primary to-primary-foreground rounded-full shadow-[0_0_20px_rgba(59,130,246,0.3)] transition-all duration-1500 ease-out flex items-center justify-end px-2" 
+                      className="h-full bg-gradient-to-r from-emerald-900 via-primary to-primary-foreground rounded-full shadow-[0_0_20px_rgba(59,130,246,0.3)] transition-all duration-1500 ease-out motion-reduce:transition-none flex items-center justify-end px-2" 
                       style={{ width: `${missionStats.readiness}%` }}
                     >
-                      <div className="h-full w-4 bg-white/20 blur-sm animate-pulse rounded-full" />
+                      <div className="h-full w-4 bg-white/20 blur-sm animate-pulse motion-reduce:animate-none rounded-full" />
                     </div>
                   </div>
                   
@@ -552,7 +552,7 @@ export default function ProjectsPage() {
                 </div>
                 
                 <div className="flex justify-between mt-4">
-                  <div className="flex gap-4">
+                  <div className="flex flex-wrap gap-4">
                     <div className="flex items-center gap-2">
                       <div className="h-2 w-2 rounded-sm bg-emerald-500" />
                       <span className="text-[12px] font-black uppercase tracking-widest text-muted-foreground">Completed tasks</span>
@@ -585,6 +585,7 @@ export default function ProjectsPage() {
             <Input
               type="text"
               placeholder="Search projects..."
+              aria-label="Search projects"
               value={searchQuery}
               onChange={(e) => {
                 // PERF: Defer filter update so it doesn't block keystrokes (reduces Max FID)
@@ -593,13 +594,14 @@ export default function ProjectsPage() {
               }}
               className="max-w-md"
             />
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter by category">
               <span className="text-sm text-muted-foreground mr-2">Filter by category:</span>
               {(['all', ...categories] as const).map((cat) => (
                 <Button
                   key={cat}
                   variant={selectedCategory === cat ? 'default' : 'outline'}
                   size="sm"
+                  aria-pressed={selectedCategory === cat}
                   onClick={() => {
                     // PERF: Defer category change — non-urgent, can be interrupted
                     startTransition(() => setSelectedCategory(cat));
@@ -629,10 +631,12 @@ export default function ProjectsPage() {
               ))}
             </div>
           ) : sortedProjects.length === 0 ? (
-            <div className="text-center text-muted-foreground py-12">
-              {searchQuery.trim()
-                ? "No projects found matching your search."
-                : "No projects available yet. Check back soon!"}
+            <div className="text-center py-12 px-6 border-2 border-dashed border-slate-800 rounded-2xl bg-card/20">
+              <p className="text-sm text-muted-foreground">
+                {searchQuery.trim()
+                  ? "No projects found matching your search."
+                  : "No projects available yet. Check back soon!"}
+              </p>
             </div>
           ) : (
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -737,8 +741,9 @@ export default function ProjectsPage() {
                           const percent = isCompleted ? 100 : (total > 0 ? Math.round((completed / total) * 100) : 0);
                           const displayCompleted = isCompleted ? total : completed;
                           return (
-                            <div
-                              className="w-full cursor-pointer"
+                            <button
+                              type="button"
+                              className="w-full cursor-pointer text-left"
                               onClick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
@@ -746,6 +751,7 @@ export default function ProjectsPage() {
                                 setIsRoadmapOpen(true);
                               }}
                               title="View roadmap"
+                              aria-label={`View roadmap for ${project.title}`}
                             >
                               <div className="flex items-center justify-between mb-2">
                                 <span className="text-sm font-medium">Progress</span>
@@ -753,7 +759,7 @@ export default function ProjectsPage() {
                               </div>
                               <Progress value={percent} />
                               <p className="mt-1 text-xs text-muted-foreground">Click to view roadmap</p>
-                            </div>
+                            </button>
                           );
                         })()}
                       </div>

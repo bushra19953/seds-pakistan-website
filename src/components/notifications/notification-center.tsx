@@ -19,6 +19,7 @@ import { usePollingRefresh } from '@/hooks/use-polling-refresh';
 import { requestPushPermission, getNotificationPermission } from '@/lib/push-notifications';
 import { serverWrite } from '@/lib/client/server-write';
 import { notificationsSupaEnabled, useSupaPersonalNotifications } from '@/lib/notifications-supa-client';
+import { isNotificationRead, notificationUnreadCount } from '@/lib/notification-read-state';
 
 
 // =============================================================================
@@ -30,7 +31,12 @@ interface PersonalNotification {
     title?: string;
     body?: string;
     link?: string;
-    isRead: boolean;
+    // Both spellings exist in this store (MSG30): the service/tasks
+    // family writes isRead, the helper/webhooks family writes read
+    // and no isRead. Either may be absent; the normalized predicate
+    // (notification-read-state) decides, never a bare field check.
+    isRead?: boolean;
+    read?: boolean;
     timestamp?: any;
     deadline?: any;
     capacity?: number;
@@ -402,8 +408,12 @@ export function NotificationCenter({
         return result;
     }, [personalNotifs]);
 
+    // MSG30: one normalized badge formula. The old strict check
+    // treated a missing isRead as read, so the helper/webhooks
+    // family (read only, no isRead) never counted — while the item
+    // below still rendered it unread. The predicate counts it.
     const unreadPersonal = useMemo(() => {
-        return personal.filter(n => n && n.isRead === false).length;
+        return notificationUnreadCount(personal);
     }, [personal]);
 
     const unreadAnnouncements = useMemo(() => {
@@ -515,7 +525,9 @@ export function NotificationCenter({
     // ==========================================================================
 
     const renderPersonalItem = (n: PersonalNotification, compact: boolean = false) => {
-        const isActuallyRead = n.isRead;
+        // MSG30: same normalized predicate as the badge count, so a
+        // list item and the badge can never disagree about one doc.
+        const isActuallyRead = isNotificationRead(n);
 
         // FOMO BADGE LOGIC
         let fomoBadge = null;

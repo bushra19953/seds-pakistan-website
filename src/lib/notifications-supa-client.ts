@@ -42,6 +42,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Timestamp } from 'firebase/firestore';
 import { usePollingRefresh } from '@/hooks/use-polling-refresh';
+import { isNotificationUnread } from '@/lib/notification-read-state';
 
 // =============================================================================
 // FLAG
@@ -89,7 +90,11 @@ export interface SupaPersonalNotification {
     title?: string;
     body?: string;
     link?: string;
-    isRead: boolean;
+    // MSG30: both spellings exist in this store; isRead may be
+    // absent on helper/webhooks docs. Readers use the normalized
+    // predicate, never a bare field check.
+    isRead?: boolean;
+    read?: boolean;
     timestamp?: Timestamp;
     deadline?: Timestamp;
     capacity?: number;
@@ -338,7 +343,10 @@ export function useSupaPersonalNotifications(options: {
     const markRead = useCallback(async (id: string) => {
         const previous = dataRef.current;
         if (previous) {
-            applyData(previous.map((n) => (n.id === id ? { ...n, isRead: true } : n)));
+            // MSG30: the optimistic update sets BOTH spellings, so
+            // the item reads as read under either spelling on revert
+            // paths and on any consumer that still checks one field.
+            applyData(previous.map((n) => (n.id === id ? { ...n, isRead: true, read: true } : n)));
         }
         try {
             await markNotificationReadViaApi(id, depsRef.current);
@@ -351,9 +359,13 @@ export function useSupaPersonalNotifications(options: {
     const markAllRead = useCallback(async () => {
         const previous = dataRef.current;
         if (!previous) return;
-        const unreadIds = previous.filter((n) => n && n.isRead === false).map((n) => n.id);
+        // MSG30: the old isRead-only selection never PATCHed the
+        // helper/webhooks family (read only, no isRead), so those
+        // docs survived every "mark all done". The normalized
+        // predicate selects both families.
+        const unreadIds = previous.filter((n) => n && isNotificationUnread(n)).map((n) => n.id);
         if (unreadIds.length === 0) return;
-        applyData(previous.map((n) => (n.isRead === false ? { ...n, isRead: true } : n)));
+        applyData(previous.map((n) => (isNotificationUnread(n) ? { ...n, isRead: true, read: true } : n)));
         try {
             await Promise.all(unreadIds.map((id) => markNotificationReadViaApi(id, depsRef.current)));
         } catch (err) {

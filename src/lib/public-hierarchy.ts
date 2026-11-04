@@ -142,6 +142,14 @@ export interface PublicHierarchyPerson {
    * members[0] by position, and bands officers by level (F2).
    */
   level: number;
+  /**
+   * Vacant-parent label (F4): the office title of the parent role
+   * a deputy reports to when no entry in this section holds that
+   * role. Present ONLY on vacant-parent deputies, so the renderer
+   * band can label them with the vacant office; attached deputies
+   * (edge exists) never carry it.
+   */
+  parentTitle?: string;
 }
 
 export interface PublicHierarchySection {
@@ -153,16 +161,20 @@ export interface PublicHierarchySection {
   /**
    * Data-derived parent edges for the visual org chart, as
    * child member index -> parent member index within this section.
-   * An edge exists ONLY where the data supports it: a custom role's
-   * registry definition names its parent role (parentRoleKey), and
-   * exactly one entry in the same section holds that role. When the
-   * parent role is vacant, held by more than one person (co-chairs),
-   * or held in another section, NO edge is emitted — the chart
-   * places that deputy in a level band instead of inventing a
-   * reporting line. Omitted entirely when a section has no edges.
-   * Person objects keep their 7 output keys (id, name, roleTitle,
-   * photoURL, profilePath, isCustomRole, level); only the internal
-   * sort/identity fields are stripped.
+   * A custom role's registry definition names its parent role
+   * (parentRoleKey). When entries in the same section hold that
+   * role, the edge attaches to the FIRST holder by level asc, XP
+   * desc, name asc (F4) — the feed is already in that order, so
+   * the first match is the deterministic attachment, never an
+   * invented choice. When no entry in the section holds the role
+   * (vacant, or held only in another section), NO edge is emitted
+   * and the deputy instead carries parentTitle (F4), so the chart
+   * band can label it with the vacant office. Omitted entirely
+   * when a section has no edges. Person objects keep their 7
+   * output keys (id, name, roleTitle, photoURL, profilePath,
+   * isCustomRole, level), plus parentTitle on vacant-parent
+   * deputies only; only the internal sort/identity fields are
+   * stripped.
    */
   parents?: Record<string, number>;
 }
@@ -425,11 +437,14 @@ export function buildPublicHierarchy(
 
   /**
    * Sort a section's entries, derive its parent edges from the
-   * sorted positions, and strip the internal fields. An edge is
-   * emitted only when a custom entry's definition-named parent role
-   * is held by exactly one entry in the same section — vacant,
-   * co-held and cross-section parents produce no edge, so the chart
-   * never draws a reporting line the data does not support.
+   * sorted positions, and strip the internal fields. A custom
+   * entry's definition-named parent role (parentRoleKey) attaches
+   * to the FIRST holder in feed order — level asc, XP desc, name
+   * asc (F2/F4) — so a co-held parent attaches deterministically
+   * instead of floating. A vacant or cross-section parent produces
+   * no edge, and the deputy carries parentTitle (F4) for the band
+   * label, so the chart never draws a reporting line the data
+   * does not support.
    */
   const finalize = (
     list: PlacedPerson[]
@@ -438,13 +453,22 @@ export function buildPublicHierarchy(
     const parents: Record<string, number> = {};
     sorted.forEach((entry, i) => {
       if (!entry.parentRoleKey) return;
-      const matches: number[] = [];
+      // Holders of the parent role in this section, in feed order
+      // (level asc, XP desc, name asc). The first is the F4
+      // attachment for a co-held parent.
+      const holders: number[] = [];
       sorted.forEach((candidate, j) => {
         if (j !== i && candidate.identityKey === entry.parentRoleKey) {
-          matches.push(j);
+          holders.push(j);
         }
       });
-      if (matches.length === 1) parents[String(i)] = matches[0];
+      if (holders.length === 0) {
+        // Vacant parent (F4): no edge; the deputy carries the
+        // vacant office title for the renderer band label.
+        entry.parentTitle = getRoleDisplayName(entry.parentRoleKey);
+        return;
+      }
+      parents[String(i)] = holders[0];
     });
     const members = sorted.map(
       ({

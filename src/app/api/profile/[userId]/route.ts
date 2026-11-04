@@ -6,6 +6,7 @@ import { hasSufficientRole } from '@/lib/roles';
 import { resolvePublicDirectoryOptIn } from '@/lib/privacy';
 import { bustIdentity } from '@/lib/server/identity-cache';
 import { getActiveChapterDocs } from '@/lib/server/chapters-cache';
+import { resolveCustomRolesFromStoredDoc } from '@/lib/server/effective-role';
 import { createReadBudget } from '@/lib/server/read-deadline';
 import {
   identityPrimaryFlagOn,
@@ -605,6 +606,31 @@ export async function GET(
         ]);
         baseProfile.email = ownerEmail || '';
         baseProfile.whatsappNumber = ownContact?.whatsappNumber ?? ownContact?.whatsapp ?? '';
+      }
+
+      // T2-4 (display only): the holder's primary live custom-role
+      // grant title, resolved from the stored doc THIS request
+      // already holds (`data`, served by the profile seam — Supa
+      // mirror under the flag, Firestore in legacy) via
+      // resolveCustomRolesFromStoredDoc: definition-backed grants
+      // from additionalRoles, expired grants excluded at read time
+      // (contracts s.2.2), deterministic slug order, so [0] is the
+      // primary title. Deliberately NOT getEffectiveRole(uid): that
+      // resolver opens with a raw Firestore users-doc read, which
+      // would break the supa-shell contract (route-supa-profile
+      // pins zero Firestore user-doc gets under the flag). Profile
+      // headers render the title as the role chip when present and
+      // the base role title exactly as before when null. No
+      // permission or role-resolution semantics read this field.
+      // Any failure (including a spent read budget) degrades to
+      // null — the pre-T2-4 payload — never to a broken profile.
+      try {
+        const custom = await dependentBudget.withBudget('profile-custom-grant-title', () =>
+          resolveCustomRolesFromStoredDoc(data),
+        );
+        baseProfile.customGrantTitle = custom.customAdditionalRoles[0]?.title ?? null;
+      } catch {
+        baseProfile.customGrantTitle = null;
       }
 
       result.profile = baseProfile;

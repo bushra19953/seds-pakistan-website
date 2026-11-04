@@ -333,6 +333,17 @@ export default function AdminProjectsPage() {
     );
   }
 
+  // Current cover, if any: media[0] is what the save path persists as
+  // imageUrl. Missing media, an empty list, and an empty first entry
+  // (the free-text field's split of an empty string) are all "no
+  // cover", never a broken preview: only a non-empty string renders.
+  const coverUrl =
+    Array.isArray(newProjectData.media) &&
+    typeof newProjectData.media[0] === 'string' &&
+    newProjectData.media[0].length > 0
+      ? newProjectData.media[0]
+      : null;
+
   return (
     <AuthorizationGate permission="canManageProjects">
       <div className="mb-8">
@@ -503,6 +514,33 @@ export default function AdminProjectsPage() {
                 placeholder="https://image1.jpg, https://image2.png"
               />
               <div className="col-span-4 text-xs text-muted-foreground -mt-2 ml-[calc(25%+0.5rem)]">Paste one or more URLs separated by commas.</div>
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label className="text-right">Cover image</Label>
+              <div className="col-span-3 space-y-2">
+                {coverUrl ? (
+                  <div className="space-y-1">
+                    <img src={coverUrl} alt="Current cover" className="max-h-40 rounded-md object-contain" />
+                    <div className="text-xs text-muted-foreground break-all">{coverUrl}</div>
+                  </div>
+                ) : null}
+                <ImageUploader
+                  onUploadComplete={(url) => {
+                    // Drive-backed upload (uploadToDrive, kind
+                    // 'image', context 'admin', inside ImageUploader).
+                    // The uploaded image becomes the cover: media[0],
+                    // which the save path persists as imageUrl. The
+                    // rest of the media list is preserved, and an
+                    // empty or non-string callback changes nothing.
+                    if (typeof url !== 'string' || url.length === 0) return;
+                    setNewProjectData((prev) => {
+                      const rest = Array.isArray(prev.media) ? prev.media.slice(1) : [];
+                      return { ...prev, media: [url, ...rest] };
+                    });
+                  }}
+                />
+                <div className="text-xs text-muted-foreground">Uploading replaces the cover (the first Media URL); other media URLs are kept.</div>
+              </div>
             </div>
 
 

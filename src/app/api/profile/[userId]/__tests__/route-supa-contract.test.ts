@@ -314,7 +314,7 @@ describe('GET /api/profile/[userId] migration contracts: shape', () => {
     const { body } = await getProfile('shape-1');
     expect(Object.keys(body.profile).sort()).toEqual(
       [
-        'agreedToToTermsVersion', 'badges', 'bannerURL', 'bio', 'chapterId', 'displayName',
+        'agreedToToTermsVersion', 'badges', 'bannerURL', 'bio', 'chapterId', 'customGrantTitle', 'displayName',
         'eventsAttended', 'fieldOfStudy', 'githubUrl', 'linkedinUrl', 'photoURL', 'points',
         'publicDirectoryOptIn', 'role', 'skillIds', 'tasksAssignedCount', 'tasksCompletedOnTimeCount',
         'termsAccepted', 'termsAcceptedAt', 'totalHoursWorked', 'uid', 'university', 'username',
@@ -495,6 +495,53 @@ describe('GET /api/profile/[userId] migration contracts: flag / fallback equival
       );
     });
   }
+});
+
+describe('GET /api/profile/[userId] T2-4 customGrantTitle (display only)', () => {
+  // T2-4: the profile payload carries the holder's primary live
+  // custom-role grant title so profile headers can render it as the
+  // role chip. Resolution is the real resolveCustomRolesFromStoredDoc
+  // over the stored doc the route already holds (Brief 8: zero
+  // additional users-doc reads), against the fake store above.
+  const GRANT_SLUG = 'custom_presidents_executive_apprentice';
+  users.push(
+    { id: 'grant-1', data: { displayName: 'Grant Person', displayRole: 'member', role: 'member', chapterId: 'ch-ist', additionalRoles: [GRANT_SLUG] } },
+    { id: 'grant-expired', data: { displayName: 'Expired Person', displayRole: 'member', role: 'member', chapterId: 'ch-ist', additionalRoles: [GRANT_SLUG], expiresAt: '2026-01-01T00:00:00.000Z', expiresRoleKey: GRANT_SLUG } },
+    { id: 'grant-none', data: { displayName: 'Plain Person', displayRole: 'member', role: 'member', chapterId: 'ch-ist', additionalRoles: [] } },
+  );
+  (collections as any).roleDefinitions = [
+    {
+      id: GRANT_SLUG,
+      data: {
+        isCustom: true,
+        name: "President's Executive Apprentice",
+        label: "President's Executive Apprentice",
+        parentRoleKey: 'chapter_design_chair',
+        chapterId: 'seds-ist-chapter',
+        description: 'Title-only grant (FC-2026-0054 shape).',
+        permissions: [],
+        isActive: true,
+      },
+    },
+  ];
+
+  it('a live custom grant surfaces its definition title as customGrantTitle', async () => {
+    const { res, body } = await getProfile('grant-1');
+    expect(res.status).toBe(200);
+    expect(body.profile.customGrantTitle).toBe("President's Executive Apprentice");
+    // Display only: the base role payload is untouched.
+    expect(body.profile.role).toBe('member');
+  });
+
+  it('no grant: customGrantTitle is null (headers render the base role exactly as before)', async () => {
+    const { body } = await getProfile('grant-none');
+    expect(body.profile.customGrantTitle).toBeNull();
+  });
+
+  it('an expired grant does not surface (read-time derivation, contracts s.2.2)', async () => {
+    const { body } = await getProfile('grant-expired');
+    expect(body.profile.customGrantTitle).toBeNull();
+  });
 });
 
 describe('PATCH /api/profile/[userId] contact-gating', () => {

@@ -6,6 +6,7 @@ import { collection, doc, limit, orderBy, query, getDocs } from "firebase/firest
 import { useCollection } from "@/firebase";
 import { announcementsCollection, ANNOUNCEMENT_LIST_LIMIT_COUNT, fetchVisibleAnnouncementsSet, isAnnouncementVisibleTo, resolveAnnouncementViewer, visibleAnnouncementQueries, type AnnouncementDoc } from "@/lib/announcements";
 import { notificationsSupaEnabled, useSupaPersonalNotifications } from "@/lib/notifications-supa-client";
+import { isNotificationRead } from "@/lib/notification-read-state";
 import { usePollingRefresh } from "@/hooks/use-polling-refresh";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -138,7 +139,7 @@ export default function NotificationsCenterPage() {
               ) : personal && personal.length > 0 ? (
                 <div className="space-y-2">
                   {filterBySearch(personal).map((n) => (
-                    <div key={n.id} className={`border rounded p-3 ${n.isRead ? 'opacity-75' : ''}`}>
+                    <div key={n.id} className={`border rounded p-3 ${isNotificationRead(n) ? 'opacity-75' : ''}`}>
                       <div className="font-medium">{n.title || 'Notification'}</div>
                       {n.body && <div className="text-muted-foreground mt-1 text-sm">{n.body}</div>}
                       {n.link && (

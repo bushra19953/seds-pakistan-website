@@ -48,6 +48,7 @@ const mockState = {
   roles: {} as Record<string, DocData>,
   roleDefinitions: {} as Record<string, DocData>,
   roleDefinitionReads: 0,
+  userDocReads: 0,
   dbNull: false,
 };
 
@@ -60,7 +61,10 @@ function mockDb() {
     collection: (name: string) => ({
       doc: (id: string) => ({
         get: async () => {
-          if (name === 'users') return mockSnap(mockState.users[id]);
+          if (name === 'users') {
+            mockState.userDocReads += 1;
+            return mockSnap(mockState.users[id]);
+          }
           if (name === 'roles') return mockSnap(mockState.roles[id]);
           if (name === 'roleDefinitions') {
             mockState.roleDefinitionReads += 1;
@@ -85,7 +89,11 @@ jest.mock('../phase1-flags', () => ({
   }),
 }));
 
-import { getEffectiveRole, type EffectiveRoleResult } from '../effective-role';
+import {
+  getEffectiveRole,
+  resolveCustomRolesFromStoredDoc,
+  type EffectiveRoleResult,
+} from '../effective-role';
 
 interface CustomResolutionLike {
   slug: string;
@@ -144,6 +152,7 @@ beforeEach(() => {
   mockState.roles = {};
   mockState.roleDefinitions = {};
   mockState.roleDefinitionReads = 0;
+  mockState.userDocReads = 0;
   mockState.dbNull = false;
 });
 
@@ -456,6 +465,111 @@ describe('custom resolution (plan s.3.2, K2-reconciled)', () => {
       source: 'mirror-fallback',
     });
     expect(r.customAdditionalRoles).toEqual([CUSTOM_RES]);
+  });
+
+  it('multiple grants: customAdditionalRoles is slug-sorted, so [0] is the deterministic primary display title (T2-4)', async () => {
+    // The profile header (T2-4) shows customAdditionalRoles[0].title
+    // as the primary role chip. effective-role.ts sorts by slug, so
+    // the primary title is deterministic whatever the stored order.
+    const slugB = 'custom_events_deputy_floor_marshalling';
+    const slugA = 'custom_catering_lead';
+    mockState.mode = 'legacy';
+    mockState.users['uid-two-grants'] = {
+      role: 'member',
+      chapterId: CHAPTER,
+      additionalRoles: [slugB, slugA], // stored B-first on purpose
+    };
+    mockState.roleDefinitions[slugB] = {
+      ...CUSTOM_DEF,
+      name: 'Events Deputy - Floor Marshalling',
+      label: 'Events Deputy - Floor Marshalling',
+    };
+    mockState.roleDefinitions[slugA] = {
+      ...CUSTOM_DEF,
+      name: 'Catering Lead',
+      label: 'Catering Lead',
+    };
+
+    const r = await resolve('uid-two-grants');
+    expect(r.customAdditionalRoles.map((c) => c.slug)).toEqual([slugA, slugB]);
+    expect(r.customAdditionalRoles[0].title).toBe('Catering Lead');
+    expect(r.customAdditionalRoles[1].title).toBe(
+      'Events Deputy - Floor Marshalling',
+    );
+  });
+
+  describe('resolveCustomRolesFromStoredDoc (seam-served surfaces, Brief 8)', () => {
+    // The profile and portfolio routes already hold the stored doc as
+    // served by the seam; this resolver must extract the same custom
+    // grants getEffectiveRole's legacy branch does, with ZERO
+    // users-doc reads (route-supa-profile pins that contract) and
+    // definition lookups only when a custom_ candidate exists.
+    const STORED = {
+      role: 'member',
+      chapterId: CHAPTER,
+      additionalRoles: [CUSTOM_SLUG],
+    };
+
+    it('surfaces a live grant from the stored doc with zero users reads', async () => {
+      mockState.roleDefinitions[CUSTOM_SLUG] = { ...CUSTOM_DEF };
+      const r = await resolveCustomRolesFromStoredDoc({ ...STORED });
+      expect(r.customAdditionalRoles.map((c) => c.slug)).toEqual([CUSTOM_SLUG]);
+      expect(r.customAdditionalRoles[0].title).toBe('Poster Team Lead');
+      expect(mockState.userDocReads).toBe(0);
+      expect(mockState.roleDefinitionReads).toBe(1);
+    });
+
+    it('no custom candidates: empty result and zero reads of any kind', async () => {
+      const r = await resolveCustomRolesFromStoredDoc({
+        role: 'member',
+        chapterId: CHAPTER,
+        additionalRoles: [],
+      });
+      expect(r).toEqual({ customPrimary: null, customAdditionalRoles: [] });
+      expect(mockState.userDocReads).toBe(0);
+      expect(mockState.roleDefinitionReads).toBe(0);
+    });
+
+    it('undefined stored doc: empty result, zero reads', async () => {
+      const r = await resolveCustomRolesFromStoredDoc(undefined);
+      expect(r).toEqual({ customPrimary: null, customAdditionalRoles: [] });
+      expect(mockState.userDocReads).toBe(0);
+      expect(mockState.roleDefinitionReads).toBe(0);
+    });
+
+    it('an expired grant on the stored doc does not surface (contracts s.2.2)', async () => {
+      mockState.roleDefinitions[CUSTOM_SLUG] = { ...CUSTOM_DEF };
+      const r = await resolveCustomRolesFromStoredDoc({
+        ...STORED,
+        expiresAt: '2026-01-01T00:00:00.000Z',
+        expiresRoleKey: CUSTOM_SLUG,
+      });
+      expect(r.customAdditionalRoles).toEqual([]);
+      expect(mockState.userDocReads).toBe(0);
+    });
+
+    it('multiple grants stay slug-sorted, so [0] is the deterministic primary title', async () => {
+      const slugB = 'custom_events_deputy_floor_marshalling';
+      const slugA = 'custom_catering_lead';
+      mockState.roleDefinitions[slugB] = {
+        ...CUSTOM_DEF,
+        name: 'Events Deputy - Floor Marshalling',
+        label: 'Events Deputy - Floor Marshalling',
+      };
+      mockState.roleDefinitions[slugA] = {
+        ...CUSTOM_DEF,
+        name: 'Catering Lead',
+        label: 'Catering Lead',
+      };
+      const r = await resolveCustomRolesFromStoredDoc({
+        role: 'member',
+        chapterId: CHAPTER,
+        additionalRoles: [slugB, slugA], // stored B-first on purpose
+      });
+      expect(r.customAdditionalRoles.map((c) => c.slug)).toEqual([slugA, slugB]);
+      expect(r.customAdditionalRoles[0].title).toBe('Catering Lead');
+      expect(mockState.userDocReads).toBe(0);
+    });
   });
 
   it('the same custom slug as primary AND additional is reported once, as customPrimary', async () => {

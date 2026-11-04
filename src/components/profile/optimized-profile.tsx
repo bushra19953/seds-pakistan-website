@@ -637,13 +637,20 @@ export function OptimizedProfile({
                 )}
 
                 <Badge variant="outline" className="bg-purple-500/10 text-purple-400 border-purple-500/20 backdrop-blur-sm gap-1 pl-2 uppercase">
-                  <Shield className="h-3 w-3" /> {getRoleDisplayName(profile?.role, uid)}
+                  <Shield className="h-3 w-3" /> {profile?.customGrantTitle || getRoleDisplayName(profile?.role, uid)}
                 </Badge>
                 {(() => {
-                  // Custom role marker (consumers Surface 5): only when
-                  // the displayed role is a validated custom definition.
+                  // Custom role marker (consumers Surface 5): when the
+                  // displayed title is a validated custom definition —
+                  // either the role itself is a custom slug, or a live
+                  // custom-role GRANT title is being shown (T2-4: the
+                  // API resolves live grants server-side into
+                  // profile.customGrantTitle; the base role stays in
+                  // profile.role and renders exactly as before when no
+                  // live grant exists).
                   const slug = normalizeRoleSlug(profile?.role || '');
-                  return isCustomRoleSlug(slug) && getCustomRoleTitleSync(slug) ? (
+                  return profile?.customGrantTitle ||
+                    (isCustomRoleSlug(slug) && getCustomRoleTitleSync(slug)) ? (
                     <CustomRoleMarker />
                   ) : null;
                 })()}

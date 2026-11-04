@@ -317,6 +317,46 @@ export default function ProjectsPage() {
     return tb - ta;
   });
 
+  // Generated cover art for projects that have no uploaded imagery yet.
+  // Display-layer only: matched by title keywords, used solely when the
+  // project itself carries no imageUrl/media. Files live in
+  // public/projects/covers (illustrations, SEDS HUD palette).
+  const COVER_MATCHERS: Array<[string, string]> = [
+    ['grand prix', ''],
+    ['mars rover', '/projects/covers/mars-rover.jpg'],
+    ['webots', '/projects/covers/mars-rover.jpg'],
+    ['hardware sourcing', '/projects/covers/sourcing-bridge.jpg'],
+    ['sourcing bridge', '/projects/covers/sourcing-bridge.jpg'],
+    ['cubesat', '/projects/covers/cubesat-3u.jpg'],
+    ['sounding rocketry', '/projects/covers/sounding-rocketry.jpg'],
+    ['sub-orbital', '/projects/covers/sounding-rocketry.jpg'],
+    ['china aerospace bridge', '/projects/covers/china-bridge.jpg'],
+    ['early warning', '/projects/covers/dewte-2025.jpg'],
+    ['dewte', '/projects/covers/dewte-2025.jpg'],
+    ['lunar rover', '/projects/covers/lunar-rover.jpg'],
+    ['space week', '/projects/covers/world-space-week.jpg'],
+    ['living in space', '/projects/covers/world-space-week.jpg'],
+    ['explore space', '/projects/covers/explore-space.jpg'],
+    ['robot olympiad', '/projects/covers/robot-olympiad.jpg'],
+    ['summer school', '/projects/covers/summer-school.jpg'],
+    ['safar', '/projects/covers/safar-e-nau.jpg'],
+  ];
+  const generatedCoverFor = (project: any): string | undefined => {
+    const title = String(project?.title || '').toLowerCase();
+    for (const [needle, file] of COVER_MATCHERS) {
+      if (file && title.includes(needle)) return file;
+    }
+    return undefined;
+  };
+
+  // Featured project: the newest project leads the page at full width
+  // when no search/filter is active; the rest form the grid.
+  const featuredProject =
+    !searchQuery.trim() && selectedCategory === 'all' && sortedProjects.length > 0
+      ? sortedProjects[0]
+      : null;
+  const gridProjects = featuredProject ? sortedProjects.slice(1) : sortedProjects;
+
   // Check if user can add projects: restrict to project admin roles
   const canAddProject = !!(user && role && (
     isPresident(role, user.uid) ||
@@ -419,7 +459,7 @@ export default function ProjectsPage() {
                      </Badge>
                    </div>
 
-                   <div className="space-y-4 max-h-[300px] overflow-y-auto pr-3 custom-scrollbar">
+                   <div className="space-y-4 max-h-[440px] overflow-y-auto pr-3 custom-scrollbar">
                      {missionStats.workflows.length > 0 ? missionStats.workflows.map((wf) => (
                        <div key={wf.id} className="relative bg-card/40 border border-slate-800/80 rounded-2xl p-5 hover:bg-card/60 transition-all duration-500 group/wf overflow-hidden">
                          <div className="absolute top-0 left-0 w-1 h-full bg-primary/20 group-hover/wf:bg-primary transition-colors duration-500" />
@@ -609,6 +649,9 @@ export default function ProjectsPage() {
                   {cat}
                 </Button>
               ))}
+              <span className="ml-auto text-xs font-mono text-muted-foreground">
+                {sortedProjects.length} project{sortedProjects.length === 1 ? '' : 's'}
+              </span>
             </div>
           </div>
 
@@ -635,8 +678,94 @@ export default function ProjectsPage() {
                 : "No projects available yet. Check back soon!"}
             </div>
           ) : (
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-              {sortedProjects.map((project, index) => (
+            <>
+              {featuredProject && (
+                <Card className="mb-10 overflow-hidden border-accent/20 bg-card/80 backdrop-blur-sm shadow-xl shadow-accent/5">
+                  <div className="grid md:grid-cols-5">
+                    <Link
+                      href={`/projects/detail?slug=${featuredProject.slug || featuredProject.id}`}
+                      className="md:col-span-3 block"
+                    >
+                      {(() => {
+                        const fSrc =
+                          cleanUrl(featuredProject?.imageUrl) ||
+                          cleanUrl(featuredProject?.image_url) ||
+                          (Array.isArray(featuredProject?.media) && typeof featuredProject.media[0] === 'string'
+                            ? cleanUrl(featuredProject.media[0])
+                            : undefined) ||
+                          generatedCoverFor(featuredProject);
+                        return fSrc ? (
+                          <Image
+                            src={fSrc}
+                            alt={featuredProject.title}
+                            width={1200}
+                            height={675}
+                            className="h-full w-full object-cover aspect-video md:aspect-auto"
+                            unoptimized={fSrc.includes('drive.google.com')}
+                            priority
+                          />
+                        ) : (
+                          <div className="aspect-video md:aspect-auto md:h-full w-full bg-gradient-to-br from-[#0B0F19] via-[#111827] to-[#0B0F19] flex items-center justify-center">
+                            <Image src="/assets/logo.png" alt="SEDS Pakistan" width={220} height={124} className="w-48 h-auto opacity-90" />
+                          </div>
+                        );
+                      })()}
+                    </Link>
+                    <div className="md:col-span-2 p-8 flex flex-col gap-5">
+                      {(() => {
+                        const s = (featuredProject.status || '').toLowerCase();
+                        if (s === 'completed') return <Badge variant="secondary" className="self-start bg-emerald-500/15 text-emerald-400 border-emerald-500/30">Completed</Badge>;
+                        if (s === 'active' || s === 'published' || s === 'in_progress') return <Badge variant="secondary" className="self-start bg-sky-500/15 text-sky-400 border-sky-500/30">Ongoing</Badge>;
+                        return null;
+                      })()}
+                      <Link href={`/projects/detail?slug=${featuredProject.slug || featuredProject.id}`}>
+                        <h2 className="text-4xl font-headline tracking-wide leading-none hover:text-primary transition-colors">{featuredProject.title}</h2>
+                      </Link>
+                      <p className="font-body text-muted-foreground line-clamp-4">
+                        {stripMarkdown(featuredProject?.description || featuredProject?.summary || '')}
+                      </p>
+                      {(() => {
+                        const total = typeof featuredProject?.taskCount === 'number' ? featuredProject.taskCount : 0;
+                        const completed = typeof featuredProject?.completedTaskCount === 'number' ? featuredProject.completedTaskCount : 0;
+                        const isCompleted = (featuredProject?.status || '').toLowerCase() === 'completed';
+                        const percent = isCompleted ? 100 : total > 0 ? Math.round((completed / total) * 100) : 0;
+                        return (
+                          <div className="mt-auto space-y-4">
+                            <div>
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="text-sm font-medium">Progress</span>
+                                <span className="text-xs text-muted-foreground">{isCompleted ? '100%' : `${completed}/${total} (${percent}%)`}</span>
+                              </div>
+                              <div className="flex gap-0.5 h-1.5" role="img" aria-label={`${percent}% complete`}>
+                                {[...Array(15)].map((_, i) => (
+                                  <div key={i} className={`h-full flex-1 rounded-sm ${i < Math.round((percent / 100) * 15) ? 'bg-primary' : 'bg-muted'}`} />
+                                ))}
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap gap-3">
+                              <Button asChild className="bg-primary text-black hover:bg-white font-accent font-black tracking-[0.15em] uppercase">
+                                <Link href={`/projects/detail?slug=${featuredProject.slug || featuredProject.id}`}>View Project</Link>
+                              </Button>
+                              <Button
+                                variant="outline"
+                                className="font-accent font-black tracking-[0.15em] uppercase"
+                                onClick={() => {
+                                  setRoadmapProject(featuredProject);
+                                  setIsRoadmapOpen(true);
+                                }}
+                              >
+                                Roadmap
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                </Card>
+              )}
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+              {gridProjects.map((project, index) => (
                 <div key={project.id} className="group block animate-in fade-in slide-in-from-bottom-12 duration-500" style={{ animationDelay: `${index * 100}ms` }}>
                   <Card className="bg-card/80 backdrop-blur-sm border-accent/20 shadow-xl shadow-accent/5 overflow-hidden flex flex-col h-full group-hover:border-primary transition-all">
                     <CardHeader>
@@ -685,7 +814,7 @@ export default function ProjectsPage() {
                                   return u;
                                 }
                               }
-                              return undefined;
+                              return generatedCoverFor(project);
                             })();
                             return imageSrc && !failedImages[project.id] ? (
                               <Image
@@ -737,8 +866,10 @@ export default function ProjectsPage() {
                           const percent = isCompleted ? 100 : (total > 0 ? Math.round((completed / total) * 100) : 0);
                           const displayCompleted = isCompleted ? total : completed;
                           return (
-                            <div
-                              className="w-full cursor-pointer"
+                            <button
+                              type="button"
+                              className="w-full text-left cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                              aria-label={`View roadmap for ${project.title}`}
                               onClick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
@@ -751,9 +882,13 @@ export default function ProjectsPage() {
                                 <span className="text-sm font-medium">Progress</span>
                                 <span className="text-xs text-muted-foreground">{isCompleted ? `100%` : `${completed}/${total} (${percent}%)`}</span>
                               </div>
-                              <Progress value={percent} />
+                              <div className="flex gap-0.5 h-1.5" role="img" aria-label={`${percent}% complete`}>
+                                {[...Array(15)].map((_, i) => (
+                                  <div key={i} className={`h-full flex-1 rounded-sm ${i < Math.round((percent / 100) * 15) ? 'bg-primary' : 'bg-muted'}`} />
+                                ))}
+                              </div>
                               <p className="mt-1 text-xs text-muted-foreground">Click to view roadmap</p>
-                            </div>
+                            </button>
                           );
                         })()}
                       </div>
@@ -797,7 +932,8 @@ export default function ProjectsPage() {
                   </Card>
                 </div>
               ))}
-            </div>
+              </div>
+            </>
           )}
         </div>
       </main>

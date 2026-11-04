@@ -31,15 +31,16 @@
  *
  * EDGES ARE ONLY WHAT THE DATA SUPPORTS. The feed derives them
  * server-side (see src/lib/public-hierarchy.ts): a deputy hangs
- * under the holder of the parent role named by the deputy's role
- * definition (parentRoleKey) when exactly one person in the chapter
- * holds it. Everyone else is placed by LEVEL, from the feed's rank
+ * under the first holder of the parent role named by the deputy's
+ * role definition (parentRoleKey) — first by level, XP desc, name
+ * asc (F4), so a co-held chair attaches deterministically instead
+ * of floating. Everyone else is placed by LEVEL, from the feed's rank
  * order — the chapter's top-ranked holder (its president) roots the
  * tree, the chapter vice president sits in his own band directly
  * under the president (MSG24), the remaining officers form the
- * levels beneath, and deputies whose chair is vacant or co-held
- * sit in a dashed level band at the bottom, connected to the level,
- * never to an invented person.
+ * levels beneath, and deputies whose chair is vacant sit in a dashed
+ * level band at the bottom, labelled with the vacant office (F4),
+ * connected to the level, never to an invented person.
  *
  * SCALE (20+ chapters, 500+ role-holders): there is never one
  * mega-tree. Each chapter is its own subtree inside its own card;
@@ -308,6 +309,11 @@ function NodeCard({
           <CustomRoleMarker className="shrink-0 font-semibold" />
         ) : null}
       </span>
+      {person.parentTitle ? (
+        <span className="block w-full break-words text-xs text-muted-foreground">
+          Vacant parent: {person.parentTitle}
+        </span>
+      ) : null}
     </div>
   );
 }

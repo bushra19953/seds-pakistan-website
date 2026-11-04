@@ -19,6 +19,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn, formatDate } from '@/lib/utils';
+import { normalizeRoleSlug } from '@/lib/role-catalog';
 
 export type GrantExpiryState = 'none' | 'set' | 'expiring-30' | 'expiring-7' | 'expired';
 
@@ -39,6 +40,49 @@ export function isCustomRoleKey(key: string | null | undefined): key is string {
     key.startsWith(CUSTOM_ROLE_KEY_PREFIX) &&
     key.length > CUSTOM_ROLE_KEY_PREFIX.length
   );
+}
+
+/**
+ * MSG40 list mapping: raw grant slugs -> the rows the Authority
+ * Inspector renders (title + role key each).
+ *
+ * Titles come from the role options the table already loads from the
+ * definitions (custom options carry the `Name (slug)` label format, so
+ * the slug suffix is stripped to recover the definition name — the
+ * same title the public chart renders for the seat). A slug with no
+ * option (orphan grant: definition deleted, grant still stored) keeps
+ * its slug as its title so it stays listed and removable instead of
+ * vanishing a second time. Entries equal to the member's base role
+ * are dropped: the chart never emits a grant seat for the base slug
+ * (chart parity), and non-custom slugs are dropped by construction.
+ */
+export interface GrantListItem {
+  key: string;
+  title: string;
+}
+
+export function toGrantListItems(
+  slugs: ReadonlyArray<unknown>,
+  options: ReadonlyArray<{ key: string; label: string }>,
+  baseRoleKey?: string | null,
+): GrantListItem[] {
+  const labelByKey = new Map(
+    options.map((o) => [normalizeRoleSlug(o.key), o.label]),
+  );
+  const base = baseRoleKey ? normalizeRoleSlug(baseRoleKey) : '';
+  const seen = new Set<string>();
+  const items: GrantListItem[] = [];
+  for (const raw of slugs) {
+    const slug = normalizeRoleSlug(String(raw).trim());
+    if (!isCustomRoleKey(slug) || slug === base || seen.has(slug)) continue;
+    seen.add(slug);
+    const label = labelByKey.get(slug);
+    const suffix = ` (${slug})`;
+    const title =
+      label && label.endsWith(suffix) ? label.slice(0, -suffix.length) : (label ?? slug);
+    items.push({ key: slug, title });
+  }
+  return items;
 }
 
 export function expiryState(

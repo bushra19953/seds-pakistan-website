@@ -29,6 +29,7 @@ import { FOUNDER_UID } from './roles';
 import { EnhancedUserRole } from './rbac-types';
 import { resolveRole } from './role-catalog';
 import { normalizeRoleSlug } from './role-catalog';
+import { isCustomRoleSlug } from './custom-roles';
 import {
   rolesSupaEnabled,
   seamGetDoc,
@@ -128,6 +129,13 @@ interface RoleRecord {
   /** roles doc chapterId, else the users doc chapterId, else null. */
   chapterId: string | null;
   hasRoleDoc: boolean;
+  /**
+   * The custom_ slug the stored expiry pair (contracts 2.2) points at,
+   * or null when no expiring grant is recorded. Read so a grant
+   * removal can clear the pair exactly when it removes the grant the
+   * pair points at (MSG40); never used to invent an expiry.
+   */
+  expiresRoleKey: string | null;
 }
 
 /**
@@ -142,6 +150,7 @@ async function readRoleRecord(firestore: Firestore, uid: string): Promise<RoleRe
     additionalRoles: [],
     chapterId: null,
     hasRoleDoc: false,
+    expiresRoleKey: null,
   };
   try {
     // Supa seam (file-group 3): behind the flag, roles/{uid} is read
@@ -161,6 +170,8 @@ async function readRoleRecord(firestore: Firestore, uid: string): Promise<RoleRe
           (r): r is string => typeof r === 'string'
         );
       }
+      record.expiresRoleKey =
+        typeof data.expiresRoleKey === 'string' ? data.expiresRoleKey : null;
       record.chapterId = typeof data.chapterId === 'string' ? data.chapterId : null;
     }
   } catch (err) {
@@ -178,6 +189,32 @@ async function readRoleRecord(firestore: Firestore, uid: string): Promise<RoleRe
     }
   }
   return record;
+}
+
+/**
+ * MSG40 read surface: the target's custom-role grants, as the public
+ * chart sees them. Reads the same roles/{uid}.additionalRoles the
+ * chart projection consumes, restricted to custom_ slugs and
+ * sanitised the chart's way (strings only, normalised, deduped).
+ * Catalog slugs held as grants are NOT returned: the Directory
+ * Authority surface lists custom-role grants, and a catalog grant is
+ * visible (and changeable) through the member's primary-role flow.
+ * Never throws: an unreadable record reads as no grants.
+ */
+export async function getCustomGrants(
+  firestore: Firestore,
+  uid: string,
+): Promise<string[]> {
+  const record = await readRoleRecord(firestore, uid);
+  const seen = new Set<string>();
+  const grants: string[] = [];
+  for (const raw of record.additionalRoles) {
+    const slug = normalizeRoleSlug(raw);
+    if (!isCustomRoleSlug(slug) || seen.has(slug)) continue;
+    seen.add(slug);
+    grants.push(slug);
+  }
+  return grants;
 }
 
 export async function assignRole(
@@ -343,6 +380,15 @@ export async function removeCustomRole(
     console.log(`[RoleManager] ${targetUid} does not hold ${slug}; nothing to remove.`);
     return true;
   }
+  // MSG40 expiry hygiene: the stored expiry pair (contracts 2.2)
+  // points at exactly one grant. Removing that grant must clear the
+  // pair (explicit null is always valid server-side), or the
+  // inspector header would keep showing an expiry for a grant nobody
+  // holds. Removing any other grant sends neither key, so the pair
+  // (and every other grant's state) is preserved byte-for-byte.
+  const clearsExpiry =
+    record.expiresRoleKey !== null &&
+    normalizeRoleSlug(record.expiresRoleKey) === slug;
   const res = await authedFetch('/api/admin/roles/write', {
     action: 'assign',
     uid: targetUid,
@@ -351,6 +397,7 @@ export async function removeCustomRole(
     chapterId: record.chapterId,
     reason,
     consentRequestId: opts?.consentRequestId ?? null,
+    ...(clearsExpiry ? { expiresAt: null, expiresRoleKey: null } : {}),
   });
   if (res?.ok) return true;
   if (res) {

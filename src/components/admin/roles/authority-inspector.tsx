@@ -83,6 +83,24 @@ interface AuthorityInspectorProps {
     onAssign: (newRole: string, reason: string, customTitle?: string, expiresAt?: string | null) => Promise<void>;
     onRevoke: (reason: string) => Promise<void>;
     /**
+     * MSG40: the member's custom-role grants as { key, title } rows.
+     * null = still loading (the caller fetches on open); [] = none
+     * held; undefined = the caller does not supply grants, and the
+     * section is not rendered (back-compat for older callers).
+     */
+    grants?: { key: string; title: string }[] | null;
+    /**
+     * MSG40: remove ONE grant. The caller owns the write (same
+     * server path and gate as every other authority change) and
+     * refreshes the list afterwards; the dialog stays open so the
+     * admin sees the updated list. Absent: no Remove buttons render.
+     * The dialog's mandatory justification (min 10 chars) gates each
+     * Remove exactly like the footer actions; the justification is
+     * deliberately NOT cleared after a removal, so one reason can
+     * cover several strips in a row.
+     */
+    onRemoveGrant?: (slug: string, reason: string) => Promise<void>;
+    /**
      * Mark the member Departed (soft delete). Member hard delete is
      * retired (Workstream F): departure is a reversible status change
      * via POST /api/admin/users/[uid]/depart, never a physical erase.
@@ -107,7 +125,9 @@ export default function AuthorityInspector({
     initialRole,
     onAssign,
     onRevoke,
-    onDepart
+    onDepart,
+    grants,
+    onRemoveGrant,
 }: AuthorityInspectorProps) {
     const [selectedRole, setSelectedRole] = useState<string | null>(null);
     const [customTitle, setCustomTitle] = useState('');
@@ -254,6 +274,52 @@ export default function AuthorityInspector({
                         </p>
                     )}
                 </DialogHeader>
+
+                {grants !== undefined && (
+                    <div className="px-6 pb-4 border-b border-primary/10">
+                        <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-3">
+                            Custom Grants Held
+                        </h4>
+                        {grants === null ? (
+                            <p className="text-xs text-muted-foreground">Loading custom grants…</p>
+                        ) : grants.length === 0 ? (
+                            <p className="text-xs text-muted-foreground">No custom grants held.</p>
+                        ) : (
+                            <ul className="space-y-2">
+                                {grants.map((grant) => (
+                                    <li
+                                        key={grant.key}
+                                        className="flex items-center justify-between gap-3 p-3 rounded-lg bg-muted border border-white/5"
+                                    >
+                                        <div className="min-w-0">
+                                            <p className="text-sm font-semibold text-foreground truncate">{grant.title}</p>
+                                            <p className="text-[11px] font-mono text-muted-foreground truncate">{grant.key}</p>
+                                        </div>
+                                        {onRemoveGrant && (
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                aria-label={`Remove grant ${grant.key}`}
+                                                disabled={isProcessing || justification.length < 10}
+                                                onClick={async () => {
+                                                    setIsProcessing(true);
+                                                    try {
+                                                        await onRemoveGrant(grant.key, justification);
+                                                    } finally {
+                                                        setIsProcessing(false);
+                                                    }
+                                                }}
+                                                className="shrink-0 gap-2 border-orange-500/30 text-orange-400 hover:bg-orange-500/10 hover:border-orange-500/50 font-mono text-[10px] tracking-widest uppercase"
+                                            >
+                                                Remove
+                                            </Button>
+                                        )}
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </div>
+                )}
 
                 <div className="grid grid-cols-4 border-y border-primary/10">
                     <button

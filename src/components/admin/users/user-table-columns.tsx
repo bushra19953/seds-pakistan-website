@@ -15,13 +15,13 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import AuthorityInspector from "@/components/admin/roles/authority-inspector";
-import { GrantExpiryBadge } from "@/components/admin/roles/grant-expiry";
+import { GrantExpiryBadge, toGrantListItems } from "@/components/admin/roles/grant-expiry";
 import { getCustomRoleDefinitions } from "@/lib/role-definitions";
 import { useFirestore, useUser } from "@/firebase";
 import { toast } from "@/hooks/use-toast";
 import { doc } from 'firebase/firestore';
 ;
-import { revokeRole, deleteRoleProfile } from "@/lib/role-management";
+import { revokeRole, deleteRoleProfile, removeCustomRole, getCustomGrants } from "@/lib/role-management";
 import { ConsentRequiredDialog } from "@/components/admin/governance/consent-required-dialog";
 import { isConsentGateBlocked, type ConsentGateErrorBody } from "@/lib/client/consent-gate-error";
 import { triggerAuthorityRefresh } from "@/lib/authority-refresh";
@@ -128,6 +128,10 @@ function UserActionsCell({
   const [inspectorOpen, setInspectorOpen] = useState<boolean>(false);
   const [inspectorRole, setInspectorRole] = useState<string | null>(null);
   const [customDefaults, setCustomDefaults] = useState<Record<string, number | null>>({});
+  // MSG40: this member's custom-grant slugs for the inspector list.
+  // null = unknown/loading (fetched on open, reset on close); a
+  // failed read stays null rather than claiming "none held".
+  const [grantSlugs, setGrantSlugs] = useState<string[] | null>(null);
   const firestore = useFirestore();
   const { isAuthorized: canManageRoles } = useAuthorization('canManageRoles');
   const { isAuthorized: canManageBadges } = useAuthorization('canManageBadges');
@@ -154,6 +158,57 @@ function UserActionsCell({
     })();
     return () => { mounted = false; };
   }, [firestore, user.chapterId, hasCustomOptions]);
+
+  // MSG40: fetch this member's custom grants when the inspector
+  // opens, reset when it closes. The rows the table loads carry no
+  // additionalRoles (the /api/admin/users projection never emits
+  // them), so the inspector cannot list grants without this read.
+  useEffect(() => {
+    if (!inspectorOpen) {
+      setGrantSlugs(null);
+      return;
+    }
+    if (!firestore) return;
+    let mounted = true;
+    (async () => {
+      try {
+        const slugs = await getCustomGrants(firestore, user.uid);
+        if (mounted) setGrantSlugs(slugs);
+      } catch {
+        // Stays null (loading line) rather than a false "none held";
+        // closing and reopening retries the read.
+      }
+    })();
+    return () => { mounted = false; };
+  }, [inspectorOpen, firestore, user.uid]);
+
+  // MSG40: single-grant removal through the existing removal
+  // primitive (same server path and gate as every other authority
+  // change: POST /api/admin/roles/write, admin-only). The member's
+  // base role and other grants are untouched by construction — the
+  // primitive re-assigns the current primary with one slug filtered
+  // out. The list is refetched from the server after a success, so
+  // the dialog shows stored state, not an optimistic guess.
+  const handleRemoveGrant = async (slug: string, reason: string) => {
+    if (!canManageRoles || !firestore) return;
+    let ok = false;
+    try {
+      ok = await removeCustomRole(firestore, user.uid, slug, currentUser?.uid ?? '', reason);
+    } catch {
+      ok = false;
+    }
+    if (!ok) {
+      toast({ variant: "destructive", title: "Grant removal failed", description: "The grant could not be removed." });
+      return;
+    }
+    await triggerAuthorityRefresh(user.uid);
+    toast({ title: "Grant Removed", description: `${slug} was removed from ${user.displayName}.` });
+    try {
+      setGrantSlugs(await getCustomGrants(firestore, user.uid));
+    } catch {
+      // List refreshes on next open.
+    }
+  };
 
   const isVacationing = !!user.isOnVacation;
 
@@ -272,6 +327,12 @@ function UserActionsCell({
         currentCustomTitle={user.customTitle ?? null}
         currentExpiresAt={user.roleExpiresAt ?? null}
         customRoleDefaultTermDays={customDefaults}
+        grants={grantSlugs === null ? null : toGrantListItems(
+          grantSlugs,
+          [...roleOptions, ...(customRoleOptions ?? [])],
+          user.role ?? null,
+        )}
+        onRemoveGrant={canManageRoles ? handleRemoveGrant : undefined}
         open={inspectorOpen}
         onOpenChange={(next) => {
           setInspectorOpen(next);

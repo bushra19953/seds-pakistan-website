@@ -376,6 +376,11 @@ function DeputyChain({
 const ZOOM_MIN = 0.4;
 const ZOOM_MAX = 1.5;
 
+/** MSG42: sections whose tree has already auto-fitted once this
+ *  page session, so a collapsed-then-reopened tree does not yank
+ *  the reader's zoom back to Fit after they set it by hand. */
+const autoFittedSections = new Set<string>();
+
 function ChartTree({
   section,
   matches,
@@ -410,6 +415,18 @@ function ChartTree({
     const next = Math.min(1, Math.max(ZOOM_MIN, canvas.clientWidth / size.w));
     setScale(next);
   }, [size.w]);
+
+  /* MSG42: open each tree fitted, once per page session, so the
+     wide IST tree is scannable without hunting for Fit. fit()
+     only ever shrinks (Math.min(1, ...)), so small trees like
+     National stay at 100%. Zoom controls, Reset, and manual zoom
+     are untouched. No-op in test environments (no
+     ResizeObserver, so size stays 0). */
+  useEffect(() => {
+    if (size.w === 0 || autoFittedSections.has(section.id)) return;
+    autoFittedSections.add(section.id);
+    fit();
+  }, [size.w, fit, section.id]);
 
   /**
    * The tree model, derived from the feed exactly as delivered:

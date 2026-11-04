@@ -238,7 +238,10 @@ function PersonRow({ person }: { person: PublicHierarchyPerson }) {
         <Link
           href={person.profilePath}
           prefetch={false}
-          className="block break-words rounded-sm text-sm font-medium leading-snug underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          className={cn(
+            'block break-words rounded-sm text-sm leading-snug underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+            subordinate ? 'font-medium' : 'font-semibold'
+          )}
         >
           {person.name}
         </Link>
@@ -263,36 +266,51 @@ function NodeCard({
 }: {
   person: PublicHierarchyPerson;
   nodeId: string;
-  tone?: 'root' | 'officer' | 'deputy';
+  tone?: 'root' | 'vp' | 'officer' | 'deputy';
   matched?: boolean;
 }) {
-  /* MSG31: a custom card that is not the section head renders
-     subordinate: smaller (deputy tone), dashed border, muted
-     body and title pill, prominent CUSTOM label. The head card
-     (tone root) never takes the subordinate treatment. */
+  /* MSG42 craft: card hierarchy by size + weight + color (H2),
+     inside the DESIGN.md HUD language — no new hues, no shadows.
+     Root (Founder / chapter president) is the apex: largest card,
+     largest avatar, heaviest name, strongest coral border. The VP
+     sits one step below the root: officer size, coral-tinted
+     border, in its own band under the root (MSG24 structure).
+     Officers keep the solid border at officer size with a semibold
+     name. Deputies are unchanged: smaller, dashed, muted (MSG31
+     pins: border-dashed on deputy cards only, muted pill, stacked
+     pill wrapper — all preserved below). */
   const subordinate = tone !== 'root' && person.isCustomRole;
   return (
     <div
       id={nodeId}
       className={cn(
         'flex flex-col items-center gap-1.5 rounded-lg border bg-background px-3 text-center shadow-sm',
-        tone === 'deputy' ? 'w-40 py-2.5' : 'w-44 py-3',
+        tone === 'deputy' ? 'w-40 py-2.5' : tone === 'root' ? 'w-52 py-3' : 'w-48 py-3',
         tone === 'root'
-          ? 'border-primary/50 bg-primary/5'
-          : 'border-border/60',
+          ? 'border-primary/60 bg-primary/10'
+          : tone === 'vp'
+            ? 'border-primary/30'
+            : 'border-border/60',
         subordinate && 'border-dashed bg-muted/40',
         matched && 'bg-primary/10 ring-2 ring-primary ring-offset-2 ring-offset-background'
       )}
     >
       <PersonAvatar
         person={person}
-        className={tone === 'root' ? 'size-12' : tone === 'deputy' ? 'size-9' : 'size-10'}
+        className={tone === 'root' ? 'size-14' : tone === 'deputy' ? 'size-9' : 'size-10'}
         fallbackClassName={tone === 'root' ? 'text-sm' : 'text-xs'}
       />
       <Link
         href={person.profilePath}
         prefetch={false}
-        className="block w-full break-words rounded-sm text-sm font-medium leading-snug underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        className={cn(
+          'block w-full break-words rounded-sm leading-snug underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+          tone === 'root'
+            ? 'text-base font-semibold'
+            : tone === 'deputy'
+              ? 'text-sm font-medium'
+              : 'text-sm font-semibold'
+        )}
       >
         {person.name}
       </Link>
@@ -567,7 +585,7 @@ function ChartTree({
                         data-testid={`staff-rail-${section.id}`}
                         className="mt-1 flex flex-col gap-2 border-l-2 border-dashed border-border pl-3"
                       >
-                        <p className="text-xs font-medium text-muted-foreground">
+                        <p className="font-accent text-xs tracking-widest text-muted-foreground">
                           Staff
                         </p>
                         <div className="flex flex-col gap-2">
@@ -592,6 +610,7 @@ function ChartTree({
                         <NodeCard
                           person={section.members[model.vpIndex]}
                           nodeId={`hnode-${section.id}-${model.vpIndex}`}
+                          tone="vp"
                           matched={matched(model.vpIndex)}
                         />
                         <DeputyChain
@@ -629,7 +648,7 @@ function ChartTree({
             </div>
             {model.band.length > 0 ? (
               <div className="mt-8 border-t-2 border-dashed border-border/70 px-2 pt-4">
-                <p className="sr-only">
+                <p className="mb-3 text-center font-accent text-xs tracking-widest text-muted-foreground">
                   Role-holders without a seated parent role in this
                   section
                 </p>
@@ -712,7 +731,7 @@ function SectionShell({
   const headerInner = (
     <>
       <span className="min-w-0 flex-1 truncate">{section.name}</span>
-      <span className="shrink-0 text-sm font-normal text-muted-foreground">
+      <span className="shrink-0 font-accent text-xs tracking-widest text-muted-foreground">
         {countLabel}
       </span>
       {staticHeader ? null : (
@@ -743,7 +762,7 @@ function SectionShell({
           className={cn(
             'sticky top-20 z-30 rounded-t-xl border-b md:top-24',
             isNational
-              ? 'border-primary/20 bg-primary/5'
+              ? 'border-primary/20 bg-primary/10'
               : 'border-border/40 bg-card'
           )}
         >
@@ -1000,12 +1019,13 @@ export default function HierarchyPage() {
           profile.
         </p>
         {sections && totalPeople > 0 ? (
-          <p className="mt-2 text-sm text-muted-foreground">
+          <p className="mt-2 font-accent text-xs tracking-widest text-muted-foreground">
             {totalPeople}{' '}
             {totalPeople === 1 ? 'role-holder' : 'role-holders'} across{' '}
             {sections.length} {sections.length === 1 ? 'section' : 'sections'}
           </p>
         ) : null}
+        <div aria-hidden="true" className="mt-6 h-px bg-primary/20" />
       </div>
 
       {failed ? (

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Fraunces, Manrope } from 'next/font/google';
 import StarryBackground from '@/components/starry-background';
 import Footer from '@/components/layout/footer';
+import SpaceScene from './space-scene';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -48,6 +49,7 @@ const emptyMember = (): MemberForm => ({
 
 interface BracketStatus {
   open: boolean;
+  closesAt?: string;
   totalRegistered: number;
   seatsTotal: number;
   byNation: Record<Nation, { registered: number; cap: number }>;
@@ -79,6 +81,15 @@ export default function GrandPrixRegisterPage() {
     Array.from({ length: SQUAD_SIZE }, emptyMember),
   );
   const [status, setStatus] = useState<BracketStatus | null>(null);
+  const [remainMs, setRemainMs] = useState<number | null>(null);
+
+  useEffect(() => {
+    const target = new Date(status?.closesAt ?? '2026-11-15T23:59:00+05:00').getTime();
+    const tick = () => setRemainMs(Math.max(0, target - Date.now()));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [status]);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [success, setSuccess] = useState<{ registrationId: string } | null>(null);
@@ -156,6 +167,7 @@ export default function GrandPrixRegisterPage() {
           backgroundPosition: 'center top',
         }}
       />
+      <SpaceScene />
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_55%_40%_at_50%_-5%,rgba(201,164,92,0.14),transparent),linear-gradient(180deg,rgba(6,9,16,0.35),rgba(6,9,16,0.78))]" />
       <main className="container relative z-10 mx-auto flex-1 px-4 py-16 sm:py-20">
         <div className="mx-auto max-w-3xl">
@@ -185,6 +197,35 @@ export default function GrandPrixRegisterPage() {
             <span className="h-px w-24 bg-white/15" />
           </div>
 
+          {remainMs !== null && remainMs > 0 && (
+            <div className="mt-10">
+              <p className="flex items-center justify-center gap-2.5 text-center text-[11px] font-extrabold uppercase tracking-[0.34em]" style={{ color: GOLD_LIGHT }}>
+                <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full" style={{ backgroundColor: GOLD }} />
+                Registration closes in
+              </p>
+              <div className="mx-auto mt-4 grid max-w-xl grid-cols-4 gap-3">
+                {[
+                  { value: Math.floor(remainMs / 86400000), label: 'Days' },
+                  { value: Math.floor(remainMs / 3600000) % 24, label: 'Hours' },
+                  { value: Math.floor(remainMs / 60000) % 60, label: 'Minutes' },
+                  { value: Math.floor(remainMs / 1000) % 60, label: 'Seconds' },
+                ].map((part) => (
+                  <div
+                    key={part.label}
+                    className="rounded-xl border border-white/10 bg-white/[0.04] py-3.5 text-center shadow-[0_16px_40px_rgba(0,0,0,0.4)] backdrop-blur-md"
+                  >
+                    <p className={`text-3xl font-semibold tabular-nums ${displayFont}`} style={{ color: IVORY }}>
+                      {String(part.value).padStart(2, '0')}
+                    </p>
+                    <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.24em] text-[#CBBFA5]">
+                      {part.label}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {status && (
             <div className="mt-10 grid grid-cols-1 gap-4 text-center sm:grid-cols-3">
               <Card className={cardClass}>
@@ -201,6 +242,12 @@ export default function GrandPrixRegisterPage() {
               {(Object.keys(NATION_LABELS) as Nation[]).map((n) => (
                 <Card key={n} className={cardClass}>
                   <CardContent className="py-6">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={n === 'PK' ? '/assets/flags/pk.svg' : '/assets/flags/lk.svg'}
+                      alt={`${NATION_LABELS[n]} flag`}
+                      className="mx-auto mb-4 h-9 w-auto rounded-[4px] shadow-lg ring-1 ring-white/25"
+                    />
                     <p className={`text-4xl font-semibold ${displayFont}`} style={{ color: IVORY }}>
                       {status.byNation[n].registered}{' '}
                       <span className="text-2xl text-[#8E887A]">/ {status.byNation[n].cap}</span>
@@ -262,11 +309,38 @@ export default function GrandPrixRegisterPage() {
                     <Input id="squadName" className={fieldClass} placeholder="e.g. Falcon IST" value={squadName} onChange={(e) => setSquadName(e.target.value)} required />
                   </div>
                   <div className="space-y-2.5">
-                    <Label htmlFor="nation" className={labelClass}>Nation</Label>
-                    <select id="nation" className={selectClass} value={nation} onChange={(e) => setNation(e.target.value as Nation)}>
-                      <option value="PK">Pakistan</option>
-                      <option value="LK">Sri Lanka</option>
-                    </select>
+                    <Label className={labelClass}>Nation</Label>
+                    <div className="grid grid-cols-2 gap-3" role="radiogroup" aria-label="Nation">
+                      {(Object.keys(NATION_LABELS) as Nation[]).map((n) => (
+                        <button
+                          key={n}
+                          type="button"
+                          role="radio"
+                          aria-checked={nation === n}
+                          onClick={() => setNation(n)}
+                          className={`flex items-center gap-3 rounded-lg border px-3.5 py-3 text-left transition ${
+                            nation === n
+                              ? 'border-[#C9A45C]/80 bg-[#C9A45C]/10 shadow-[0_10px_30px_rgba(201,164,92,0.22)]'
+                              : 'border-white/15 bg-white/[0.05] hover:border-white/35'
+                          }`}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={n === 'PK' ? '/assets/flags/pk.svg' : '/assets/flags/lk.svg'}
+                            alt=""
+                            className="h-7 w-auto shrink-0 rounded-[3px] ring-1 ring-white/25"
+                          />
+                          <span>
+                            <span className="block text-sm font-bold" style={{ color: IVORY }}>
+                              {NATION_LABELS[n]}
+                            </span>
+                            <span className="block text-[11px] text-[#A79E8B]">
+                              {status ? `${status.byNation[n].registered} / ${status.byNation[n].cap} squads` : '15 squads'}
+                            </span>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                   <div className="space-y-2.5">
                     <Label htmlFor="track" className={labelClass}>Track (pick one)</Label>

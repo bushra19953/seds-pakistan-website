@@ -23,9 +23,9 @@ export default function SpaceScene() {
 
       const GOLD = 0xc9a45c;
       const GOLD_LIGHT = 0xe8cf8f;
-      const IVORY = 0xf5f0e4;
-      const INDIGO = 0x46579e;
-      const INK = 0x8e9cc9;
+      const IVORY = 0xe9e2d0;
+      const INDIGO = 0x2b3563;
+      const INK = 0x707ba6;
 
       const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
@@ -60,6 +60,29 @@ export default function SpaceScene() {
       const basic = (color: number, opacity = 1) =>
         new THREE.MeshBasicMaterial({ color, transparent: opacity < 1, opacity });
 
+      // Soft radial glow sprite so the craft melt into the nebula instead of
+      // sitting on top of it like stickers.
+      const glowCanvas = document.createElement('canvas');
+      glowCanvas.width = 128;
+      glowCanvas.height = 128;
+      const gtx = glowCanvas.getContext('2d');
+      if (gtx) {
+        const grad = gtx.createRadialGradient(64, 64, 2, 64, 64, 64);
+        grad.addColorStop(0, 'rgba(232,207,143,0.55)');
+        grad.addColorStop(0.45, 'rgba(201,164,92,0.18)');
+        grad.addColorStop(1, 'rgba(201,164,92,0)');
+        gtx.fillStyle = grad;
+        gtx.fillRect(0, 0, 128, 128);
+      }
+      const glowTex = new THREE.CanvasTexture(glowCanvas);
+      const makeGlow = (scale: number, opacity: number) => {
+        const sprite = new THREE.Sprite(
+          new THREE.SpriteMaterial({ map: glowTex, transparent: true, opacity, depthWrite: false }),
+        );
+        sprite.scale.setScalar(scale);
+        return sprite;
+      };
+
       // Rocket: ivory body, gold nose and fins, flickering exhaust cone
       const rocket = new THREE.Group();
       const body = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 1.05, 20), basic(IVORY));
@@ -84,6 +107,8 @@ export default function SpaceScene() {
       exhaust.rotation.x = Math.PI;
       exhaust.position.y = -0.85;
       rocket.add(exhaust);
+      rocket.add(makeGlow(4.6, 0.35));
+      rocket.scale.setScalar(1.55);
       scene.add(rocket);
 
       // Satellites: gold bus + indigo solar wings
@@ -103,12 +128,13 @@ export default function SpaceScene() {
           spar.position.x = side * 0.3;
           sat.add(spar);
         }
+        sat.add(makeGlow(4.2, 0.3));
         sat.scale.setScalar(scale);
         scene.add(sat);
         return sat;
       };
-      const satA = makeSatellite(1.15);
-      const satB = makeSatellite(0.8);
+      const satA = makeSatellite(1.9);
+      const satB = makeSatellite(1.4);
 
       const onResize = () => {
         if (!hostRef.current) return;
@@ -130,7 +156,7 @@ export default function SpaceScene() {
         stars.rotation.z = t * 0.004;
 
         // Rocket: climbs a long diagonal, banks gently, loops with a pause off-screen
-        const cycle = 26;
+        const cycle = 34;
         const p = (t % cycle) / cycle;
         const x = -13 + p * 30;
         const y = -6.5 + p * 13.5 + Math.sin(p * Math.PI * 3) * 0.35;
@@ -139,12 +165,12 @@ export default function SpaceScene() {
         exhaust.scale.set(1, 0.8 + Math.sin(t * 22) * 0.25 + Math.random() * 0.08, 1);
 
         // Satellites on slow elliptical orbits
-        const aA = t * 0.07;
-        satA.position.set(Math.cos(aA) * 10.5, Math.sin(aA) * 3.4 + 2.2, -5);
-        satA.rotation.set(0.25, t * 0.12, 0.12);
-        const aB = t * 0.045 + 2.4;
-        satB.position.set(Math.cos(aB) * 11.5, Math.sin(aB) * 3.9 - 2.6, -6.5);
-        satB.rotation.set(-0.2, -t * 0.09, -0.1);
+        const aA = t * 0.05;
+        satA.position.set(Math.cos(aA) * 10.5, Math.sin(aA) * 3.2 + 2.4, -5);
+        satA.rotation.set(0.25, t * 0.1, 0.12);
+        const aB = t * 0.034 + 2.4;
+        satB.position.set(Math.cos(aB) * 11.5, Math.sin(aB) * 3.6 - 2.8, -6.5);
+        satB.rotation.set(-0.2, -t * 0.08, -0.1);
 
         renderer.render(scene, camera);
         if (!reduced) raf = requestAnimationFrame(animate);
@@ -160,6 +186,10 @@ export default function SpaceScene() {
           if (obj instanceof THREE.Mesh) {
             obj.geometry.dispose();
             (obj.material as THREE.Material).dispose();
+          }
+          if (obj instanceof THREE.Sprite) {
+            obj.material.map?.dispose();
+            obj.material.dispose();
           }
         });
         host.removeChild(renderer.domElement);

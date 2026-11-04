@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Fraunces, Manrope } from 'next/font/google';
 import StarryBackground from '@/components/starry-background';
 import Footer from '@/components/layout/footer';
+import { Trophy } from 'lucide-react';
 import SpaceScene from './space-scene';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -230,6 +231,9 @@ export default function GrandPrixRegisterPage() {
             <div className="mt-10 grid grid-cols-1 gap-4 text-center sm:grid-cols-3">
               <Card className={cardClass}>
                 <CardContent className="py-6">
+                  <div className="mb-4 flex h-10 items-center justify-center">
+                    <Trophy className="h-9 w-9" style={{ color: GOLD }} strokeWidth={1.5} />
+                  </div>
                   <p className={`text-4xl font-semibold ${displayFont}`} style={{ color: IVORY }}>
                     {status.totalRegistered} <span className="text-2xl text-[#8E887A]">/ {status.seatsTotal}</span>
                   </p>
@@ -242,12 +246,14 @@ export default function GrandPrixRegisterPage() {
               {(Object.keys(NATION_LABELS) as Nation[]).map((n) => (
                 <Card key={n} className={cardClass}>
                   <CardContent className="py-6">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={n === 'PK' ? '/assets/flags/pk.svg' : '/assets/flags/lk.svg'}
-                      alt={`${NATION_LABELS[n]} flag`}
-                      className="mx-auto mb-4 h-9 w-auto rounded-[4px] shadow-lg ring-1 ring-white/25"
-                    />
+                    <div className="mb-4 flex h-10 items-center justify-center">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={n === 'PK' ? '/assets/flags/pk.svg' : '/assets/flags/lk.svg'}
+                        alt={`${NATION_LABELS[n]} flag`}
+                        className="h-9 w-auto rounded-[4px] shadow-lg ring-1 ring-white/25"
+                      />
+                    </div>
                     <p className={`text-4xl font-semibold ${displayFont}`} style={{ color: IVORY }}>
                       {status.byNation[n].registered}{' '}
                       <span className="text-2xl text-[#8E887A]">/ {status.byNation[n].cap}</span>

@@ -6,6 +6,7 @@ import StarryBackground from '@/components/starry-background';
 import Footer from '@/components/layout/footer';
 import { Trophy } from 'lucide-react';
 import SpaceScene from './space-scene';
+import CartoonPlanets from './cartoon-planets';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -169,6 +170,7 @@ export default function GrandPrixRegisterPage() {
         }}
       />
       <SpaceScene />
+      <CartoonPlanets />
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_55%_40%_at_50%_-5%,rgba(201,164,92,0.14),transparent),linear-gradient(180deg,rgba(6,9,16,0.35),rgba(6,9,16,0.78))]" />
       <main className="container relative z-10 mx-auto flex-1 px-4 py-16 sm:py-20">
         <div className="mx-auto max-w-3xl">

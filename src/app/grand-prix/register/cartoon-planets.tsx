@@ -119,9 +119,20 @@ export default function CartoonPlanets() {
           .gp-rocket-zone { transform: scale(0.78); }
         }
         @media (max-width: 760px) {
-          .gp-cluster-left { transform: scale(0.42); opacity: 0.55; }
-          .gp-cluster-right { transform: scale(0.42); opacity: 0.55; }
-          .gp-rocket-zone { transform: scale(0.52); opacity: 0.7; }
+          .gp-cluster-left { transform: translate(-54px, -6px) scale(0.34); opacity: 0.35; }
+          .gp-cluster-right { transform: translate(54px, 130px) scale(0.34); opacity: 0.35; }
+          .gp-rocket-zone { transform: scale(0.72); opacity: 0.8; }
+          .gp-rocket { animation-duration: 34s, 34s; }
+          @keyframes gpRocketRise {
+            from { transform: translate(2vw, 34vh) rotate(-16deg); }
+            to { transform: translate(-51vw, -136vh) rotate(-16deg); }
+          }
+          @keyframes gpRocketFade {
+            0% { opacity: 1; }
+            80% { opacity: 1; }
+            95% { opacity: 0; }
+            100% { opacity: 0; }
+          }
         }
         @media (prefers-reduced-motion: reduce) {
           .gp-float-a, .gp-float-b, .gp-sway, .gp-orbit, .gp-tumble, .gp-comet, .gp-rocket, .gp-flame { animation: none; }

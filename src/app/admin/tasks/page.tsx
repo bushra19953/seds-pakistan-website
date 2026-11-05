@@ -1363,7 +1363,7 @@ function AdminTasksPageInner() {
       // A standalone task with NO workflowId has no workflows-API
       // source to fetch: its assignees' contacts stay empty (no
       // direct user-doc harvest is substituted for it).
-      let pdfAssigneeInfo: Record<string, { email?: string | null; whatsapp?: string | null }> = {};
+      let pdfAssigneeInfo: Record<string, { email?: string | null; whatsapp?: string | null; displayRole?: string | null }> = {};
       const workflowId = (task as any).workflowId ? String((task as any).workflowId) : '';
       if (workflowId && user) {
         try {
@@ -1400,7 +1400,17 @@ function AdminTasksPageInner() {
           // role key mapped to undefined and no role line was drawn.
           // users/{uid}.role is the primary store; roles/{uid}.role is the
           // fallback (same precedence as the workflows GET API path).
-          const rawRole = (u?.role as string | undefined) || userRolesMap[uid] || undefined;
+          // MSG47: the workflows detail response also carries displayRole
+          // — the first held custom grant when one is held. It wins over
+          // the primary role, so a custom-grant holder prints their
+          // custom title instead of the primary's. Standalone tasks
+          // (no workflowId) have no detail response, so they keep
+          // today's primary-only role.
+          const rawRole =
+            pdfAssigneeInfo[uid]?.displayRole ||
+            (u?.role as string | undefined) ||
+            userRolesMap[uid] ||
+            undefined;
           // Every assignee's photo is converted so co-assignees render a
           // full personnel block (avatar, phone, email, their own QR) in
           // the personnel section of the task PDF.

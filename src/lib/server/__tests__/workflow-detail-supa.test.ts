@@ -118,6 +118,10 @@ describe('(a) adapter consultation: seam output deep-equals the fixture doc sets
     // Unique assignees in first-seen order, snapshots parallel.
     expect(reads!.uniqueAssigneeIds).toEqual(['u1', 'u2']);
     expect(reads!.userSnaps.map((s) => s.data())).toEqual([jsonbUsers().u1, jsonbUsers().u2]);
+    // MSG47: assignee roles docs, parallel to uniqueAssigneeIds —
+    // u1's roles doc exists (viewer fixture), u2 has none.
+    expect(reads!.assigneeRoleSnaps.map((s) => s.exists)).toEqual([true, false]);
+    expect(reads!.assigneeRoleSnaps[0].data()).toEqual({ role: 'member' });
     // u1 has chapterId and NO chapterName -> per-user chapter lookup ran;
     // u2 carries chapterName -> no lookup (handler cache semantics).
     expect(Object.keys(reads!.userChapterSnaps)).toEqual([CHAPTER_ID]);

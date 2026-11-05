@@ -350,6 +350,14 @@ export interface WorkflowDetailReads {
   userChapterSnaps: Record<string, SupaDocSnapshotLike>;
   /** L569: roles doc of the viewer. */
   roleSnap: SupaDocSnapshotLike;
+  /**
+   * MSG47: roles docs of the workflow's assignees, parallel to
+   * uniqueAssigneeIds order — the additionalRoles store the detail
+   * handler reads to resolve each assignee's display role (custom
+   * grant first, else primary). Empty/missing docs surface as
+   * exists:false, never as null.
+   */
+  assigneeRoleSnaps: SupaDocSnapshotLike[];
   /** L577: workflow_members doc `${workflowId}_${viewerUid}`. */
   memberSnap: SupaDocSnapshotLike;
 }
@@ -410,6 +418,17 @@ export async function fetchWorkflowDetailReadsViaSupa(
     userChapterSnaps[key] = chapSnap;
   }
 
+  // MSG47: roles docs of the workflow's assignees, parallel to
+  // uniqueAssigneeIds — the additionalRoles store for the display-role
+  // resolution. Any miss returns null (whole-chain Firestore fallback),
+  // exactly like the users fetch above.
+  const assigneeRoleSnaps: SupaDocSnapshotLike[] = [];
+  for (const uid of uniqueAssigneeIds) {
+    const snap = await getDocSnapshotViaSupa(adapter, ROLES_COLLECTION, uid);
+    if (!snap) return null;
+    assigneeRoleSnaps.push(snap);
+  }
+
   // L569: viewer's live role doc.
   const roleSnap = await getDocSnapshotViaSupa(adapter, ROLES_COLLECTION, viewerUid);
   if (!roleSnap) return null;
@@ -428,6 +447,7 @@ export async function fetchWorkflowDetailReadsViaSupa(
     userSnaps,
     uniqueAssigneeIds,
     userChapterSnaps,
+    assigneeRoleSnaps,
     roleSnap,
     memberSnap,
   };

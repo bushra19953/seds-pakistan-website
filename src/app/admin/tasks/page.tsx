@@ -910,7 +910,13 @@ function AdminTasksPageInner() {
         });
         if (!taskRes.ok) {
           const err = await taskRes.json().catch(() => ({ error: 'Unknown error' }));
-          throw new Error(err.error || 'Failed to update task fields');
+          // Surface the server's field-level detail (zod flatten), not
+          // just the generic 'Invalid request': which field failed is
+          // the difference between an actionable error and a silent one.
+          const detailText = err.details
+            ? Object.values(err.details).flat().join(', ')
+            : '';
+          throw new Error(detailText || err.error || 'Failed to update task fields');
         }
       }
 
@@ -920,6 +926,10 @@ function AdminTasksPageInner() {
     } catch (e: any) {
       console.error('Error updating workflow steps:', e);
       toast({ variant: 'destructive', title: 'Error', description: e?.message || 'Failed to update workflow steps.' });
+      // Rethrow so the form can ALSO hold the failure inside the dialog
+      // (its submit-error banner); a toast alone is missable and left
+      // these failures looking silent.
+      throw e;
     }
   };
 
@@ -1138,6 +1148,10 @@ function AdminTasksPageInner() {
         title: "Error",
         description: `Failed to save task: ${error instanceof Error ? error.message : 'Unknown error'}`,
       });
+      // Rethrow so the form can ALSO hold the failure inside the dialog
+      // (its submit-error banner) instead of the save failing silently
+      // behind a transient toast.
+      throw error;
     }
   };
 
@@ -1278,6 +1292,10 @@ function AdminTasksPageInner() {
     } catch (error: any) {
       console.error('Error creating workflow:', error);
       toast({ variant: 'destructive', title: 'Error', description: error?.message || 'Failed to create workflow.' });
+      // Rethrow so the form can ALSO hold the failure inside the dialog
+      // (its submit-error banner) instead of the save failing silently
+      // behind a transient toast.
+      throw error;
     }
   };
 

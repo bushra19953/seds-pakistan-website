@@ -837,8 +837,17 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
       }
     }
 
-    if (typeof updatesToApply.assigneeId === 'string' && Array.isArray((taskBefore as any).workflowParticipantIds)) {
-      const set = new Set(((taskBefore as any).workflowParticipantIds as any[]).map((v: any) => String(v)));
+    // Validate against the MERGED allowlist: the normalization above
+    // admits anyone the request itself rosters via assigneeIds into
+    // updatesToApply.workflowParticipantIds, precisely so a newly added
+    // person can be assigned. Reading only the STORED list here
+    // rejected exactly those first-time assignees (400, whole update
+    // lost) whenever the new primary was not already a participant.
+    const participantSource = Array.isArray(updatesToApply.workflowParticipantIds)
+      ? updatesToApply.workflowParticipantIds
+      : (taskBefore as any).workflowParticipantIds;
+    if (typeof updatesToApply.assigneeId === 'string' && Array.isArray(participantSource)) {
+      const set = new Set((participantSource as any[]).map((v: any) => String(v)));
       if (!set.has(String(updatesToApply.assigneeId))) {
         return NextResponse.json({ error: 'Invalid assignee for workflow: not in participant list' }, { status: 400 });
       }

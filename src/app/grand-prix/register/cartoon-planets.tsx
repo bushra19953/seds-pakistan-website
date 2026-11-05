@@ -6,8 +6,10 @@
  * a ringed Saturn-like planet with a small red planet on the left, a blue
  * gas giant with a small rocky planet on the right, TWO satellites orbiting
  * each large planet, tumbling asteroids, falling comets, and a detailed
- * cartoon rocket (red nose, white body, red fins, flickering flame)
- * launching up the right side. Pure CSS
+ * cartoon rocket in the portal palette (steel-blue nose, silver body,
+ * muted fins, soft blue flame) that rises from the bottom right corner,
+ * flies diagonally up-left, fades out as it leaves through the top, and
+ * reappears from the bottom. Pure CSS
  * animations, soft glows, edge-anchored so the centre of the page (title,
  * countdown, form) stays clear.
  */
@@ -87,16 +89,21 @@ export default function CartoonPlanets() {
         .gp-cluster-left { transform-origin: left center; }
         .gp-cluster-right { transform-origin: right center; }
         @keyframes gpRocketRise {
-          0% { transform: translate(0, 6vh) rotate(-32deg); opacity: 0; }
-          10% { opacity: 1; }
+          from { transform: translate(3vw, 12vh) rotate(-32deg); }
+          to { transform: translate(-42vw, -105vh) rotate(-32deg); }
+        }
+        @keyframes gpRocketFade {
+          0% { opacity: 0; }
+          12% { opacity: 1; }
           74% { opacity: 1; }
-          100% { transform: translate(-33vw, -56vh) rotate(-32deg); opacity: 0; }
+          90% { opacity: 0; }
+          100% { opacity: 0; }
         }
         @keyframes gpFlameFlicker {
           from { transform: scaleY(0.9) scaleX(1); }
           to { transform: scaleY(1.2) scaleX(0.93); }
         }
-        .gp-rocket { animation: gpRocketRise 16s cubic-bezier(0.35, 0.08, 0.62, 0.55) infinite; }
+        .gp-rocket { animation: gpRocketRise 20s cubic-bezier(0.35, 0.08, 0.62, 0.55) infinite, gpRocketFade 20s linear infinite; }
         .gp-flame {
           animation: gpFlameFlicker 0.16s ease-in-out infinite alternate;
           transform-box: fill-box; transform-origin: 50% 0%;
@@ -311,8 +318,10 @@ export default function CartoonPlanets() {
       </div>
 
       {/* ROCKET: detailed cartoon rocket in the portal's own palette
-          (steel-blue nose, silver body, muted fins, soft blue flame),
-          launching diagonally from the bottom right toward the top left */}
+          (steel-blue nose, silver body, muted fins, soft blue flame).
+          Flight loop: fades in as it rises from the bottom right corner,
+          crosses diagonally toward the top left, fades away while leaving
+          through the top edge, rests off-screen, then reappears below. */}
       <div className="gp-rocket-zone absolute" style={{ right: '4.5%', bottom: '2%' }}>
         <div className="gp-rocket relative" style={{ width: 106 }}>
           <div className="gp-rocket-trail" />

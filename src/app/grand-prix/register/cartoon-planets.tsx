@@ -89,12 +89,11 @@ export default function CartoonPlanets() {
         .gp-cluster-left { transform-origin: left center; }
         .gp-cluster-right { transform-origin: right center; }
         @keyframes gpRocketRise {
-          from { transform: translate(3vw, 12vh) rotate(-32deg); }
+          from { transform: translate(3vw, 28vh) rotate(-32deg); }
           to { transform: translate(-42vw, -105vh) rotate(-32deg); }
         }
         @keyframes gpRocketFade {
-          0% { opacity: 0; }
-          12% { opacity: 1; }
+          0% { opacity: 1; }
           74% { opacity: 1; }
           90% { opacity: 0; }
           100% { opacity: 0; }
@@ -319,9 +318,10 @@ export default function CartoonPlanets() {
 
       {/* ROCKET: detailed cartoon rocket in the portal's own palette
           (steel-blue nose, silver body, muted fins, soft blue flame).
-          Flight loop: fades in as it rises from the bottom right corner,
-          crosses diagonally toward the top left, fades away while leaving
-          through the top edge, rests off-screen, then reappears below. */}
+          Flight loop: starts fully below the bottom edge and emerges as it
+          rises from the bottom right corner (no fade-in), crosses diagonally
+          toward the top left, fades away while leaving through the top
+          edge, rests off-screen, then emerges from the bottom again. */}
       <div className="gp-rocket-zone absolute" style={{ right: '4.5%', bottom: '2%' }}>
         <div className="gp-rocket relative" style={{ width: 106 }}>
           <div className="gp-rocket-trail" />

@@ -5,7 +5,9 @@
  * the bright educational solar-system poster style the task owner picked:
  * a ringed Saturn-like planet with a small red planet on the left, a blue
  * gas giant with a small rocky planet on the right, TWO satellites orbiting
- * each large planet, tumbling asteroids and falling comets. Pure CSS
+ * each large planet, tumbling asteroids, falling comets, and a detailed
+ * cartoon rocket (red nose, white body, red fins, flickering flame)
+ * launching up the right side. Pure CSS
  * animations, soft glows, edge-anchored so the centre of the page (title,
  * countdown, form) stays clear.
  */
@@ -84,16 +86,39 @@ export default function CartoonPlanets() {
         }
         .gp-cluster-left { transform-origin: left center; }
         .gp-cluster-right { transform-origin: right center; }
+        @keyframes gpRocketRise {
+          0% { transform: translateY(9vh) rotate(6deg); opacity: 0; }
+          9% { opacity: 1; }
+          76% { opacity: 1; }
+          100% { transform: translateY(-37vh) rotate(6deg); opacity: 0; }
+        }
+        @keyframes gpFlameFlicker {
+          from { transform: scaleY(0.9) scaleX(1); }
+          to { transform: scaleY(1.2) scaleX(0.93); }
+        }
+        .gp-rocket { animation: gpRocketRise 17s cubic-bezier(0.35, 0.08, 0.62, 0.55) infinite; }
+        .gp-flame {
+          animation: gpFlameFlicker 0.16s ease-in-out infinite alternate;
+          transform-box: fill-box; transform-origin: 50% 0%;
+        }
+        .gp-rocket-trail {
+          position: absolute; left: 50%; top: 86%; width: 30px; height: 200px;
+          transform: translateX(-50%); border-radius: 9999px; filter: blur(7px);
+          background: linear-gradient(to bottom, rgba(255,178,64,0.55), rgba(255,120,40,0.2) 45%, rgba(255,120,40,0));
+        }
+        .gp-rocket-zone { transform-origin: bottom right; }
         @media (max-width: 1150px) {
           .gp-cluster-left { transform: scale(0.66); }
           .gp-cluster-right { transform: scale(0.66); }
+          .gp-rocket-zone { transform: scale(0.78); }
         }
         @media (max-width: 760px) {
           .gp-cluster-left { transform: scale(0.42); opacity: 0.55; }
           .gp-cluster-right { transform: scale(0.42); opacity: 0.55; }
+          .gp-rocket-zone { transform: scale(0.52); opacity: 0.7; }
         }
         @media (prefers-reduced-motion: reduce) {
-          .gp-float-a, .gp-float-b, .gp-sway, .gp-orbit, .gp-tumble, .gp-comet { animation: none; }
+          .gp-float-a, .gp-float-b, .gp-sway, .gp-orbit, .gp-tumble, .gp-comet, .gp-rocket, .gp-flame { animation: none; }
         }
       `}</style>
 
@@ -281,6 +306,75 @@ export default function CartoonPlanets() {
             <circle cx="44" cy="68" r="4.5" fill="#46321459" stroke="#ffe9c233" />
             <circle cx="68" cy="32" r="4" fill="#46321459" stroke="#ffe9c233" />
             <circle cx="50" cy="50" r="38" fill="url(#rockShade)" />
+          </svg>
+        </div>
+      </div>
+
+      {/* ROCKET: detailed cartoon rocket (red nose, white body, red fins,
+          bright flickering flame) launching up the right side */}
+      <div className="gp-rocket-zone absolute" style={{ right: '3.4%', bottom: '1%' }}>
+        <div className="gp-rocket relative" style={{ width: 106 }}>
+          <div className="gp-rocket-trail" />
+          <svg
+            viewBox="0 0 120 300"
+            className="relative w-full"
+            style={{ filter: 'drop-shadow(0 0 24px rgba(255,160,50,0.45))' }}
+          >
+            <defs>
+              <linearGradient id="rocketBody" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stopColor="#ffffff" />
+                <stop offset="55%" stopColor="#e6ebf1" />
+                <stop offset="100%" stopColor="#aeb9c6" />
+              </linearGradient>
+              <linearGradient id="noseGrad" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stopColor="#ff7a52" />
+                <stop offset="55%" stopColor="#e5321f" />
+                <stop offset="100%" stopColor="#a81c0d" />
+              </linearGradient>
+              <linearGradient id="finGrad" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stopColor="#f0452c" />
+                <stop offset="100%" stopColor="#b01e10" />
+              </linearGradient>
+              <linearGradient id="flameOuter" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#ff8a1e" />
+                <stop offset="70%" stopColor="#ff5f14" stopOpacity="0.85" />
+                <stop offset="100%" stopColor="#ff5f14" stopOpacity="0" />
+              </linearGradient>
+              <linearGradient id="flameMid" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#ffc42e" />
+                <stop offset="100%" stopColor="#ff9a1e" stopOpacity="0.15" />
+              </linearGradient>
+            </defs>
+
+            {/* flame, flickers from the nozzle */}
+            <g className="gp-flame">
+              <path d="M60 202 C 77 225 83 248 60 294 C 37 248 43 225 60 202 Z" fill="url(#flameOuter)" />
+              <path d="M60 204 C 71 221 74 238 60 268 C 46 238 49 221 60 204 Z" fill="url(#flameMid)" />
+              <path d="M60 206 C 66 217 68 229 60 247 C 52 229 54 217 60 206 Z" fill="#fff6cf" />
+            </g>
+
+            {/* side fins behind the body */}
+            <path d="M37 126 C 24 149 17 172 15 199 C 25 195 32 190 37 183 Z" fill="url(#finGrad)" />
+            <path d="M83 126 C 96 149 103 172 105 199 C 95 195 88 190 83 183 Z" fill="url(#finGrad)" />
+
+            {/* body */}
+            <rect x="36" y="54" width="48" height="140" rx="12" fill="url(#rocketBody)" stroke="#7c8896" strokeOpacity="0.35" />
+            {/* nose cone */}
+            <path d="M36 62 C 39 32 48 11 60 2 C 72 11 81 32 84 62 C 71 53 49 53 36 62 Z" fill="url(#noseGrad)" />
+            <path d="M47 20 C 43 30 41 42 41 52" fill="none" stroke="#ffffff" strokeOpacity="0.5" strokeWidth="3.5" strokeLinecap="round" />
+            {/* window */}
+            <circle cx="60" cy="94" r="11.5" fill="#1d2f47" stroke="#8fa5ba" strokeWidth="3.5" />
+            <circle cx="56" cy="89.5" r="3.4" fill="#ffffff" opacity="0.85" />
+            {/* red stripe + panel line */}
+            <rect x="36" y="146" width="48" height="10" fill="#e5321f" opacity="0.92" />
+            <line x1="38" y1="122" x2="82" y2="122" stroke="#8d99a7" strokeOpacity="0.55" strokeWidth="1.4" />
+            {/* body highlight */}
+            <rect x="42.5" y="66" width="6.5" height="118" rx="3.25" fill="#ffffff" opacity="0.4" />
+            {/* centre fin */}
+            <path d="M51 166 L60 202 L69 166 L69 186 L51 186 Z" fill="#c22412" />
+            {/* engine nozzle */}
+            <path d="M46 190 L74 190 L69.5 206 L50.5 206 Z" fill="#5b6570" />
+            <rect x="52" y="200" width="16" height="4" rx="2" fill="#39424c" />
           </svg>
         </div>
       </div>

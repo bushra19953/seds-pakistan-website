@@ -49,6 +49,22 @@ async function authenticate(request: NextRequest): Promise<{ decoded: admin.auth
   }
 }
 
+/**
+ * Workflow-level description carried on a step doc: POST /api/workflows
+ * writes `guidance` (CreateWorkflowSchema) onto EVERY step doc, and the
+ * form's "General guidance" field (task-form.tsx) is where the parent
+ * description is written at creation. The public missions route reads
+ * exactly this: docs[0].guidance?.description. A string-shaped
+ * guidance is not a stored form (POST always writes an object or null).
+ */
+const guidanceDescriptionOf = (doc: any): string | null => {
+  const g = doc?.guidance;
+  if (g && typeof g === 'object' && typeof g.description === 'string' && g.description.trim()) {
+    return g.description;
+  }
+  return null;
+};
+
 const StepSchema = z.object({
   title: z.string().min(1),
   description: z.string().default(''),
@@ -517,6 +533,9 @@ export async function GET(request: NextRequest) {
       const workflowMap = new Map<string, {
         id: string;
         title: string;
+        description: string | null;
+        fallbackDescription: string | null;
+        fallbackSeq: number | null;
         totalSteps: number;
         completedSteps: number;
         approvedSteps: number;
@@ -538,6 +557,9 @@ export async function GET(request: NextRequest) {
           workflowMap.set(wfId, {
             id: wfId,
             title: data.workflowTitle || wfId,
+            description: null,
+            fallbackDescription: null,
+            fallbackSeq: null,
             totalSteps: 0,
             completedSteps: 0,
             approvedSteps: 0,
@@ -552,6 +574,23 @@ export async function GET(request: NextRequest) {
         }
 
         const wf = workflowMap.get(wfId)!;
+        // Parent workflow description (MSG46): it lives denormalized on
+        // every step doc as guidance.description (see
+        // guidanceDescriptionOf above). Prefer it — it is identical on
+        // every step, so doc order does not matter. When guidance is
+        // absent (workflows created from team-tasks never send it),
+        // fall back to the lowest-sequence step's description:
+        // handleCreateWorkflow folds the parent description into steps
+        // that have none of their own. Mirrors the deadline preference
+        // below and the public missions route's docs[0] read.
+        const guidanceDesc = guidanceDescriptionOf(data);
+        if (guidanceDesc && !wf.description) wf.description = guidanceDesc;
+        const seq = typeof data.sequenceIndex === 'number' ? data.sequenceIndex : 0;
+        const stepDesc = typeof data.description === 'string' && data.description.trim() ? data.description : null;
+        if (stepDesc && (wf.fallbackSeq === null || seq < wf.fallbackSeq)) {
+          wf.fallbackDescription = stepDesc;
+          wf.fallbackSeq = seq;
+        }
         wf.totalSteps += 1;
         if (isStepWorkDone(data.status)) wf.completedSteps += 1;
         if (isStepApproved(data.status)) wf.approvedSteps += 1;
@@ -584,6 +623,7 @@ export async function GET(request: NextRequest) {
       const workflows = Array.from(workflowMap.values()).map(wf => ({
         id: wf.id,
         title: wf.title,
+        description: wf.description || wf.fallbackDescription || undefined,
         deadline: wf.deadline,
         totalSteps: wf.totalSteps,
         completedSteps: wf.completedSteps,
@@ -778,6 +818,23 @@ export async function GET(request: NextRequest) {
     const currentIndex = Math.max(0, tasksWithNames.findIndex(t => !!t.isCurrentStep));
     const progressPercentage = totalSteps ? Math.round((completedSteps / totalSteps) * 100) : 0;
 
+    // Parent workflow description (MSG46), same rule as the list
+    // aggregate and the public missions route: the denormalized
+    // guidance.description first (identical on every step), else the
+    // earliest step's description. tasksWithNames is already sorted by
+    // sequenceIndex, so [0] is the earliest step.
+    let detailDescription: string | undefined;
+    for (const t of tasksWithNames) {
+      const g = guidanceDescriptionOf(t);
+      if (g) { detailDescription = g; break; }
+    }
+    if (!detailDescription) {
+      const first = tasksWithNames[0] as any;
+      if (typeof first?.description === 'string' && first.description.trim()) {
+        detailDescription = first.description;
+      }
+    }
+
     const analytics = {
       workflowId,
       totalDuration: tasksWithNames.reduce((acc, t) => acc + (Number(t.estimatedDuration || 0)), 0),
@@ -788,7 +845,7 @@ export async function GET(request: NextRequest) {
     };
     const progress = { workflowId, totalSteps, completedSteps, currentStepIndex: currentIndex, progressPercentage, isCompleted: allApproved };
 
-    return NextResponse.json({ ok: true, tasks: tasksWithNames, progress, analytics, assigneeInfo, chapterName }, {
+    return NextResponse.json({ ok: true, tasks: tasksWithNames, progress, analytics, assigneeInfo, chapterName, description: detailDescription }, {
       headers: { 'Cache-Control': 'private, max-age=60, stale-while-revalidate=300' }
     });
   } catch (e: any) {

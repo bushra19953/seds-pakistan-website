@@ -481,15 +481,89 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
   doc.setDrawColor(...THEME.burntOrange); doc.setLineWidth(1); doc.line(20, 28, pageWidth - 20, 28);
   
   let briefY = 45;
-  
-  // Mission Intent
-  doc.setTextColor(...THEME.burntOrange); doc.setFontSize(10); doc.text('OPERATIONAL INTENT', 20, briefY);
-  doc.setTextColor(...THEME.deepCharcoal); doc.setFontSize(11.5); doc.setFont('helvetica', 'normal');
-  const intentLines = doc.splitTextToSize(workflow.description || "The primary objective of this mission is to advance SEDS Pakistan's core objectives through coordinated technical execution and multi-disciplinary collaboration.", pageWidth - 40);
-  doc.text(intentLines, 20, briefY + 8);
-  briefY += (intentLines.length * 6) + 20;
 
-  // Commander statement (Callout box)
+  // Bottom of the usable briefing area (same 25mm bottom margin the
+  // step sections use). Nothing on the briefing page may draw past it.
+  const briefBottom = pageHeight - 25;
+
+  // Start a fresh briefing page with the same header as page 2, and
+  // reset the section cursor to the top (mirrors the personnel-section
+  // continuation pages, which redraw MISSION EXECUTION PLAN).
+  const startBriefingPage = () => {
+    doc.addPage();
+    drawBackground();
+    doc.setTextColor(...THEME.deepCharcoal); doc.setFontSize(24); doc.setFont('helvetica', 'bold');
+    doc.text('STRATEGIC COMMAND BRIEFING', 20, 25);
+    doc.setDrawColor(...THEME.burntOrange); doc.setLineWidth(1); doc.line(20, 28, pageWidth - 20, 28);
+    briefY = 45;
+  };
+
+  // Mission Intent. A real parent description can be long, so the text
+  // flows across pages instead of pushing the sections below off the
+  // page bottom (the old code drew every line at a fixed Y with no
+  // overflow handling). jsPDF draws array text with a fixed per-line
+  // step of fontSize * lineHeightFactor (1.15 default) in points; the
+  // intent font is 11.5pt, so lines step 11.5 * 1.15pt = 4.67mm. Lines
+  // are drawn one at a time at exactly that step, and the section
+  // advance below keeps the old formula (lines * 6 + 20) — short intents
+  // render exactly as before.
+  const INTENT_FONT_SIZE = 11.5;
+  const INTENT_LINE_STEP_MM = (INTENT_FONT_SIZE * 1.15 * 25.4) / 72;
+  const INTENT_LINE_H = 6;
+  // Any URL inside the intent text gets the shared clickable-URL
+  // treatment (blue, underlined, linked) at its exact position on the
+  // line. A URL split across wrapped lines by splitTextToSize cannot be
+  // located reliably, so only a URL that fits whole on its line is
+  // linked; the text itself still prints either way.
+  const INTENT_URL_RE = /https?:\/\/[^\s)]+/g;
+  const linkIntentUrls = (line: string, baselineY: number) => {
+    INTENT_URL_RE.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = INTENT_URL_RE.exec(line)) !== null) {
+      const url = m[0].replace(/[.,;:!?]+$/, '');
+      if (!url) continue;
+      const urlX = 20 + doc.getTextWidth(line.slice(0, m.index));
+      if (urlX + doc.getTextWidth(url) > pageWidth - 20) continue;
+      drawClickableUrl(doc, url, urlX, baselineY, pageWidth - 20 - urlX, { fontSize: INTENT_FONT_SIZE, align: 'left' });
+      // drawClickableUrl leaves the link font/colors active; restore the
+      // intent text style for the next line.
+      doc.setTextColor(...THEME.deepCharcoal); doc.setFont('helvetica', 'normal'); doc.setFontSize(INTENT_FONT_SIZE);
+    }
+  };
+
+  doc.setTextColor(...THEME.burntOrange); doc.setFontSize(10); doc.text('OPERATIONAL INTENT', 20, briefY);
+  doc.setTextColor(...THEME.deepCharcoal); doc.setFontSize(INTENT_FONT_SIZE); doc.setFont('helvetica', 'normal');
+  const intentLines = doc.splitTextToSize(workflow.description || "The primary objective of this mission is to advance SEDS Pakistan's core objectives through coordinated technical execution and multi-disciplinary collaboration.", pageWidth - 40);
+  if (intentLines.length === 0) {
+    briefY += 20;
+  } else {
+    let intentLineIdx = 0;
+    let intentTextY = briefY + 8;
+    while (intentLineIdx < intentLines.length) {
+      // Lines whose baselines fit above the bottom margin. Always draw
+      // at least one line per page so an overlong single line still
+      // advances instead of looping forever.
+      const fits = Math.max(1, Math.floor((briefBottom - intentTextY) / INTENT_LINE_STEP_MM) + 1);
+      const chunk = intentLines.slice(intentLineIdx, intentLineIdx + fits);
+      chunk.forEach((line: string, i: number) => {
+        const baselineY = intentTextY + i * INTENT_LINE_STEP_MM;
+        doc.text(line, 20, baselineY);
+        linkIntentUrls(line, baselineY);
+      });
+      intentLineIdx += chunk.length;
+      if (intentLineIdx < intentLines.length) {
+        startBriefingPage();
+        intentTextY = briefY + 8;
+      } else {
+        briefY = intentTextY + chunk.length * INTENT_LINE_H + 12;
+      }
+    }
+  }
+
+  // Commander statement (Callout box). If the 35mm box will not fit
+  // above the bottom margin, it starts on a fresh briefing page
+  // instead of drawing off the page.
+  if (briefY + 35 > briefBottom) startBriefingPage();
   doc.setFillColor(248, 250, 255);
   doc.roundedRect(20, briefY, pageWidth - 40, 35, 2, 2, 'F');
   doc.setDrawColor(...THEME.linkBlue); doc.setLineWidth(1.5); doc.line(20, briefY, 20, briefY + 35);
@@ -503,6 +577,9 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
 
   // Resource & Asset Matrix (placeholder boxes; skipped when hideAssetInventory)
   if (!options?.hideAssetInventory) {
+  // If the heading + 25mm boxes will not fit above the bottom margin,
+  // the matrix starts on a fresh briefing page.
+  if (briefY + 30 > briefBottom) startBriefingPage();
   // Resource & Asset Matrix
   doc.setTextColor(...THEME.burntOrange); doc.setFontSize(10); doc.setFont('helvetica', 'bold');
   doc.text('MISSION ASSET INVENTORY', 20, briefY);

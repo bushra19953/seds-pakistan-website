@@ -12,7 +12,7 @@
  *
  * The PDF exporter's data is assembled by missions-tab.tsx
  * (handleExportPDF) from this route's detail response:
- *   { ok, tasks, progress, analytics, assigneeInfo, chapterName }
+ *   { ok, tasks, progress, analytics, assigneeInfo, chapterName, description }
  * tasks[] carry the personnel fields (assigneeName/Email/Whatsapp/
  * Chapter/Photo, assignees[]), assigneeInfo carries per-uid contact
  * fields, and workflow-pdf-export.ts turns each personnel row into a QR
@@ -285,17 +285,22 @@ afterEach(() => {
 });
 
 describe('contract 3: workflows GET detail — the PDF export data source', () => {
-  it('returns the detail payload: tasks, progress, analytics, assigneeInfo, chapterName', async () => {
+  it('returns the detail payload: tasks, progress, analytics, assigneeInfo, chapterName, description', async () => {
     const { res, body } = await getDetail();
     expect(res.status).toBe(200);
     expect(body.ok).toBe(true);
     expect(Object.keys(body).sort()).toEqual(
-      ['ok', 'tasks', 'progress', 'analytics', 'assigneeInfo', 'chapterName'].sort(),
+      ['ok', 'tasks', 'progress', 'analytics', 'assigneeInfo', 'chapterName', 'description'].sort(),
     );
     expect(res.headers.get('cache-control')).toBe(
       'private, max-age=60, stale-while-revalidate=300',
     );
     expect(body.chapterName).toBe('SEDS IST');
+    // MSG46: the parent workflow description rides the detail response
+    // so the PDF export data source carries it: step1's denormalized
+    // guidance.description, the same 'Strategic intent text' the
+    // assembly mirror below hardcodes.
+    expect(body.description).toBe('Strategic intent text');
     expect(body.tasks).toHaveLength(3);
     expect(body.progress).toEqual({
       workflowId: WF_ID,

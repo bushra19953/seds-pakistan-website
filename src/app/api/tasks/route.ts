@@ -874,16 +874,51 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
     // The edited task can itself be one of the workflow step docs (taskRef
     // === step doc). In that case the batch writes the step's resources
     // FIRST (queued above in the step-doc write path) and the master task
-    // update LAST; a stale top-level `resources` on the master payload would
-    // clobber the fresh step resources because Firestore applies same-doc
-    // writes in batch order. Drop the stale top-level resources here so the
-    // step's resources survive.
+    // update LAST; whichever copy is stale would clobber the fresh one
+    // because Firestore applies same-doc writes in batch order. The two
+    // copies are two editors for the SAME field on the same doc: the
+    // top-level "Resources & Logistics" section and the step's "Step
+    // Resources" section in the Workflow Plan. Either copy may be the
+    // fresh one, so the stale one cannot be identified by position alone
+    // (019ee1a0 assumed the top-level copy was always stale, which drops
+    // a top-level-only edit silently). The copy that differs from the
+    // stored doc is the one the admin actually edited, so it wins:
+    // - step copy changed, top-level unchanged: the step copy wins. Write
+    //   it into the master payload too, so the master update (queued
+    //   last), the response snapshot, and the mirror image all agree with
+    //   the step write instead of carrying the stale top-level value.
+    // - top-level copy changed, step copy unchanged: keep the top-level
+    //   copy; the master write is queued last, so it overwrites the stale
+    //   step write with the fresh value.
+    // - both changed: ambiguous; the step copy wins, as before.
+    // - neither changed: drop the redundant key; nothing is lost.
     if (stepWrites && stepWrites.length > 0) {
       const editedStep = stepWrites.find(
         (s: any) => s && s.id && String(s.id) === String(taskId)
       );
-      if (editedStep && Array.isArray(editedStep.resources)) {
-        delete updatesToApply.resources;
+      if (
+        editedStep &&
+        Array.isArray(editedStep.resources) &&
+        Array.isArray(updatesToApply.resources)
+      ) {
+        const resourceKey = (list: any[]) =>
+          JSON.stringify(
+            (Array.isArray(list) ? list : []).map((r: any) => [
+              r?.type ?? '',
+              r?.url ?? '',
+              r?.title ?? '',
+            ]),
+          );
+        const storedResources = Array.isArray((taskBefore as any).resources)
+          ? (taskBefore as any).resources
+          : [];
+        const stepChanged = resourceKey(editedStep.resources) !== resourceKey(storedResources);
+        const topChanged = resourceKey(updatesToApply.resources) !== resourceKey(storedResources);
+        if (stepChanged) {
+          updatesToApply.resources = editedStep.resources;
+        } else if (!topChanged) {
+          delete updatesToApply.resources;
+        }
       }
     }
     // Ids of step docs the admin removed in the edit dialog. Extracted here

@@ -10,9 +10,12 @@
  * same-doc batch writes in queue order, the stale top-level `resources`
  * overwrote the step's fresh resources.
  *
- * Fix under test: when the edited taskId matches a step id that carries a
- * resources array, the stale top-level `updates.resources` is dropped before
- * the master write, so the step write's resources survive the batch.
+ * Fix under test: when the edited taskId matches a step id, the server
+ * reconciles the two copies against the stored doc. The copy that differs
+ * from stored is the one the admin edited, so it wins, and the winning
+ * value is written into the master payload as well — so the step write's
+ * resources survive the batch AND the master write (queued last), the
+ * response snapshot, and the mirror image all agree with it.
  *
  * This test exercises the real handleUpdate via the PATCH export with a
  * fully mocked Firestore, and simulates batch apply order to prove the
@@ -240,9 +243,11 @@ describe('PATCH /api/tasks dual-write clobber (step resources vs stale top-level
     // Step write (queued first) carries the fresh resources.
     expect(step1Updates[0].data.resources).toEqual(TEN_LINKS);
 
-    // Master write (queued last) must NOT carry the stale top-level
-    // resources, otherwise it would clobber the step write in the batch.
-    expect(step1Updates[1].data).not.toHaveProperty('resources');
+    // Master write (queued last) must carry the STEP's fresh resources,
+    // not the stale top-level []: the winning value is written into the
+    // master payload, so the batch, the response snapshot, and the mirror
+    // image all agree with the step write.
+    expect(step1Updates[1].data.resources).toEqual(TEN_LINKS);
 
     // Simulate Firestore batch apply order: same-doc writes apply in queue
     // order, later writes overwriting earlier fields. The final stored

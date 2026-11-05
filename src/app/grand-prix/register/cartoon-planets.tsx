@@ -108,7 +108,7 @@ export default function CartoonPlanets() {
           transform-box: fill-box; transform-origin: 50% 0%;
         }
         .gp-rocket-trail {
-          position: absolute; left: 50%; top: 86%; width: 30px; height: 200px;
+          position: absolute; left: 50%; top: 80%; width: 30px; height: 200px;
           transform: translateX(-50%); border-radius: 9999px; filter: blur(7px);
           background: linear-gradient(to bottom, rgba(120,190,255,0.5), rgba(80,150,240,0.18) 45%, rgba(80,150,240,0));
         }
@@ -323,10 +323,10 @@ export default function CartoonPlanets() {
           toward the top left, fades away while leaving through the top
           edge, rests off-screen, then emerges from the bottom again. */}
       <div className="gp-rocket-zone absolute" style={{ right: '4.5%', bottom: '2%' }}>
-        <div className="gp-rocket relative" style={{ width: 106 }}>
+        <div className="gp-rocket relative" style={{ width: 118 }}>
           <div className="gp-rocket-trail" />
           <svg
-            viewBox="0 0 120 300"
+            viewBox="0 0 220 336"
             className="relative w-full"
             style={{ filter: 'drop-shadow(0 0 24px rgba(110,175,255,0.42))' }}
           >
@@ -356,35 +356,43 @@ export default function CartoonPlanets() {
               </linearGradient>
             </defs>
 
-            {/* flame, flickers from the nozzle */}
+            {/* flame, flickers from the nozzle: wide teardrop like the reference */}
             <g className="gp-flame">
-              <path d="M60 202 C 77 225 83 248 60 294 C 37 248 43 225 60 202 Z" fill="url(#flameOuter)" />
-              <path d="M60 204 C 71 221 74 238 60 268 C 46 238 49 221 60 204 Z" fill="url(#flameMid)" />
-              <path d="M60 206 C 66 217 68 229 60 247 C 52 229 54 217 60 206 Z" fill="#f2fbff" />
+              <path d="M110 254 C 129 273 135 297 110 332 C 85 297 91 273 110 254 Z" fill="url(#flameOuter)" />
+              <path d="M110 256 C 123 270 127 287 110 312 C 93 287 97 270 110 256 Z" fill="url(#flameMid)" />
+              <path d="M110 258 C 118 268 120 280 110 296 C 100 280 102 268 110 258 Z" fill="#f2fbff" />
             </g>
 
-            {/* side fins behind the body */}
-            <path d="M37 126 C 24 149 17 172 15 199 C 25 195 32 190 37 183 Z" fill="url(#finGrad)" />
-            <path d="M83 126 C 96 149 103 172 105 199 C 95 195 88 190 83 183 Z" fill="url(#finGrad)" />
+            {/* side fins: long frame-style legs sweeping out and down past
+                the body, pale inset panel inside a coloured frame */}
+            <path d="M72 158 L28 236 L28 290 L52 290 L74 210 Z" fill="url(#finGrad)" />
+            <path d="M69 182 L42 240 L42 276 L50 276 L67 216 Z" fill="#e9eef3" opacity="0.85" />
+            <path d="M148 158 L192 236 L192 290 L168 290 L146 210 Z" fill="url(#finGrad)" />
+            <path d="M151 182 L178 240 L178 276 L170 276 L153 216 Z" fill="#e9eef3" opacity="0.85" />
 
-            {/* body */}
-            <rect x="36" y="54" width="48" height="140" rx="12" fill="url(#rocketBody)" stroke="#7c8896" strokeOpacity="0.35" />
-            {/* nose cone */}
-            <path d="M36 62 C 39 32 48 11 60 2 C 72 11 81 32 84 62 C 71 53 49 53 36 62 Z" fill="url(#noseGrad)" />
-            <path d="M47 20 C 43 30 41 42 41 52" fill="none" stroke="#ffffff" strokeOpacity="0.5" strokeWidth="3.5" strokeLinecap="round" />
+            {/* engine nozzle, tucked under the body */}
+            <path d="M94 240 L126 240 L120 259 L100 259 Z" fill="#5b6570" />
+            <rect x="101" y="255" width="18" height="4.5" rx="2" fill="#39424c" />
+
+            {/* body: short and wide like the reference, panel seams across */}
+            <rect x="68" y="92" width="84" height="150" rx="10" fill="url(#rocketBody)" stroke="#7c8896" strokeOpacity="0.35" />
+            {/* nose cone: smooth rounded bullet curve */}
+            <path d="M68 102 C 72 56 89 20 110 5 C 131 20 148 56 152 102 C 134 89 86 89 68 102 Z" fill="url(#noseGrad)" />
+            <path d="M95 24 C 86 38 80 56 78 74" fill="none" stroke="#ffffff" strokeOpacity="0.5" strokeWidth="4" strokeLinecap="round" />
             {/* window */}
-            <circle cx="60" cy="94" r="11.5" fill="#1d2f47" stroke="#8fa5ba" strokeWidth="3.5" />
-            <circle cx="56" cy="89.5" r="3.4" fill="#ffffff" opacity="0.85" />
-            {/* steel band + panel line */}
-            <rect x="36" y="146" width="48" height="10" fill="#546b7d" opacity="0.85" />
-            <line x1="38" y1="122" x2="82" y2="122" stroke="#8d99a7" strokeOpacity="0.55" strokeWidth="1.4" />
+            <circle cx="110" cy="124" r="13" fill="#1d2f47" stroke="#8fa5ba" strokeWidth="4" />
+            <circle cx="105" cy="119" r="3.8" fill="#ffffff" opacity="0.85" />
+            {/* panel seams + small body dots from the reference */}
+            <line x1="70" y1="158" x2="150" y2="158" stroke="#8d99a7" strokeOpacity="0.55" strokeWidth="1.6" />
+            <line x1="70" y1="200" x2="150" y2="200" stroke="#8d99a7" strokeOpacity="0.55" strokeWidth="1.6" />
+            <ellipse cx="110" cy="179" rx="2.8" ry="4.2" fill="#546b7d" />
+            <ellipse cx="110" cy="212" rx="2.8" ry="4.2" fill="#546b7d" />
+            {/* steel band near the base */}
+            <rect x="68" y="224" width="84" height="13" fill="#546b7d" opacity="0.85" />
             {/* body highlight */}
-            <rect x="42.5" y="66" width="6.5" height="118" rx="3.25" fill="#ffffff" opacity="0.4" />
-            {/* centre fin, muted brick like the reference */}
-            <path d="M51 166 L60 202 L69 166 L69 186 L51 186 Z" fill="#bd6a4a" />
-            {/* engine nozzle */}
-            <path d="M46 190 L74 190 L69.5 206 L50.5 206 Z" fill="#5b6570" />
-            <rect x="52" y="200" width="16" height="4" rx="2" fill="#39424c" />
+            <rect x="76" y="104" width="7" height="128" rx="3.5" fill="#ffffff" opacity="0.4" />
+            {/* centre fin: long teardrop down the front, muted brick */}
+            <path d="M110 198 C 123 218 125 246 110 284 C 95 246 97 218 110 198 Z" fill="#bd6a4a" />
           </svg>
         </div>
       </div>

@@ -68,8 +68,13 @@ interface WorkflowStep {
   assigneeEmail?: string;
   assigneeWhatsapp?: string;
   assigneeRole?: string;
+  // MSG47: the role the PDF personnel rows print — the first held
+  // custom grant when one is held, else absent (callers fall back to
+  // assigneeRole). Set by GET /api/workflows detail; never the raw
+  // `role` field, which stays the primary role for the UI.
+  assigneeDisplayRole?: string;
   assigneePhoto?: string;
-  assignees?: Array<{ id: string; name: string; photoURL?: string | null; role?: string | null; chapterName?: string | null }>;
+  assignees?: Array<{ id: string; name: string; photoURL?: string | null; role?: string | null; displayRole?: string | null; chapterName?: string | null }>;
   role?: string;
   individualDeadline?: string;
   isCurrentStep?: boolean;
@@ -306,13 +311,19 @@ function WorkflowCard({
       // Custom-role titles for the PDF personnel rows (Custom Roles
       // consumers Surface 3; contracts 4.2 client adapter): resolve the
       // step assignees' custom slugs to their definition names; catalog
-      // roles keep the exporter's canonical titles.
+      // roles keep the exporter's canonical titles. MSG47: collect the
+      // EFFECTIVE role (displayRole first — the custom grant when one
+      // is held — else the primary role); collecting the primary alone
+      // is the bug: a custom-grant holder's slug never entered this
+      // set, so the exporter fell back to the primary's title.
       let roleTitles: Record<string, string> | undefined;
       const customSlugs = new Set<string>();
       for (const s of processedSteps) {
-        if (s.assigneeRole && isCustomRoleSlug(s.assigneeRole)) customSlugs.add(s.assigneeRole);
+        const primaryRole = (s as any).assigneeDisplayRole || s.assigneeRole;
+        if (primaryRole && isCustomRoleSlug(primaryRole)) customSlugs.add(primaryRole);
         for (const a of (s as any).processedAssignees || []) {
-          if (a.role && isCustomRoleSlug(a.role)) customSlugs.add(a.role);
+          const fellowRole = a.displayRole || a.role;
+          if (fellowRole && isCustomRoleSlug(fellowRole)) customSlugs.add(fellowRole);
         }
       }
       if (customSlugs.size > 0) {
@@ -342,7 +353,10 @@ function WorkflowCard({
           title: s.title,
           description: s.description,
           role: s.role,
-          assigneeRole: s.assigneeRole,
+          // MSG47: feed the effective role to the exporter — the custom
+          // grant slug when held, else the primary role. The exporter's
+          // titleForRole then resolves the custom title via roleTitles.
+          assigneeRole: (s as any).assigneeDisplayRole || s.assigneeRole,
           assigneeName: s.assigneeName,
           assigneeEmail: s.assigneeEmail,
           assigneeWhatsapp: s.assigneeWhatsapp,
@@ -351,7 +365,7 @@ function WorkflowCard({
           assignees: (s as any).processedAssignees?.map((a: any) => ({
             id: a.id,
             name: a.name,
-            role: a.role || undefined,
+            role: a.displayRole || a.role || undefined,
             chapterName: a.chapterName || undefined,
             email: pdfAssigneeInfo?.[a.id]?.email || undefined,
             whatsapp: pdfAssigneeInfo?.[a.id]?.whatsapp || undefined,

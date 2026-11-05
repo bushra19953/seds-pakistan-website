@@ -16,6 +16,7 @@ import {
   userNotificationsPath,
 } from '@/lib/server/notifications-supa-seam';
 import { resolveUserEmail, getUserContacts, stripContactFields, type UserContact } from '@/lib/server/user-contact';
+import { heldCustomRoleSlugs } from '@/lib/custom-roles';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -689,7 +690,15 @@ export async function GET(request: NextRequest) {
         ? t.assigneeIds.map(String).filter(Boolean)
         : (t.assigneeId ? [String(t.assigneeId)] : []);
     const uniqueAssigneeIds = Array.from(new Set(tasks.flatMap(taskAssigneeIds)));
-    const assigneeInfo: Record<string, { name: string; photoURL?: string; position?: string; role?: string; whatsapp?: string | null; email?: string | null; chapterName?: string }> = {};
+    // MSG47: displayRole is the role the PDF personnel rows print: the
+    // first held custom grant (roles/{uid}.additionalRoles) when one is
+    // held, else ABSENT — callers fall back to `role`, so the response
+    // shape is unchanged when nobody holds a custom grant.
+    const assigneeInfo: Record<string, { name: string; photoURL?: string; position?: string; role?: string; displayRole?: string; whatsapp?: string | null; email?: string | null; chapterName?: string }> = {};
+    // Primary role per uid for the display-role resolution, read the
+    // hierarchy's way (displayRole first, then role — they normally
+    // mirror each other on the user doc).
+    const primaryRoleByUid: Record<string, string | null> = {};
 
     // NEW: Get chapter name if available
     let chapterName: string | null = null;
@@ -765,12 +774,50 @@ export async function GET(request: NextRequest) {
               email: assigneeContacts.get(doc.id)?.email || null,
               chapterName: chapterName ?? undefined,
             };
+            primaryRoleByUid[doc.id] = (userData as any)?.displayRole || userData?.role || null;
           } else {
             assigneeInfo[doc.id] = { name: doc.id };
           }
         }
       } catch (e) {
         console.error('[workflows:GET] User fetch error:', e);
+      }
+
+      // MSG47: resolve each assignee's DISPLAY role — the role the PDF
+      // personnel rows print. The `role` field above is the primary role
+      // only (users doc), so a custom-grant holder printed as their
+      // primary (e.g. Basic Member). Custom grants live ONLY in
+      // roles/{uid}.additionalRoles, which this handler never read.
+      // displayRole is the first held custom grant (stored order,
+      // expired grants dropped — heldCustomRoleSlugs, the client
+      // mirror of the server's resolveHolderRoles). It is set ONLY
+      // when a grant is held; otherwise callers fall back to `role`.
+      // The roles fetch rides the Supa seam (assigneeRoleSnaps,
+      // parallel to uniqueAssigneeIds) so the seam never mixes stores.
+      try {
+        const assigneeRoleSnaps = supaReads
+          ? supaReads.assigneeRoleSnaps
+          : await Promise.all(
+              uniqueAssigneeIds.map((uid) =>
+                db.collection('roles').doc(uid).get().catch(() => null),
+              ),
+            );
+        const now = new Date();
+        for (let i = 0; i < uniqueAssigneeIds.length; i++) {
+          const uid = uniqueAssigneeIds[i];
+          const snap: any = assigneeRoleSnaps[i];
+          if (!snap || !snap.exists) continue;
+          const grants = heldCustomRoleSlugs(
+            (snap.data() as any) || {},
+            primaryRoleByUid[uid] || null,
+            now,
+          );
+          if (grants.length > 0 && assigneeInfo[uid]) {
+            assigneeInfo[uid].displayRole = grants[0];
+          }
+        }
+      } catch (e) {
+        console.error('[workflows:GET] Assignee roles fetch error:', e);
       }
     }
 
@@ -786,12 +833,16 @@ export async function GET(request: NextRequest) {
           name: assigneeInfo[id]?.name || id || 'Unknown',
           photoURL: assigneeInfo[id]?.photoURL || null,
           role: assigneeInfo[id]?.role || null,
+          ...(assigneeInfo[id]?.displayRole ? { displayRole: assigneeInfo[id].displayRole } : {}),
           chapterName: assigneeInfo[id]?.chapterName || null,
         })),
         assigneeName: assigneeInfo[primaryId as string]?.name || primaryId || 'Unknown',
         assigneePhoto: assigneeInfo[primaryId as string]?.photoURL || null,
         assigneePosition: assigneeInfo[primaryId as string]?.position || null,
         assigneeRole: assigneeInfo[primaryId as string]?.role || null,
+        ...(assigneeInfo[primaryId as string]?.displayRole
+          ? { assigneeDisplayRole: assigneeInfo[primaryId as string].displayRole }
+          : {}),
         assigneeWhatsapp: assigneeInfo[primaryId as string]?.whatsapp || null,
         assigneeEmail: assigneeInfo[primaryId as string]?.email || null,
         assigneeChapter: assigneeInfo[primaryId as string]?.chapterName || null,

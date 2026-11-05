@@ -216,7 +216,9 @@ function assemblePdfData(body: any): WorkflowPDFData {
       title: s.title,
       description: s.description,
       role: s.role,
-      assigneeRole: s.assigneeRole,
+      // MSG47: the callers feed the effective role — displayRole
+      // (first held custom grant) first, else the primary role.
+      assigneeRole: s.assigneeDisplayRole || s.assigneeRole,
       assigneeName: s.assigneeName,
       assigneeEmail: s.assigneeEmail,
       assigneeWhatsapp: s.assigneeWhatsapp,
@@ -225,7 +227,7 @@ function assemblePdfData(body: any): WorkflowPDFData {
       assignees: (s.assignees || []).map((a: any) => ({
         id: a.id,
         name: a.name,
-        role: a.role || undefined,
+        role: a.displayRole || a.role || undefined,
         chapterName: a.chapterName || undefined,
         email: pdfAssigneeInfo?.[a.id]?.email || undefined,
         whatsapp: pdfAssigneeInfo?.[a.id]?.whatsapp || undefined,

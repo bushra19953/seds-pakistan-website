@@ -87,16 +87,16 @@ export default function CartoonPlanets() {
         .gp-cluster-left { transform-origin: left center; }
         .gp-cluster-right { transform-origin: right center; }
         @keyframes gpRocketRise {
-          0% { transform: translateY(9vh) rotate(6deg); opacity: 0; }
-          9% { opacity: 1; }
-          76% { opacity: 1; }
-          100% { transform: translateY(-37vh) rotate(6deg); opacity: 0; }
+          0% { transform: translate(0, 6vh) rotate(-32deg); opacity: 0; }
+          10% { opacity: 1; }
+          74% { opacity: 1; }
+          100% { transform: translate(-33vw, -56vh) rotate(-32deg); opacity: 0; }
         }
         @keyframes gpFlameFlicker {
           from { transform: scaleY(0.9) scaleX(1); }
           to { transform: scaleY(1.2) scaleX(0.93); }
         }
-        .gp-rocket { animation: gpRocketRise 17s cubic-bezier(0.35, 0.08, 0.62, 0.55) infinite; }
+        .gp-rocket { animation: gpRocketRise 16s cubic-bezier(0.35, 0.08, 0.62, 0.55) infinite; }
         .gp-flame {
           animation: gpFlameFlicker 0.16s ease-in-out infinite alternate;
           transform-box: fill-box; transform-origin: 50% 0%;
@@ -104,7 +104,7 @@ export default function CartoonPlanets() {
         .gp-rocket-trail {
           position: absolute; left: 50%; top: 86%; width: 30px; height: 200px;
           transform: translateX(-50%); border-radius: 9999px; filter: blur(7px);
-          background: linear-gradient(to bottom, rgba(255,178,64,0.55), rgba(255,120,40,0.2) 45%, rgba(255,120,40,0));
+          background: linear-gradient(to bottom, rgba(120,190,255,0.5), rgba(80,150,240,0.18) 45%, rgba(80,150,240,0));
         }
         .gp-rocket-zone { transform-origin: bottom right; }
         @media (max-width: 1150px) {
@@ -310,39 +310,40 @@ export default function CartoonPlanets() {
         </div>
       </div>
 
-      {/* ROCKET: detailed cartoon rocket (red nose, white body, red fins,
-          bright flickering flame) launching up the right side */}
-      <div className="gp-rocket-zone absolute" style={{ right: '3.4%', bottom: '1%' }}>
+      {/* ROCKET: detailed cartoon rocket in the portal's own palette
+          (steel-blue nose, silver body, muted fins, soft blue flame),
+          launching diagonally from the bottom right toward the top left */}
+      <div className="gp-rocket-zone absolute" style={{ right: '4.5%', bottom: '2%' }}>
         <div className="gp-rocket relative" style={{ width: 106 }}>
           <div className="gp-rocket-trail" />
           <svg
             viewBox="0 0 120 300"
             className="relative w-full"
-            style={{ filter: 'drop-shadow(0 0 24px rgba(255,160,50,0.45))' }}
+            style={{ filter: 'drop-shadow(0 0 24px rgba(110,175,255,0.42))' }}
           >
             <defs>
               <linearGradient id="rocketBody" x1="0" y1="0" x2="1" y2="0">
-                <stop offset="0%" stopColor="#ffffff" />
-                <stop offset="55%" stopColor="#e6ebf1" />
-                <stop offset="100%" stopColor="#aeb9c6" />
+                <stop offset="0%" stopColor="#fbfcfd" />
+                <stop offset="55%" stopColor="#dde4ea" />
+                <stop offset="100%" stopColor="#a7b3bf" />
               </linearGradient>
               <linearGradient id="noseGrad" x1="0" y1="0" x2="1" y2="0">
-                <stop offset="0%" stopColor="#ff7a52" />
-                <stop offset="55%" stopColor="#e5321f" />
-                <stop offset="100%" stopColor="#a81c0d" />
+                <stop offset="0%" stopColor="#9dbdd4" />
+                <stop offset="55%" stopColor="#6d90ab" />
+                <stop offset="100%" stopColor="#476a86" />
               </linearGradient>
               <linearGradient id="finGrad" x1="0" y1="0" x2="1" y2="0">
-                <stop offset="0%" stopColor="#f0452c" />
-                <stop offset="100%" stopColor="#b01e10" />
+                <stop offset="0%" stopColor="#bccfdd" />
+                <stop offset="100%" stopColor="#7e97ab" />
               </linearGradient>
               <linearGradient id="flameOuter" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#ff8a1e" />
-                <stop offset="70%" stopColor="#ff5f14" stopOpacity="0.85" />
-                <stop offset="100%" stopColor="#ff5f14" stopOpacity="0" />
+                <stop offset="0%" stopColor="#57a8ff" />
+                <stop offset="70%" stopColor="#57a8ff" stopOpacity="0.8" />
+                <stop offset="100%" stopColor="#57a8ff" stopOpacity="0" />
               </linearGradient>
               <linearGradient id="flameMid" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#ffc42e" />
-                <stop offset="100%" stopColor="#ff9a1e" stopOpacity="0.15" />
+                <stop offset="0%" stopColor="#9fd4ff" />
+                <stop offset="100%" stopColor="#9fd4ff" stopOpacity="0.15" />
               </linearGradient>
             </defs>
 
@@ -350,7 +351,7 @@ export default function CartoonPlanets() {
             <g className="gp-flame">
               <path d="M60 202 C 77 225 83 248 60 294 C 37 248 43 225 60 202 Z" fill="url(#flameOuter)" />
               <path d="M60 204 C 71 221 74 238 60 268 C 46 238 49 221 60 204 Z" fill="url(#flameMid)" />
-              <path d="M60 206 C 66 217 68 229 60 247 C 52 229 54 217 60 206 Z" fill="#fff6cf" />
+              <path d="M60 206 C 66 217 68 229 60 247 C 52 229 54 217 60 206 Z" fill="#f2fbff" />
             </g>
 
             {/* side fins behind the body */}
@@ -365,13 +366,13 @@ export default function CartoonPlanets() {
             {/* window */}
             <circle cx="60" cy="94" r="11.5" fill="#1d2f47" stroke="#8fa5ba" strokeWidth="3.5" />
             <circle cx="56" cy="89.5" r="3.4" fill="#ffffff" opacity="0.85" />
-            {/* red stripe + panel line */}
-            <rect x="36" y="146" width="48" height="10" fill="#e5321f" opacity="0.92" />
+            {/* steel band + panel line */}
+            <rect x="36" y="146" width="48" height="10" fill="#546b7d" opacity="0.85" />
             <line x1="38" y1="122" x2="82" y2="122" stroke="#8d99a7" strokeOpacity="0.55" strokeWidth="1.4" />
             {/* body highlight */}
             <rect x="42.5" y="66" width="6.5" height="118" rx="3.25" fill="#ffffff" opacity="0.4" />
-            {/* centre fin */}
-            <path d="M51 166 L60 202 L69 166 L69 186 L51 186 Z" fill="#c22412" />
+            {/* centre fin, muted brick like the reference */}
+            <path d="M51 166 L60 202 L69 166 L69 186 L51 186 Z" fill="#bd6a4a" />
             {/* engine nozzle */}
             <path d="M46 190 L74 190 L69.5 206 L50.5 206 Z" fill="#5b6570" />
             <rect x="52" y="200" width="16" height="4" rx="2" fill="#39424c" />

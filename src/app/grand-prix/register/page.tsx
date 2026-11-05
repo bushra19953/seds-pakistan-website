@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { Fraunces, Manrope } from 'next/font/google';
+import Link from 'next/link';
 import StarryBackground from '@/components/starry-background';
 import Footer from '@/components/layout/footer';
-import { Trophy } from 'lucide-react';
 import SpaceScene from './space-scene';
 import CartoonPlanets from './cartoon-planets';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -12,12 +12,15 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
-  GRAND_PRIX_NAME,
+  FEE_CALLOUT,
+  INITIAL_CLOSE_ISO,
   NATION_LABELS,
-  SQUAD_SIZE,
-  TRACK_LABELS,
+  PASS_LABELS,
+  PASS_TYPES,
+  SERIES_NAME,
   type Nation,
-  type Track,
+  type PassType,
+  type WindowState,
 } from '@/lib/grand-prix/registration';
 
 const display = Fraunces({
@@ -33,29 +36,12 @@ const body = Manrope({
   variable: '--gp-body',
 });
 
-interface MemberForm {
-  fullName: string;
-  studentId: string;
-  email: string;
-  discipline: string;
-  whatsapp: string;
-}
-
-const emptyMember = (): MemberForm => ({
-  fullName: '',
-  studentId: '',
-  email: '',
-  discipline: '',
-  whatsapp: '',
-});
-
-interface BracketStatus {
+interface RegistrationStatus {
   open: boolean;
-  closesAt?: string;
+  state: WindowState;
+  closesAt: string | null;
+  opensAt: string | null;
   totalRegistered: number;
-  seatsTotal: number;
-  byNation: Record<Nation, { registered: number; cap: number }>;
-  byTrack: Record<Track, { registered: number; cap: number }>;
 }
 
 const IVORY = '#F5F0E4';
@@ -72,26 +58,50 @@ const cardClass =
   'rounded-2xl border-white/10 bg-white/[0.04] shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-md';
 const displayFont = '[font-family:var(--gp-display)]';
 
+function statusLine(state: WindowState): string {
+  if (state === 'open') return 'Registration open — initial window closes Nov 15, 2026, 23:59 PKT.';
+  if (state === 'late') return 'Late admission open — closes Nov 28, 2026, 23:59 PKT.';
+  return 'Registration closed — late admission opens Nov 21, 2026, 09:00 PKT and closes Nov 28, 2026, 23:59 PKT.';
+}
+
 export default function GrandPrixRegisterPage() {
-  const [squadName, setSquadName] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [studentId, setStudentId] = useState('');
+  const [email, setEmail] = useState('');
+  const [discipline, setDiscipline] = useState('');
+  const [whatsapp, setWhatsapp] = useState('');
   const [nation, setNation] = useState<Nation>('PK');
-  const [track, setTrack] = useState<Track>('rocketry');
+  const [passType, setPassType] = useState<PassType>('student');
   const [institutionName, setInstitutionName] = useState('');
   const [institutionId, setInstitutionId] = useState('');
   const [city, setCity] = useState('');
-  const [members, setMembers] = useState<MemberForm[]>(() =>
-    Array.from({ length: SQUAD_SIZE }, emptyMember),
-  );
-  const [status, setStatus] = useState<BracketStatus | null>(null);
+  const [status, setStatus] = useState<RegistrationStatus | null>(null);
   const [remainMs, setRemainMs] = useState<number | null>(null);
 
+  const countdownTarget =
+    status === null
+      ? INITIAL_CLOSE_ISO
+      : status.state === 'closed'
+        ? status.opensAt
+        : status.closesAt;
+  const countdownLabel =
+    status === null || status.state === 'open'
+      ? 'Registration closes in'
+      : status.state === 'late'
+        ? 'Late admission closes in'
+        : 'Late admission opens in';
+
   useEffect(() => {
-    const target = new Date(status?.closesAt ?? '2026-11-15T23:59:00+05:00').getTime();
+    if (countdownTarget === null) {
+      setRemainMs(null);
+      return;
+    }
+    const target = new Date(countdownTarget).getTime();
     const tick = () => setRemainMs(Math.max(0, target - Date.now()));
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [status]);
+  }, [countdownTarget]);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [success, setSuccess] = useState<{ registrationId: string } | null>(null);
@@ -101,19 +111,15 @@ export default function GrandPrixRegisterPage() {
     fetch('/api/grand-prix/registrations')
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        if (live && data && data.ok) setStatus(data as BracketStatus);
+        if (live && data && data.ok) setStatus(data as RegistrationStatus);
       })
       .catch(() => {
-        /* Bracket counts are informational; the server enforces the caps. */
+        /* Window state is informational; the server enforces the windows. */
       });
     return () => {
       live = false;
     };
   }, []);
-
-  const setMember = (i: number, field: keyof MemberForm, value: string) => {
-    setMembers((prev) => prev.map((m, idx) => (idx === i ? { ...m, [field]: value } : m)));
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -124,15 +130,16 @@ export default function GrandPrixRegisterPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          squadName,
+          fullName,
+          studentId,
+          email,
+          discipline,
+          whatsapp,
           nation,
-          track,
+          passType,
           institutionName,
           institutionId,
           city,
-          members: members.map((m, i) =>
-            i === 0 ? m : { fullName: m.fullName, studentId: m.studentId, email: m.email, discipline: m.discipline },
-          ),
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -153,6 +160,12 @@ export default function GrandPrixRegisterPage() {
   };
 
   const closed = status !== null && status.open === false;
+  const closedLine =
+    status !== null && status.state === 'closed' && status.opensAt === null
+      ? 'Registration closed — the late admission window ended Nov 28, 2026, 23:59 PKT.'
+      : status !== null
+        ? statusLine(status.state)
+        : 'Registration open — initial window closes Nov 15, 2026, 23:59 PKT.';
 
   return (
     <div
@@ -187,12 +200,19 @@ export default function GrandPrixRegisterPage() {
           <h1
             className={`mt-6 bg-gradient-to-r from-[#E8CF8F] via-[#C9A45C] to-[#E8CF8F] bg-clip-text text-center text-4xl font-semibold leading-[1.08] text-transparent sm:text-[3.4rem] ${displayFont}`}
           >
-            {GRAND_PRIX_NAME}
+            {SERIES_NAME}
           </h1>
           <p className="mx-auto mt-5 max-w-2xl text-center text-[15px] leading-relaxed text-[#CFC8B8]">
-            One common registration intake for both nations. Register a squad of exactly {SQUAD_SIZE} students,
-            pick one track, and hold your seat in the 30 squad bracket. Registration closes on Nov 15, 2026 at
-            23:59 PKT, or as soon as the bracket fills.
+            Individual enrolment for the six-module masterclass series. Choose your country and pass below.
+            See the six modules on the{' '}
+            <Link href="/grand-prix" className="font-semibold underline underline-offset-4" style={{ color: GOLD_LIGHT }}>
+              series page
+            </Link>
+            .
+          </p>
+          <p className="mx-auto mt-4 flex items-center justify-center gap-2.5 text-center text-[13px] font-semibold text-[#CFC8B8]">
+            <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full" style={{ backgroundColor: GOLD }} />
+            {closedLine}
           </p>
           <div className="mt-8 flex items-center justify-center gap-3" aria-hidden="true">
             <span className="h-px w-24 bg-white/15" />
@@ -204,7 +224,7 @@ export default function GrandPrixRegisterPage() {
             <div className="mt-10">
               <p className="flex items-center justify-center gap-2.5 text-center text-[11px] font-extrabold uppercase tracking-[0.34em]" style={{ color: GOLD_LIGHT }}>
                 <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full" style={{ backgroundColor: GOLD }} />
-                Registration closes in
+                {countdownLabel}
               </p>
               <div className="mx-auto mt-4 grid max-w-xl grid-cols-4 gap-3">
                 {[
@@ -229,56 +249,23 @@ export default function GrandPrixRegisterPage() {
             </div>
           )}
 
-          {status && (
-            <div className="mt-10 grid grid-cols-1 gap-4 text-center sm:grid-cols-3">
-              <Card className={cardClass}>
-                <CardContent className="py-6">
-                  <div className="mb-4 flex h-10 items-center justify-center">
-                    <Trophy className="h-9 w-9" style={{ color: GOLD }} strokeWidth={1.5} />
-                  </div>
-                  <p className={`text-4xl font-semibold ${displayFont}`} style={{ color: IVORY }}>
-                    {status.totalRegistered} <span className="text-2xl text-[#8E887A]">/ {status.seatsTotal}</span>
-                  </p>
-                  <div className="mx-auto mt-3 h-px w-10" style={{ backgroundColor: GOLD }} />
-                  <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.22em] text-[#CBBFA5]">
-                    Squads registered
-                  </p>
-                </CardContent>
-              </Card>
-              {(Object.keys(NATION_LABELS) as Nation[]).map((n) => (
-                <Card key={n} className={cardClass}>
-                  <CardContent className="py-6">
-                    <div className="mb-4 flex h-10 items-center justify-center">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={n === 'PK' ? '/assets/flags/pk.svg' : '/assets/flags/lk.svg'}
-                        alt={`${NATION_LABELS[n]} flag`}
-                        className="h-9 w-auto rounded-[4px] shadow-lg ring-1 ring-white/25"
-                      />
-                    </div>
-                    <p className={`text-4xl font-semibold ${displayFont}`} style={{ color: IVORY }}>
-                      {status.byNation[n].registered}{' '}
-                      <span className="text-2xl text-[#8E887A]">/ {status.byNation[n].cap}</span>
-                    </p>
-                    <div className="mx-auto mt-3 h-px w-10" style={{ backgroundColor: GOLD }} />
-                    <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.22em] text-[#CBBFA5]">
-                      {NATION_LABELS[n]}
-                    </p>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
+          <Card className={`mt-10 ${cardClass}`}>
+            <CardContent className="py-5">
+              <p className="text-center text-sm font-semibold leading-relaxed" style={{ color: GOLD_LIGHT }}>
+                {FEE_CALLOUT}
+              </p>
+            </CardContent>
+          </Card>
 
           {success ? (
             <Card className={`mt-10 ${cardClass}`} >
               <CardHeader className="border-b border-[#C9A45C]/25 pb-6 text-center">
                 <CardTitle className={`text-3xl font-semibold ${displayFont}`} style={{ color: GOLD_LIGHT }}>
-                  Squad registered
+                  Enrolment received
                 </CardTitle>
                 <CardDescription className="mx-auto max-w-md text-[15px] leading-relaxed text-[#CFC8B8]">
-                  Your seat is held while the registration is verified. Keep this registration ID for all
-                  correspondence about the Grand Prix.
+                  Your place is held while the enrolment is verified. Keep this registration ID for all
+                  correspondence about the masterclass series.
                 </CardDescription>
               </CardHeader>
               <CardContent className="pt-6 text-center">
@@ -287,7 +274,7 @@ export default function GrandPrixRegisterPage() {
                   {success.registrationId}
                 </p>
                 <p className="mt-5 text-sm text-[#CFC8B8]">
-                  Squad: {squadName} ({NATION_LABELS[nation]}, {TRACK_LABELS[track]})
+                  {fullName} ({NATION_LABELS[nation]} · {passType === 'student' ? 'Collegiate Student Pass' : 'Industry Professional Observer Pass'})
                 </p>
               </CardContent>
             </Card>
@@ -298,7 +285,7 @@ export default function GrandPrixRegisterPage() {
                   Registration is closed
                 </CardTitle>
                 <CardDescription className="mx-auto max-w-md text-[15px] leading-relaxed text-[#CFC8B8]">
-                  The bracket is full or the Nov 15, 2026 deadline has passed. No further squads can be accepted.
+                  {closedLine}
                 </CardDescription>
               </CardHeader>
             </Card>
@@ -306,57 +293,18 @@ export default function GrandPrixRegisterPage() {
             <form onSubmit={handleSubmit} className="mt-10 space-y-8">
               <Card className={cardClass}>
                 <CardHeader className="pb-2">
-                  <CardTitle className={`text-2xl font-semibold ${displayFont}`}>The Squad</CardTitle>
+                  <CardTitle className={`text-2xl font-semibold ${displayFont}`}>Your enrolment</CardTitle>
                   <CardDescription className="text-sm leading-relaxed text-[#A79E8B]">
-                    One squad per lead email. Squad names and student IDs must be unique across the bracket.
+                    One enrolment per email. Student IDs must be unique per institution.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="grid grid-cols-1 gap-5 pt-4 sm:grid-cols-2">
                   <div className="space-y-2.5">
-                    <Label htmlFor="squadName" className={labelClass}>Squad name</Label>
-                    <Input id="squadName" className={fieldClass} placeholder="e.g. Falcon IST" value={squadName} onChange={(e) => setSquadName(e.target.value)} required />
-                  </div>
-                  <div className="space-y-2.5">
-                    <Label className={labelClass}>Nation</Label>
-                    <div className="grid grid-cols-2 gap-3" role="radiogroup" aria-label="Nation">
+                    <Label htmlFor="nation" className={labelClass}>Country</Label>
+                    <select id="nation" className={selectClass} value={nation} onChange={(e) => setNation(e.target.value as Nation)}>
                       {(Object.keys(NATION_LABELS) as Nation[]).map((n) => (
-                        <button
-                          key={n}
-                          type="button"
-                          role="radio"
-                          aria-checked={nation === n}
-                          onClick={() => setNation(n)}
-                          className={`flex items-center gap-3 rounded-lg border px-3.5 py-3 text-left transition ${
-                            nation === n
-                              ? 'border-[#C9A45C]/80 bg-[#C9A45C]/10 shadow-[0_10px_30px_rgba(201,164,92,0.22)]'
-                              : 'border-white/15 bg-white/[0.05] hover:border-white/35'
-                          }`}
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={n === 'PK' ? '/assets/flags/pk.svg' : '/assets/flags/lk.svg'}
-                            alt=""
-                            className="h-7 w-auto shrink-0 rounded-[3px] ring-1 ring-white/25"
-                          />
-                          <span>
-                            <span className="block text-sm font-bold" style={{ color: IVORY }}>
-                              {NATION_LABELS[n]}
-                            </span>
-                            <span className="block text-[11px] text-[#A79E8B]">
-                              {status ? `${status.byNation[n].registered} / ${status.byNation[n].cap} squads` : '15 squads'}
-                            </span>
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="space-y-2.5">
-                    <Label htmlFor="track" className={labelClass}>Track (pick one)</Label>
-                    <select id="track" className={selectClass} value={track} onChange={(e) => setTrack(e.target.value as Track)}>
-                      {(Object.keys(TRACK_LABELS) as Track[]).map((t) => (
-                        <option key={t} value={t}>
-                          {TRACK_LABELS[t]}
-                          {status ? ` (${status.byTrack[t].registered}/${status.byTrack[t].cap} squads)` : ''}
+                        <option key={n} value={n}>
+                          {NATION_LABELS[n]}
                         </option>
                       ))}
                     </select>
@@ -364,6 +312,28 @@ export default function GrandPrixRegisterPage() {
                   <div className="space-y-2.5">
                     <Label htmlFor="city" className={labelClass}>City</Label>
                     <Input id="city" className={fieldClass} placeholder="e.g. Islamabad" value={city} onChange={(e) => setCity(e.target.value)} required />
+                  </div>
+                  <div className="space-y-2.5 sm:col-span-2">
+                    <Label className={labelClass}>Pass type</Label>
+                    <div className="grid grid-cols-1 gap-3" role="radiogroup" aria-label="Pass type">
+                      {PASS_TYPES.map((p) => (
+                        <button
+                          key={p}
+                          type="button"
+                          role="radio"
+                          aria-checked={passType === p}
+                          onClick={() => setPassType(p)}
+                          className={`rounded-lg border px-4 py-3 text-left text-sm leading-relaxed transition ${
+                            passType === p
+                              ? 'border-[#C9A45C]/80 bg-[#C9A45C]/10 shadow-[0_10px_30px_rgba(201,164,92,0.22)]'
+                              : 'border-white/15 bg-white/[0.05] hover:border-white/35'
+                          }`}
+                          style={{ color: IVORY }}
+                        >
+                          {PASS_LABELS[p]}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                   <div className="space-y-2.5">
                     <Label htmlFor="institutionName" className={labelClass}>Institution name</Label>
@@ -376,49 +346,33 @@ export default function GrandPrixRegisterPage() {
                 </CardContent>
               </Card>
 
-              {members.map((member, i) => (
-                <Card key={i} className={cardClass}>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="flex flex-wrap items-center gap-3">
-                      <span className={`text-2xl font-semibold ${displayFont}`}>
-                        Seat {i + 1}
-                      </span>
-                      {i === 0 && (
-                        <span
-                          className="rounded-full border px-3 py-1 text-[10px] font-extrabold uppercase tracking-[0.2em]"
-                          style={{ borderColor: 'rgba(201,164,92,0.55)', color: GOLD_LIGHT }}
-                        >
-                          Squad Lead
-                        </span>
-                      )}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="grid grid-cols-1 gap-5 pt-4 sm:grid-cols-2">
-                    <div className="space-y-2.5">
-                      <Label htmlFor={`m${i}-name`} className={labelClass}>Full name</Label>
-                      <Input id={`m${i}-name`} className={fieldClass} placeholder="Full name, as on the student ID card" value={member.fullName} onChange={(e) => setMember(i, 'fullName', e.target.value)} required />
-                    </div>
-                    <div className="space-y-2.5">
-                      <Label htmlFor={`m${i}-sid`} className={labelClass}>Student ID</Label>
-                      <Input id={`m${i}-sid`} className={fieldClass} placeholder="Student ID / registration number" value={member.studentId} onChange={(e) => setMember(i, 'studentId', e.target.value)} required />
-                    </div>
-                    <div className="space-y-2.5">
-                      <Label htmlFor={`m${i}-email`} className={labelClass}>Email</Label>
-                      <Input id={`m${i}-email`} type="email" className={fieldClass} placeholder="e.g. yourname@gmail.com" value={member.email} onChange={(e) => setMember(i, 'email', e.target.value)} required />
-                    </div>
-                    <div className="space-y-2.5">
-                      <Label htmlFor={`m${i}-disc`} className={labelClass}>Discipline or role in the squad</Label>
-                      <Input id={`m${i}-disc`} className={fieldClass} placeholder="e.g. Avionics, Structures, Software, Propulsion" value={member.discipline} onChange={(e) => setMember(i, 'discipline', e.target.value)} required />
-                    </div>
-                    {i === 0 && (
-                      <div className="space-y-2.5">
-                        <Label htmlFor="m0-wa" className={labelClass}>WhatsApp number (lead)</Label>
-                        <Input id="m0-wa" className={fieldClass} placeholder="+92 3XX XXXXXXX or +94 7X XXXXXXX" value={member.whatsapp} onChange={(e) => setMember(0, 'whatsapp', e.target.value)} required />
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              ))}
+              <Card className={cardClass}>
+                <CardHeader className="pb-2">
+                  <CardTitle className={`text-2xl font-semibold ${displayFont}`}>About you</CardTitle>
+                </CardHeader>
+                <CardContent className="grid grid-cols-1 gap-5 pt-4 sm:grid-cols-2">
+                  <div className="space-y-2.5">
+                    <Label htmlFor="fullName" className={labelClass}>Full name</Label>
+                    <Input id="fullName" className={fieldClass} placeholder="Full name, as on the student ID card" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
+                  </div>
+                  <div className="space-y-2.5">
+                    <Label htmlFor="studentId" className={labelClass}>Student ID</Label>
+                    <Input id="studentId" className={fieldClass} placeholder="Student ID / registration number" value={studentId} onChange={(e) => setStudentId(e.target.value)} required />
+                  </div>
+                  <div className="space-y-2.5">
+                    <Label htmlFor="email" className={labelClass}>Email</Label>
+                    <Input id="email" type="email" className={fieldClass} placeholder="e.g. yourname@gmail.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
+                  </div>
+                  <div className="space-y-2.5">
+                    <Label htmlFor="discipline" className={labelClass}>Discipline or field</Label>
+                    <Input id="discipline" className={fieldClass} placeholder="e.g. Avionics, Structures, Software, Propulsion" value={discipline} onChange={(e) => setDiscipline(e.target.value)} required />
+                  </div>
+                  <div className="space-y-2.5">
+                    <Label htmlFor="whatsapp" className={labelClass}>WhatsApp number</Label>
+                    <Input id="whatsapp" className={fieldClass} placeholder="+92 3XX XXXXXXX or +94 7X XXXXXXX" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} required />
+                  </div>
+                </CardContent>
+              </Card>
 
               {errors.length > 0 && (
                 <Card className="rounded-2xl border-red-400/30 bg-red-500/[0.08] backdrop-blur-md">
@@ -438,7 +392,7 @@ export default function GrandPrixRegisterPage() {
                 disabled={submitting}
                 className="h-[52px] w-full rounded-full bg-[linear-gradient(120deg,#E8CF8F,#C9A45C_45%,#A87F35)] text-sm font-extrabold uppercase tracking-[0.14em] text-[#171106] shadow-[0_16px_40px_rgba(201,164,92,0.35)] transition hover:brightness-110 disabled:opacity-60"
               >
-                {submitting ? 'Submitting...' : 'Register squad'}
+                {submitting ? 'Submitting...' : 'Enrol now'}
               </Button>
               <p className="text-center text-xs text-[#8E887A]">
                 Student IDs are collected for institutional verification only and are never shown publicly.

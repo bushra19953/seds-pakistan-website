@@ -1,176 +1,197 @@
 import {
-  checkCapsAndDuplicates,
+  checkWindowAndDuplicates,
   emptyIndex,
-  publicBracketStatus,
+  getWindowState,
+  publicRegistrationStatus,
   validateRegistration,
-  REGISTRATION_CLOSE_MS,
-  type RegistrationInput,
+  INITIAL_CLOSE_MS,
+  LATE_CLOSE_MS,
+  LATE_OPEN_MS,
+  type EnrolmentInput,
 } from '../registration';
 
-const BEFORE_CLOSE = REGISTRATION_CLOSE_MS - 60_000;
+const IN_INITIAL_WINDOW = INITIAL_CLOSE_MS - 60_000;
+const BETWEEN_WINDOWS = LATE_OPEN_MS - 60_000;
+const IN_LATE_WINDOW = LATE_CLOSE_MS - 60_000;
+const AFTER_LATE_CLOSE = LATE_CLOSE_MS + 1;
 
-function validInput(overrides: Partial<RegistrationInput> = {}): RegistrationInput {
+function validInput(overrides: Partial<EnrolmentInput> = {}): EnrolmentInput {
   return {
-    squadName: 'Falcon Dynamics',
+    fullName: 'Ayesha Khan',
+    studentId: 'STU-001',
+    email: 'ayesha@example.edu',
+    discipline: 'Avionics',
+    whatsapp: '+92 300 1234567',
     nation: 'PK',
-    track: 'rocketry',
+    passType: 'student',
     institutionName: 'Institute of Space Technology',
     institutionId: 'IST-2026',
     city: 'Islamabad',
-    members: [1, 2, 3, 4, 5].map((n) => ({
-      fullName: `Member ${n} Test`,
-      studentId: `STU-00${n}`,
-      email: `member${n}@example.edu`,
-      discipline: n % 2 === 0 ? 'Avionics' : 'Structures',
-      whatsapp: n === 1 ? '+92 300 1234567' : undefined,
-    })),
     ...overrides,
   };
 }
 
-function mustValidate(input: RegistrationInput) {
+function mustValidate(input: EnrolmentInput) {
   const result = validateRegistration(input);
   if (!result.ok) throw new Error(`expected valid, got: ${result.errors.join('; ')}`);
   return result.value;
 }
 
 describe('validateRegistration', () => {
-  it('accepts a complete 5 seat squad and normalizes fields', () => {
-    const value = mustValidate(validInput({ nation: 'pk', track: 'ROCKETRY' }));
+  it('accepts a complete individual enrolment and normalizes fields', () => {
+    const value = mustValidate(validInput({ nation: 'pk', passType: 'STUDENT' }));
     expect(value.nation).toBe('PK');
-    expect(value.track).toBe('rocketry');
-    expect(value.members).toHaveLength(5);
-    expect(value.members[0].isLead).toBe(true);
-    expect(value.members[0].whatsapp).toBe('+92 300 1234567');
-    expect(value.members[1].whatsapp).toBeNull();
-    expect(value.leadEmail).toBe('member1@example.edu');
-    expect(value.studentIdKeys[0]).toBe('ist-2026::stu-001');
+    expect(value.passType).toBe('student');
+    expect(value.leadEmail).toBe('ayesha@example.edu');
+    expect(value.studentIdKey).toBe('ist-2026::stu-001');
   });
 
-  it('rejects a squad with fewer than 5 members', () => {
-    const input = validInput();
-    input.members = input.members.slice(0, 4);
-    const result = validateRegistration(input);
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.errors.join(' ')).toMatch(/exactly 5 members/);
+  it('accepts the industry observer pass', () => {
+    const value = mustValidate(validInput({ passType: 'industry' }));
+    expect(value.passType).toBe('industry');
   });
 
-  it('rejects an unknown nation and an unknown track', () => {
-    const result = validateRegistration(validInput({ nation: 'IN', track: 'drones' }));
+  it('rejects an unknown nation and an unknown pass type', () => {
+    const result = validateRegistration(validInput({ nation: 'IN', passType: 'vip' }));
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.errors.join(' ')).toMatch(/Pakistan \(PK\) or Sri Lanka \(LK\)/);
-      expect(result.errors.join(' ')).toMatch(/Track must be one of/);
+      expect(result.errors.join(' ')).toMatch(/Pass type must be/);
     }
   });
 
-  it('rejects duplicate emails and duplicate student IDs inside the squad', () => {
-    const input = validInput();
-    input.members[2].email = input.members[0].email;
-    input.members[3].studentId = input.members[1].studentId;
-    const result = validateRegistration(input);
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.errors.join(' ')).toMatch(/email is already used/);
-      expect(result.errors.join(' ')).toMatch(/student ID is already used/);
-    }
-  });
-
-  it('requires the lead WhatsApp number and every institutional ID field', () => {
-    const input = validInput({ institutionId: '' });
-    input.members[0].whatsapp = '';
-    const result = validateRegistration(input);
+  it('requires the WhatsApp number and every institutional field', () => {
+    const result = validateRegistration(validInput({ institutionId: '', whatsapp: '' }));
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.errors.join(' ')).toMatch(/Institution verification ID is required/);
       expect(result.errors.join(' ')).toMatch(/WhatsApp number is required/);
     }
   });
+
+  it('rejects a bad email and a missing full name', () => {
+    const result = validateRegistration(validInput({ email: 'not-an-email', fullName: 'Al' }));
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.join(' ')).toMatch(/valid email is required/);
+      expect(result.errors.join(' ')).toMatch(/Full name is required/);
+    }
+  });
 });
 
-describe('checkCapsAndDuplicates', () => {
-  it('admits the first squad and advances the index', () => {
+describe('getWindowState', () => {
+  it('is open in the initial window until Nov 15 2026 23:59 PKT', () => {
+    const state = getWindowState(IN_INITIAL_WINDOW);
+    expect(state.state).toBe('open');
+    expect(state.open).toBe(true);
+    expect(state.closesAt).toBe('2026-11-15T23:59:00+05:00');
+  });
+
+  it('is closed between the windows and names the late opening', () => {
+    const state = getWindowState(BETWEEN_WINDOWS);
+    expect(state.state).toBe('closed');
+    expect(state.open).toBe(false);
+    expect(state.opensAt).toBe('2026-11-21T09:00:00+05:00');
+  });
+
+  it('is late admission open inside Nov 21 09:00 to Nov 28 23:59 PKT', () => {
+    const state = getWindowState(IN_LATE_WINDOW);
+    expect(state.state).toBe('late');
+    expect(state.open).toBe(true);
+    expect(state.closesAt).toBe('2026-11-28T23:59:00+05:00');
+  });
+
+  it('is closed after the late window ends', () => {
+    const state = getWindowState(AFTER_LATE_CLOSE);
+    expect(state.state).toBe('closed');
+    expect(state.open).toBe(false);
+    expect(state.opensAt).toBeNull();
+    expect(state.closesAt).toBeNull();
+  });
+});
+
+describe('checkWindowAndDuplicates', () => {
+  it('admits the first enrolment and advances the index', () => {
     const reg = mustValidate(validInput());
-    const result = checkCapsAndDuplicates(emptyIndex(), reg, BEFORE_CLOSE);
+    const result = checkWindowAndDuplicates(emptyIndex(), reg, IN_INITIAL_WINDOW);
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.nextIndex.total).toBe(1);
-      expect(result.nextIndex.byNation.PK).toBe(1);
-      expect(result.nextIndex.byTrack.rocketry).toBe(1);
-      expect(result.nextIndex.studentIdKeys).toHaveLength(5);
+      expect(result.nextIndex.emails).toEqual(['ayesha@example.edu']);
+      expect(result.nextIndex.studentIdKeys).toHaveLength(1);
     }
   });
 
-  it('blocks a 16th squad from one nation but still admits the other nation', () => {
-    const index = emptyIndex();
-    index.total = 15;
-    index.byNation.PK = 15;
-    const pkReg = mustValidate(validInput());
-    const blocked = checkCapsAndDuplicates(index, pkReg, BEFORE_CLOSE);
-    expect(blocked.ok).toBe(false);
-    if (!blocked.ok) expect(blocked.status).toBe(409);
-
-    const lkReg = mustValidate(validInput({ nation: 'LK', squadName: 'Lanka Orbit' }));
-    lkReg.members = lkReg.members.map((m, i) => ({ ...m, email: `lk${i}@example.edu` }));
-    lkReg.leadEmail = 'lk0@example.edu';
-    lkReg.studentIdKeys = lkReg.studentIdKeys.map((k) => k.replace('stu', 'lkstu'));
-    const admitted = checkCapsAndDuplicates(index, lkReg, BEFORE_CLOSE);
-    expect(admitted.ok).toBe(true);
-  });
-
-  it('blocks an 11th squad in one track', () => {
-    const index = emptyIndex();
-    index.byTrack.flatsat = 10;
-    const reg = mustValidate(validInput({ track: 'flatsat' }));
-    const result = checkCapsAndDuplicates(index, reg, BEFORE_CLOSE);
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toMatch(/track is full/);
-  });
-
-  it('closes for everyone after the Nov 15 2026 23:59 PKT deadline', () => {
+  it('admits an enrolment during the late admission window', () => {
     const reg = mustValidate(validInput());
-    const result = checkCapsAndDuplicates(emptyIndex(), reg, REGISTRATION_CLOSE_MS + 1);
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.status).toBe(410);
+    const result = checkWindowAndDuplicates(emptyIndex(), reg, IN_LATE_WINDOW);
+    expect(result.ok).toBe(true);
   });
 
-  it('blocks duplicate lead email, squad name, and cross squad student IDs', () => {
+  it('refuses enrolment between the windows with 410', () => {
+    const reg = mustValidate(validInput());
+    const result = checkWindowAndDuplicates(emptyIndex(), reg, BETWEEN_WINDOWS);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.status).toBe(410);
+      expect(result.error).toMatch(/Late admission opens Nov 21, 2026/);
+    }
+  });
+
+  it('refuses enrolment after the late window with 410', () => {
+    const reg = mustValidate(validInput());
+    const result = checkWindowAndDuplicates(emptyIndex(), reg, AFTER_LATE_CLOSE);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.status).toBe(410);
+      expect(result.error).toMatch(/late admission window ended Nov 28, 2026/);
+    }
+  });
+
+  it('blocks a duplicate email and a duplicate student ID', () => {
     const first = mustValidate(validInput());
-    const admitted = checkCapsAndDuplicates(emptyIndex(), first, BEFORE_CLOSE);
+    const admitted = checkWindowAndDuplicates(emptyIndex(), first, IN_INITIAL_WINDOW);
     if (!admitted.ok) throw new Error('setup failed');
     const index = admitted.nextIndex;
 
-    const dupAll = mustValidate(validInput());
-    const dupResult = checkCapsAndDuplicates(index, dupAll, BEFORE_CLOSE);
-    expect(dupResult.ok).toBe(false);
+    const dupEmail = checkWindowAndDuplicates(
+      index,
+      mustValidate(validInput({ studentId: 'STU-999' })),
+      IN_INITIAL_WINDOW,
+    );
+    expect(dupEmail.ok).toBe(false);
+    if (!dupEmail.ok) expect(dupEmail.status).toBe(409);
 
-    const other = validInput({ squadName: 'Different Name' });
-    other.members = other.members.map((m, i) => ({
-      ...m,
-      email: `other${i}@example.edu`,
-      studentId: i === 4 ? 'STU-001' : `NEW-00${i}`,
-    }));
-    const clashResult = checkCapsAndDuplicates(index, mustValidate(other), BEFORE_CLOSE);
-    expect(clashResult.ok).toBe(false);
-    if (!clashResult.ok) expect(clashResult.error).toMatch(/already registered with another squad/);
+    const dupId = checkWindowAndDuplicates(
+      index,
+      mustValidate(validInput({ email: 'other@example.edu' })),
+      IN_INITIAL_WINDOW,
+    );
+    expect(dupId.ok).toBe(false);
+    if (!dupId.ok) expect(dupId.error).toMatch(/already enrolled/);
   });
 });
 
-describe('publicBracketStatus', () => {
+describe('publicRegistrationStatus', () => {
   it('reports open with counts and no identity data', () => {
     const index = emptyIndex();
     index.total = 3;
-    index.byNation.PK = 2;
-    index.byNation.LK = 1;
-    const status = publicBracketStatus(index, BEFORE_CLOSE);
+    const status = publicRegistrationStatus(index, IN_INITIAL_WINDOW);
     expect(status.open).toBe(true);
+    expect(status.state).toBe('open');
     expect(status.totalRegistered).toBe(3);
     expect(JSON.stringify(status)).not.toMatch(/@/);
   });
 
-  it('reports closed when the bracket is full', () => {
-    const index = emptyIndex();
-    index.total = 30;
-    expect(publicBracketStatus(index, BEFORE_CLOSE).open).toBe(false);
+  it('reports late admission open inside the late window', () => {
+    const status = publicRegistrationStatus(emptyIndex(), IN_LATE_WINDOW);
+    expect(status.open).toBe(true);
+    expect(status.state).toBe('late');
+  });
+
+  it('reports closed between the windows', () => {
+    const status = publicRegistrationStatus(emptyIndex(), BETWEEN_WINDOWS);
+    expect(status.open).toBe(false);
+    expect(status.state).toBe('closed');
   });
 });

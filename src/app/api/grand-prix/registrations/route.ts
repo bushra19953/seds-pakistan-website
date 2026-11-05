@@ -2,26 +2,27 @@ import { NextRequest, NextResponse } from 'next/server';
 import admin from 'firebase-admin';
 import { getDb } from '@/lib/server/firebase-admin';
 import {
-  checkCapsAndDuplicates,
+  checkWindowAndDuplicates,
   emptyIndex,
-  publicBracketStatus,
+  publicRegistrationStatus,
   validateRegistration,
   type RegistrationIndex,
 } from '@/lib/grand-prix/registration';
 
 /**
- * South Asia Cloud Aerospace Grand Prix 2026: common registration intake.
- * Task SEDS-TASK-BILAT-PORTAL-6.10 (Deploy & Test Dual-Nation Registration
- * Portal). Public, account free intake: the bilateral squads are external
- * students in Pakistan and Sri Lanka, and identity is carried by the
- * institutional verification IDs the brief requires us to collect, not by
- * a SEDS account. Every registration lands as status "under_review"; a
- * squad only counts as verified after admin review.
+ * International Aerospace Masterclass Series 2026: common enrolment intake.
+ * Public, account-less intake: the bilateral enrolments are external
+ * students in Pakistan and Sri Lanka and industry observers, and identity
+ * is carried by the institutional verification IDs the brief requires us
+ * to collect, not by a SEDS account. Every enrolment lands as status
+ * "under_review"; an enrolment only counts as verified after admin review.
+ * No payment is collected here: the pass is selected and its fee displayed
+ * only. Collection is a separate later brief.
  *
  * Storage:
- * - grandPrixRegistrations/{id}: one document per squad.
+ * - grandPrixRegistrations/{id}: one document per individual enrolment.
  * - grandPrixMeta/registrationIndex: a single index document with the
- *   bracket counters and duplicate lookup keys, so a submission costs one
+ *   enrolment count and duplicate lookup keys, so a submission costs one
  *   read inside its transaction instead of a collection scan. That matters
  *   on the shared Firestore read quota.
  *
@@ -38,22 +39,12 @@ function toIndex(data: FirebaseFirestore.DocumentData | undefined): Registration
   const base = emptyIndex();
   return {
     total: typeof data.total === 'number' ? data.total : 0,
-    byNation: {
-      PK: typeof data.byNation?.PK === 'number' ? data.byNation.PK : base.byNation.PK,
-      LK: typeof data.byNation?.LK === 'number' ? data.byNation.LK : base.byNation.LK,
-    },
-    byTrack: {
-      rocketry: typeof data.byTrack?.rocketry === 'number' ? data.byTrack.rocketry : 0,
-      robotics: typeof data.byTrack?.robotics === 'number' ? data.byTrack.robotics : 0,
-      flatsat: typeof data.byTrack?.flatsat === 'number' ? data.byTrack.flatsat : 0,
-    },
-    leadEmails: Array.isArray(data.leadEmails) ? data.leadEmails : [],
-    squadNameKeys: Array.isArray(data.squadNameKeys) ? data.squadNameKeys : [],
-    studentIdKeys: Array.isArray(data.studentIdKeys) ? data.studentIdKeys : [],
+    emails: Array.isArray(data.emails) ? data.emails : base.emails,
+    studentIdKeys: Array.isArray(data.studentIdKeys) ? data.studentIdKeys : base.studentIdKeys,
   };
 }
 
-/** Public bracket status: counts and caps only, never squad identities. */
+/** Public registration status: window state and dates only, never enrollee identities. */
 export async function GET() {
   try {
     const db = getDb();
@@ -61,7 +52,7 @@ export async function GET() {
       return NextResponse.json({ error: 'Firestore not initialized' }, { status: 500 });
     }
     const snap = await db.collection(META_COLLECTION).doc(INDEX_DOC).get();
-    const status = publicBracketStatus(toIndex(snap.data()), Date.now());
+    const status = publicRegistrationStatus(toIndex(snap.data()), Date.now());
     return NextResponse.json({ ok: true, ...status });
   } catch (err) {
     console.error('[grand-prix/registrations] GET failed:', err);
@@ -93,29 +84,32 @@ export async function POST(request: NextRequest) {
     const reg = validation.value;
 
     const metaRef = db.collection(META_COLLECTION).doc(INDEX_DOC);
-    const squadRef = db.collection(REGISTRATIONS_COLLECTION).doc();
+    const enrolmentRef = db.collection(REGISTRATIONS_COLLECTION).doc();
 
     const outcome = await db.runTransaction(async (tx) => {
       const metaSnap = await tx.get(metaRef);
-      const capCheck = checkCapsAndDuplicates(toIndex(metaSnap.data()), reg, Date.now());
-      if (!capCheck.ok) return capCheck;
+      const windowCheck = checkWindowAndDuplicates(toIndex(metaSnap.data()), reg, Date.now());
+      if (!windowCheck.ok) return windowCheck;
 
-      tx.set(squadRef, {
-        squadName: reg.squadName,
+      tx.set(enrolmentRef, {
+        fullName: reg.fullName,
+        studentId: reg.studentId,
+        email: reg.email,
+        discipline: reg.discipline,
+        whatsapp: reg.whatsapp,
         nation: reg.nation,
-        track: reg.track,
+        passType: reg.passType,
         institutionName: reg.institutionName,
         institutionId: reg.institutionId,
         city: reg.city,
-        members: reg.members,
         leadEmail: reg.leadEmail,
-        memberCount: reg.members.length,
+        studentIdKey: reg.studentIdKey,
         status: 'under_review',
         source: 'grand-prix-portal',
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
-      tx.set(metaRef, { ...capCheck.nextIndex, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+      tx.set(metaRef, { ...windowCheck.nextIndex, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
       return { ok: true as const };
     });
 
@@ -126,10 +120,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         ok: true,
-        registrationId: squadRef.id,
+        registrationId: enrolmentRef.id,
         status: 'under_review',
         message:
-          'Squad registered. Your seat is held while the registration is verified. Keep your registration ID for all correspondence.',
+          'Enrolment received. Your place is held while the enrolment is verified. Keep your registration ID for all correspondence.',
       },
       { status: 201 },
     );

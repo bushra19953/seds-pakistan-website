@@ -1,107 +1,99 @@
 /**
- * South Asia Cloud Aerospace Grand Prix 2026: squad registration logic.
+ * International Aerospace Masterclass Series 2026: individual enrolment logic.
  *
- * Pure, dependency free validation and bracket cap logic for the common
- * dual nation registration intake (task SEDS-TASK-BILAT-PORTAL-6.10).
- * The API route at src/app/api/grand-prix/registrations/route.ts is a thin
- * Firestore shell around these functions, and the public form at
+ * Pure validation and window logic for the common dual nation enrolment
+ * intake. The API route at src/app/api/grand-prix/registrations/route.ts is
+ * a thin Firestore shell around these functions, and the public form at
  * src/app/grand-prix/register imports the shared constants and types.
  *
- * Bracket rules (bilateral deployment package, 2026-10-28):
- * - 30 squads total, strictly 15 from Pakistan and 15 from Sri Lanka.
- * - 10 squads per track across both nations (Rocketry, Robotics, FlatSats).
- * - Every squad has exactly 5 seats.
- * - The portal locks when the bracket fills or at the deadline,
- *   Nov 15 2026, 23:59 Asia/Karachi, whichever comes first.
+ * Enrolment windows (all Asia/Karachi):
+ * - Initial window: open until Nov 15 2026, 23:59 PKT.
+ * - Closed Nov 16 2026 00:00 PKT until late admission opens.
+ * - Late admission window: Nov 21 2026, 09:00 PKT to Nov 28 2026, 23:59 PKT.
+ * - Closed after Nov 28 2026, 23:59 PKT.
+ * There are no seat caps: one enrolment per email and per student ID.
  */
 
-export const GRAND_PRIX_NAME = 'South Asia Cloud Aerospace Grand Prix 2026';
+export const SERIES_NAME = 'International Aerospace Masterclass Series 2026';
 
-export const REGISTRATION_CLOSE_ISO = '2026-11-15T23:59:00+05:00';
-export const REGISTRATION_CLOSE_MS = Date.parse(REGISTRATION_CLOSE_ISO);
-
-export const SQUAD_SIZE = 5;
-export const MAX_SQUADS_TOTAL = 30;
-export const MAX_SQUADS_PER_NATION = 15;
-export const MAX_SQUADS_PER_TRACK = 10;
+export const INITIAL_CLOSE_ISO = '2026-11-15T23:59:00+05:00';
+export const INITIAL_CLOSE_MS = Date.parse(INITIAL_CLOSE_ISO);
+export const LATE_OPEN_ISO = '2026-11-21T09:00:00+05:00';
+export const LATE_OPEN_MS = Date.parse(LATE_OPEN_ISO);
+export const LATE_CLOSE_ISO = '2026-11-28T23:59:00+05:00';
+export const LATE_CLOSE_MS = Date.parse(LATE_CLOSE_ISO);
 
 export const NATIONS = ['PK', 'LK'] as const;
 export type Nation = (typeof NATIONS)[number];
 
 export const NATION_LABELS: Record<Nation, string> = {
-  PK: 'Pakistan',
-  LK: 'Sri Lanka',
+  PK: 'Pakistan (Open)',
+  LK: 'Sri Lanka (Open)',
 };
 
-export const TRACKS = ['rocketry', 'robotics', 'flatsat'] as const;
-export type Track = (typeof TRACKS)[number];
+export const MODULES = [
+  { id: 'supersonic-aero', title: 'Supersonic Aerodynamics/CFD' },
+  { id: 'rocket-propulsion', title: 'Rocket Propulsion Ballistics' },
+  { id: 'flight-avionics', title: 'Flight Avionics/Telemetry' },
+  { id: 'rover-digital-twins', title: 'Rover Kinematics Digital Twins' },
+  { id: 'smallsat-power-comms', title: 'SmallSat Power/Comms' },
+  { id: 'orbital-mechanics', title: 'Orbital Mechanics & Trajectory' },
+] as const;
 
-export const TRACK_LABELS: Record<Track, string> = {
-  rocketry: 'Sounding Rocketry',
-  robotics: 'Planetary Robotics',
-  flatsat: 'SmallSat / FlatSat',
+export const PASS_TYPES = ['student', 'industry'] as const;
+export type PassType = (typeof PASS_TYPES)[number];
+
+export const PASS_LABELS: Record<PassType, string> = {
+  student:
+    'Collegiate Student Pass ($7.00 USD; PKR equivalent in Pakistan; Sri Lanka fee set by SEDS Sri Lanka)',
+  industry:
+    'Industry Professional Observer Pass ($15.00 USD flat; industry professionals only; faculty sit free; evaluators sit free)',
 };
 
-export interface SquadMemberInput {
+export const FEE_CALLOUT =
+  'Collegiate Student Masterclass Pass: $7.00 USD (PKR equivalent for Pakistan; Sri Lanka fee set by SEDS Sri Lanka) | Industry Professional Observer Pass: $15.00 USD flat (Faculty & Evaluators Sit Free) | 6 Masterclasses + Verified Co-Signed Credential.';
+
+export interface EnrolleeInput {
   fullName: string;
   studentId: string;
   email: string;
   discipline: string;
-  whatsapp?: string;
+  whatsapp: string;
 }
 
-export interface RegistrationInput {
-  squadName: string;
+export interface EnrolmentInput extends EnrolleeInput {
   nation: string;
-  track: string;
+  passType: string;
   institutionName: string;
   institutionId: string;
   city: string;
-  members: SquadMemberInput[];
 }
 
-export interface NormalizedMember {
-  fullName: string;
-  studentId: string;
-  email: string;
-  discipline: string;
-  whatsapp: string | null;
-  isLead: boolean;
-}
-
-export interface NormalizedRegistration {
-  squadName: string;
+export interface NormalizedEnrolment extends EnrolleeInput {
   nation: Nation;
-  track: Track;
+  passType: PassType;
   institutionName: string;
   institutionId: string;
   city: string;
-  members: NormalizedMember[];
   leadEmail: string;
-  studentIdKeys: string[];
+  studentIdKey: string;
 }
 
 /**
- * The registration index is a single Firestore document holding every
- * counter and lookup key the caps and duplicate checks need, so one
- * submission costs one read inside its transaction instead of a scan.
+ * The enrolment index is a single Firestore document holding the counters
+ * and lookup keys the duplicate checks need, so one submission costs one
+ * read inside its transaction instead of a scan.
  */
 export interface RegistrationIndex {
   total: number;
-  byNation: Record<Nation, number>;
-  byTrack: Record<Track, number>;
-  leadEmails: string[];
-  squadNameKeys: string[];
+  emails: string[];
   studentIdKeys: string[];
 }
 
 export function emptyIndex(): RegistrationIndex {
   return {
     total: 0,
-    byNation: { PK: 0, LK: 0 },
-    byTrack: { rocketry: 0, robotics: 0, flatsat: 0 },
-    leadEmails: [],
-    squadNameKeys: [],
+    emails: [],
     studentIdKeys: [],
   };
 }
@@ -112,35 +104,68 @@ function clean(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-export function squadNameKey(name: string): string {
-  return name.trim().toLowerCase().replace(/\s+/g, ' ');
-}
-
-/** Duplicate identity for a student seat: institution plus student ID. */
+/** Duplicate identity for an enrollee: institution plus student ID. */
 export function studentIdKey(institutionId: string, studentId: string): string {
   return `${institutionId.trim().toLowerCase()}::${studentId.trim().toLowerCase()}`;
 }
 
+export type WindowState = 'open' | 'closed' | 'late';
+
+export interface WindowStatus {
+  state: WindowState;
+  open: boolean;
+  /** Next deadline that matters: the close of the current window, or the late opening when between windows. */
+  closesAt: string | null;
+  /** Set only while closed between the two windows. */
+  opensAt: string | null;
+}
+
+export function getWindowState(nowMs: number): WindowStatus {
+  if (nowMs <= INITIAL_CLOSE_MS) {
+    return { state: 'open', open: true, closesAt: INITIAL_CLOSE_ISO, opensAt: null };
+  }
+  if (nowMs < LATE_OPEN_MS) {
+    return { state: 'closed', open: false, closesAt: LATE_CLOSE_ISO, opensAt: LATE_OPEN_ISO };
+  }
+  if (nowMs <= LATE_CLOSE_MS) {
+    return { state: 'late', open: true, closesAt: LATE_CLOSE_ISO, opensAt: null };
+  }
+  return { state: 'closed', open: false, closesAt: null, opensAt: null };
+}
+
 export type ValidationResult =
-  | { ok: true; value: NormalizedRegistration }
+  | { ok: true; value: NormalizedEnrolment }
   | { ok: false; errors: string[] };
 
 export function validateRegistration(input: unknown): ValidationResult {
   const errors: string[] = [];
-  const raw = (input ?? {}) as Partial<RegistrationInput>;
+  const raw = (input ?? {}) as Partial<EnrolmentInput>;
 
-  const squadName = clean(raw.squadName);
-  if (squadName.length < 3) errors.push('Squad name is required (at least 3 characters).');
-  if (squadName.length > 80) errors.push('Squad name must be 80 characters or fewer.');
+  const fullName = clean(raw.fullName);
+  if (fullName.length < 3) errors.push('Full name is required (at least 3 characters).');
+
+  const studentId = clean(raw.studentId);
+  if (studentId.length < 2) errors.push('Student ID is required.');
+
+  const email = clean(raw.email).toLowerCase();
+  if (!EMAIL_RE.test(email)) errors.push('A valid email is required.');
+
+  const discipline = clean(raw.discipline);
+  if (discipline.length < 2) errors.push('Discipline or field is required.');
+
+  const whatsapp = clean(raw.whatsapp);
+  if (whatsapp.replace(/\D/g, '').length < 8) {
+    errors.push('A valid WhatsApp number is required.');
+  }
 
   const nationRaw = clean(raw.nation).toUpperCase();
   if (!(NATIONS as readonly string[]).includes(nationRaw)) {
-    errors.push('Nation must be Pakistan (PK) or Sri Lanka (LK).');
+    errors.push('Country must be Pakistan (PK) or Sri Lanka (LK).');
   }
 
-  const trackRaw = clean(raw.track).toLowerCase();
-  if (!(TRACKS as readonly string[]).includes(trackRaw)) {
-    errors.push('Track must be one of: Sounding Rocketry, Planetary Robotics, SmallSat / FlatSat.');
+  const passRaw = clean(raw.passType).toLowerCase();
+  if (!(PASS_TYPES as readonly string[]).includes(passRaw)) {
+    errors.push('Pass type must be Collegiate Student Pass or Industry Professional Observer Pass.');
   }
 
   const institutionName = clean(raw.institutionName);
@@ -154,158 +179,87 @@ export function validateRegistration(input: unknown): ValidationResult {
   const city = clean(raw.city);
   if (city.length < 2) errors.push('City is required.');
 
-  const rawMembers = Array.isArray(raw.members) ? raw.members : [];
-  if (rawMembers.length !== SQUAD_SIZE) {
-    errors.push(`A squad must have exactly ${SQUAD_SIZE} members.`);
-  }
+  if (errors.length > 0) return { ok: false, errors };
 
-  const members: NormalizedMember[] = [];
-  const seenEmails = new Set<string>();
-  const seenStudentKeys = new Set<string>();
-
-  rawMembers.slice(0, SQUAD_SIZE).forEach((memberRaw, i) => {
-    const seat = i + 1;
-    const m = (memberRaw ?? {}) as Partial<SquadMemberInput>;
-    const fullName = clean(m.fullName);
-    const studentId = clean(m.studentId);
-    const email = clean(m.email).toLowerCase();
-    const discipline = clean(m.discipline);
-    const whatsapp = clean(m.whatsapp);
-
-    if (fullName.length < 3) errors.push(`Seat ${seat}: full name is required.`);
-    if (studentId.length < 2) errors.push(`Seat ${seat}: student ID is required.`);
-    if (!EMAIL_RE.test(email)) errors.push(`Seat ${seat}: a valid email is required.`);
-    if (discipline.length < 2) errors.push(`Seat ${seat}: discipline or role is required.`);
-    if (i === 0 && whatsapp.replace(/\D/g, '').length < 8) {
-      errors.push('Seat 1 (squad lead): a valid WhatsApp number is required.');
-    }
-
-    if (email && seenEmails.has(email)) {
-      errors.push(`Seat ${seat}: this email is already used by another seat in the squad.`);
-    }
-    if (email) seenEmails.add(email);
-
-    const key = studentIdKey(institutionId, studentId);
-    if (studentId && seenStudentKeys.has(key)) {
-      errors.push(`Seat ${seat}: this student ID is already used by another seat in the squad.`);
-    }
-    if (studentId) seenStudentKeys.add(key);
-
-    members.push({
+  const nation = nationRaw as Nation;
+  const passType = passRaw as PassType;
+  return {
+    ok: true,
+    value: {
       fullName,
       studentId,
       email,
       discipline,
-      whatsapp: i === 0 ? whatsapp : null,
-      isLead: i === 0,
-    });
-  });
-
-  if (errors.length > 0) return { ok: false, errors };
-
-  const nation = nationRaw as Nation;
-  const track = trackRaw as Track;
-  return {
-    ok: true,
-    value: {
-      squadName,
+      whatsapp,
       nation,
-      track,
+      passType,
       institutionName,
       institutionId,
       city,
-      members,
-      leadEmail: members[0].email,
-      studentIdKeys: members.map((m) => studentIdKey(institutionId, m.studentId)),
+      leadEmail: email,
+      studentIdKey: studentIdKey(institutionId, studentId),
     },
   };
 }
 
-export type CapCheckResult =
+export type WindowCheckResult =
   | { ok: true; nextIndex: RegistrationIndex }
   | { ok: false; error: string; status: 409 | 410 };
 
 /**
- * Checks one normalized registration against the bracket index and returns
- * the index as it should stand after this squad is written. A full nation
- * or track closes only that slice; a full bracket closes everything.
+ * Checks one normalized enrolment against the window and the index, and
+ * returns the index as it should stand after this enrolment is written.
+ * The window is checked first: outside both windows nothing is admitted.
  */
-export function checkCapsAndDuplicates(
+export function checkWindowAndDuplicates(
   index: RegistrationIndex,
-  reg: NormalizedRegistration,
+  reg: NormalizedEnrolment,
   nowMs: number,
-): CapCheckResult {
-  if (nowMs > REGISTRATION_CLOSE_MS) {
+): WindowCheckResult {
+  const window = getWindowState(nowMs);
+  if (!window.open) {
+    if (window.opensAt !== null) {
+      return {
+        ok: false,
+        status: 410,
+        error:
+          'Registration is closed. Late admission opens Nov 21, 2026, 09:00 PKT and closes Nov 28, 2026, 23:59 PKT.',
+      };
+    }
     return {
       ok: false,
       status: 410,
-      error: 'Registration has closed. The deadline was Nov 15, 2026, 23:59 PKT.',
+      error: 'Registration has closed. The late admission window ended Nov 28, 2026, 23:59 PKT.',
     };
   }
-  if (index.total >= MAX_SQUADS_TOTAL) {
-    return { ok: false, status: 410, error: 'The 30 squad bracket is full. Registration is closed.' };
-  }
-  if (index.byNation[reg.nation] >= MAX_SQUADS_PER_NATION) {
+  if (index.emails.includes(reg.leadEmail)) {
     return {
       ok: false,
       status: 409,
-      error: `The ${NATION_LABELS[reg.nation]} bracket is full (15 squads).`,
+      error: 'This email has already been used for an enrolment.',
     };
   }
-  if (index.byTrack[reg.track] >= MAX_SQUADS_PER_TRACK) {
+  if (index.studentIdKeys.includes(reg.studentIdKey)) {
     return {
       ok: false,
       status: 409,
-      error: `The ${TRACK_LABELS[reg.track]} track is full (10 squads).`,
-    };
-  }
-  if (index.leadEmails.includes(reg.leadEmail)) {
-    return {
-      ok: false,
-      status: 409,
-      error: 'This squad lead email has already registered a squad.',
-    };
-  }
-  if (index.squadNameKeys.includes(squadNameKey(reg.squadName))) {
-    return { ok: false, status: 409, error: 'This squad name is already registered.' };
-  }
-  const clash = reg.studentIdKeys.find((k) => index.studentIdKeys.includes(k));
-  if (clash) {
-    return {
-      ok: false,
-      status: 409,
-      error: 'One of the student IDs in this squad is already registered with another squad.',
+      error: 'This student ID is already enrolled with another enrolment.',
     };
   }
 
   const nextIndex: RegistrationIndex = {
     total: index.total + 1,
-    byNation: { ...index.byNation, [reg.nation]: index.byNation[reg.nation] + 1 },
-    byTrack: { ...index.byTrack, [reg.track]: index.byTrack[reg.track] + 1 },
-    leadEmails: [...index.leadEmails, reg.leadEmail],
-    squadNameKeys: [...index.squadNameKeys, squadNameKey(reg.squadName)],
-    studentIdKeys: [...index.studentIdKeys, ...reg.studentIdKeys],
+    emails: [...index.emails, reg.leadEmail],
+    studentIdKeys: [...index.studentIdKeys, reg.studentIdKey],
   };
   return { ok: true, nextIndex };
 }
 
-/** Public bracket status for the form header: counts only, never identities. */
-export function publicBracketStatus(index: RegistrationIndex, nowMs: number) {
-  const closedByDeadline = nowMs > REGISTRATION_CLOSE_MS;
-  const closedByBracket = index.total >= MAX_SQUADS_TOTAL;
+/** Public registration status for the form header: window state and dates only, never identities. */
+export function publicRegistrationStatus(index: RegistrationIndex, nowMs: number) {
+  const window = getWindowState(nowMs);
   return {
-    open: !closedByDeadline && !closedByBracket,
-    closesAt: REGISTRATION_CLOSE_ISO,
+    ...window,
     totalRegistered: index.total,
-    seatsTotal: MAX_SQUADS_TOTAL,
-    byNation: {
-      PK: { registered: index.byNation.PK, cap: MAX_SQUADS_PER_NATION },
-      LK: { registered: index.byNation.LK, cap: MAX_SQUADS_PER_NATION },
-    },
-    byTrack: {
-      rocketry: { registered: index.byTrack.rocketry, cap: MAX_SQUADS_PER_TRACK },
-      robotics: { registered: index.byTrack.robotics, cap: MAX_SQUADS_PER_TRACK },
-      flatsat: { registered: index.byTrack.flatsat, cap: MAX_SQUADS_PER_TRACK },
-    },
   };
 }

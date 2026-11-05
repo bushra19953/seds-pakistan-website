@@ -379,6 +379,26 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
     initialValues?.deadline ?? ""
   );
 
+  // The deadline this dialog was opened with (edit mode). The 24-hour
+  // workflow minimum lead below constrains SETTING a workflow deadline:
+  // creating the workflow, or changing this value. A persisted workflow
+  // whose deadline has since come within 24 hours must stay editable
+  // for everything else (live incident 2026-11-05: near-due workflow
+  // step dialogs were fully blocked by the rule re-firing on the
+  // displayed, untouched value).
+  const initialDeadlineRef = React.useRef<string>(initialValues?.deadline ?? "");
+  const workflowDeadlineRuleArmed = (() => {
+    if (!editMode) return true;
+    const opened = new Date(initialDeadlineRef.current).getTime();
+    const current = new Date(values.deadline || "").getTime();
+    return (Number.isNaN(opened) ? null : opened) !== (Number.isNaN(current) ? null : current);
+  })();
+
+  // Save failures surface here, inside the dialog, not only as a
+  // transient toast: a rejected save used to leave the admin staring
+  // at an unchanged dialog with no idea anything went wrong.
+  const [submitError, setSubmitError] = React.useState<string | null>(null);
+
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
   // ARCHITECTURAL FIX: Memoize the onChange callback to prevent infinite re-renders
@@ -409,10 +429,20 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
       // the admin must re-confirm for the new set of assignees.
       return sameUidArray(prev, ids) ? v : { ...v, assigneeIds: ids, availabilityConfirmed: false };
     });
-    // Cascade: drop step assignees that are no longer main assignees so the
-    // admin visibly re-picks them instead of submitting a stale selection.
-    setWorkflowSteps((prev) => prev.map((s) => (s.assigneeId && !ids.includes(s.assigneeId) ? { ...s, assigneeId: undefined } : s)));
-  }, []);
+    // Cascade (CREATE mode only): drop step assignees that are no longer
+    // main assignees so the admin visibly re-picks them instead of
+    // submitting a stale selection. In EDIT mode the plan steps are
+    // persisted docs of an existing workflow and their assignees are
+    // authoritative; this dialog's top-level list is only the EDITED
+    // task's roster (for a step task, just that step's people), so the
+    // cascade cleared the assignee of every other step the admin never
+    // touched. The save then carried steps without assignees, the
+    // server rejected the whole update, and the edit was silently lost
+    // (live incident 2026-11-05).
+    if (!editMode) {
+      setWorkflowSteps((prev) => prev.map((s) => (s.assigneeId && !ids.includes(s.assigneeId) ? { ...s, assigneeId: undefined } : s)));
+    }
+  }, [editMode]);
 
   // Memoize workflow step assignee change handler to prevent unnecessary re-renders
   const handleWorkflowStepAssigneeChange = React.useCallback((stepIndex: number) => (uid: string | null) => {
@@ -708,6 +738,7 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting) return;
+    setSubmitError(null);
 
     // Phase 1 Enhancement: Workflow deadline validation
     if (workflowSteps.length > 0) {
@@ -719,9 +750,12 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
       // The 24-hour minimum lead (F1): this rule used to exist only in
       // the page's create handler, invisible here. The missing-items
       // list already shows it; this is the submit-time backstop, using
-      // the same shared constant.
+      // the same shared constant. Scoped like the missing-items list:
+      // it fires when a workflow deadline is being SET (create, or the
+      // value changed in this dialog), never on an untouched persisted
+      // deadline that time has since brought inside 24 hours.
       const deadlineMs = new Date(values.deadline).getTime();
-      if (!isNaN(deadlineMs) && deadlineMs - Date.now() < WORKFLOW_MIN_DEADLINE_HOURS * 3600_000) {
+      if (workflowDeadlineRuleArmed && !isNaN(deadlineMs) && deadlineMs - Date.now() < WORKFLOW_MIN_DEADLINE_HOURS * 3600_000) {
         toast({
           title: 'Deadline too soon',
           description: `Workflow deadline must be at least ${WORKFLOW_MIN_DEADLINE_HOURS} hours from now, so every step gets a fair slice of time.`,
@@ -824,6 +858,11 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
       } else {
         await onSubmit(payload);
       }
+    } catch (err: any) {
+      // The save was rejected (server validation, network, auth). Keep
+      // the failure visible inside the dialog until the next attempt;
+      // a toast alone reads as a silent no-op when it is missed.
+      setSubmitError(err?.message || 'Failed to save. Nothing was changed; please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -1040,7 +1079,7 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
       if (!s.title?.trim()) missingItems.push(`Step ${i + 1} title`);
       if (!s.assigneeId && !(s.assigneeIds?.length)) missingItems.push(`Step ${i + 1} assignee`);
     });
-    if (values.deadline) {
+    if (values.deadline && workflowDeadlineRuleArmed) {
       const dl = new Date(values.deadline).getTime();
       if (!isNaN(dl) && dl - Date.now() < WORKFLOW_MIN_DEADLINE_HOURS * 3600_000) {
         missingItems.push(`Workflow deadline at least ${WORKFLOW_MIN_DEADLINE_HOURS} hours from now`);
@@ -1354,7 +1393,7 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
           id="task-deadline"
           type="datetime-local"
           value={deadlineInputValue}
-          min={workflowSteps.length > 0 ? toDatetimeLocal(new Date(Date.now() + WORKFLOW_MIN_DEADLINE_HOURS * 3600_000).toISOString()) : undefined}
+          min={workflowSteps.length > 0 && workflowDeadlineRuleArmed ? toDatetimeLocal(new Date(Date.now() + WORKFLOW_MIN_DEADLINE_HOURS * 3600_000).toISOString()) : undefined}
           onChange={(e) => { dirtyFieldsRef.current.add('deadline'); setDeadlineInputValue(e.target.value); }}
           placeholder="Select deadline"
         />
@@ -2079,6 +2118,14 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
               Type 0 for no penalty or no bonus.
             </div>
           )}
+        </div>
+      )}
+
+      {/* Save failure (persistent, in-dialog): the last submit was
+          rejected; nothing was saved. */}
+      {submitError && (
+        <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive" role="alert">
+          Save failed: {submitError}
         </div>
       )}
 

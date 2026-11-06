@@ -380,19 +380,26 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
   );
 
   // The deadline this dialog was opened with (edit mode). The 24-hour
-  // workflow minimum lead below constrains SETTING a workflow deadline:
-  // creating the workflow, or changing this value. A persisted workflow
-  // whose deadline has since come within 24 hours must stay editable
-  // for everything else (live incident 2026-11-05: near-due workflow
-  // step dialogs were fully blocked by the rule re-firing on the
-  // displayed, untouched value).
+  // workflow minimum lead below is a CREATE-time rule: it constrains
+  // setting a deadline for a workflow that does not exist yet. Editing
+  // a PERSISTED workflow step task is never bound by it, whether the
+  // displayed deadline is left untouched (live incident 2026-11-05:
+  // near-due step dialogs were fully blocked by the rule re-firing on
+  // the value time had brought inside 24 hours) or the admin moves it
+  // to another future time (live incident 2026-11-06: a same-day
+  // extension of an existing step could not be saved at all). What
+  // edit mode still enforces is only that the deadline stays in the
+  // future (see the past-deadline item in the still-needed list).
+  // Persisted steps are the ones hydrated from real task docs (their
+  // ids are recorded when initialWorkflowSteps lands). A brand-new
+  // plan built inside an edit dialog has no persisted ids and stays
+  // bound by the rule, exactly like the create flow.
   const initialDeadlineRef = React.useRef<string>(initialValues?.deadline ?? "");
-  const workflowDeadlineRuleArmed = (() => {
-    if (!editMode) return true;
-    const opened = new Date(initialDeadlineRef.current).getTime();
-    const current = new Date(values.deadline || "").getTime();
-    return (Number.isNaN(opened) ? null : opened) !== (Number.isNaN(current) ? null : current);
-  })();
+  const hasPersistedSteps =
+    Array.isArray(initialWorkflowSteps) &&
+    initialWorkflowSteps.some((s) => typeof s.id === 'string' && s.id.trim().length > 0);
+  const workflowDeadlineRuleArmed = !editMode || !hasPersistedSteps;
+  const deadlineInPastArmed = editMode && hasPersistedSteps;
 
   // Save failures surface here, inside the dialog, not only as a
   // transient toast: a rejected save used to leave the admin staring
@@ -751,14 +758,25 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
       // the page's create handler, invisible here. The missing-items
       // list already shows it; this is the submit-time backstop, using
       // the same shared constant. Scoped like the missing-items list:
-      // it fires when a workflow deadline is being SET (create, or the
-      // value changed in this dialog), never on an untouched persisted
-      // deadline that time has since brought inside 24 hours.
+      // it fires only when a workflow is being created (the create
+      // flow, or a new plan on a task with no persisted steps). On a
+      // persisted step task only the future requirement below applies.
       const deadlineMs = new Date(values.deadline).getTime();
       if (workflowDeadlineRuleArmed && !isNaN(deadlineMs) && deadlineMs - Date.now() < WORKFLOW_MIN_DEADLINE_HOURS * 3600_000) {
         toast({
           title: 'Deadline too soon',
           description: `Workflow deadline must be at least ${WORKFLOW_MIN_DEADLINE_HOURS} hours from now, so every step gets a fair slice of time.`,
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      // Persisted step edits: the deadline may move anywhere in the
+      // future, but never into the past.
+      if (deadlineInPastArmed && !isNaN(deadlineMs) && deadlineMs <= Date.now()) {
+        toast({
+          title: 'Deadline in the past',
+          description: 'The deadline must be in the future. Pick a time later than now.',
           variant: 'destructive',
         });
         return;
@@ -1085,6 +1103,12 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
         missingItems.push(`Workflow deadline at least ${WORKFLOW_MIN_DEADLINE_HOURS} hours from now`);
       }
     }
+    if (values.deadline && deadlineInPastArmed) {
+      const dl = new Date(values.deadline).getTime();
+      if (!isNaN(dl) && dl <= Date.now()) {
+        missingItems.push('Deadline in the future');
+      }
+    }
   }
   if (values.requiresOnSitePresence === true) {
     if (!String(values.locationRequired || '').trim()) missingItems.push('On-site location');
@@ -1393,13 +1417,22 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
           id="task-deadline"
           type="datetime-local"
           value={deadlineInputValue}
-          min={workflowSteps.length > 0 && workflowDeadlineRuleArmed ? toDatetimeLocal(new Date(Date.now() + WORKFLOW_MIN_DEADLINE_HOURS * 3600_000).toISOString()) : undefined}
+          min={workflowSteps.length > 0 && workflowDeadlineRuleArmed
+            ? toDatetimeLocal(new Date(Date.now() + WORKFLOW_MIN_DEADLINE_HOURS * 3600_000).toISOString())
+            : workflowSteps.length > 0 && deadlineInPastArmed
+              ? toDatetimeLocal(new Date(Date.now()).toISOString())
+              : undefined}
           onChange={(e) => { dirtyFieldsRef.current.add('deadline'); setDeadlineInputValue(e.target.value); }}
           placeholder="Select deadline"
         />
-        {workflowSteps.length > 0 && (
+        {workflowSteps.length > 0 && workflowDeadlineRuleArmed && (
           <p className="text-xs text-muted-foreground">
             Workflow deadlines must be at least {WORKFLOW_MIN_DEADLINE_HOURS} hours from now, so every step gets a fair slice of time.
+          </p>
+        )}
+        {workflowSteps.length > 0 && deadlineInPastArmed && (
+          <p className="text-xs text-muted-foreground">
+            This step already exists, so its deadline can move to any future time. It just cannot be set in the past.
           </p>
         )}
       </div>

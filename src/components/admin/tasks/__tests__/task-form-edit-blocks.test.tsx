@@ -10,6 +10,14 @@
  * form applied it unconditionally in edit mode against the deadline
  * the dialog was merely displaying.
  *
+ * Bug C — a deadline CHANGE on a persisted step still hit the 24h
+ * rule (live incident, 2026-11-06). The Nov 5 fix disarmed the rule
+ * only while the deadline sat untouched, so the moment an admin moved
+ * an existing step's deadline (a routine same-day extension) to any
+ * time inside 24 hours, the rule re-armed and blocked the save. The
+ * 24h minimum lead is a create-time rule: on a persisted step task any
+ * future deadline is valid; only a past deadline stays invalid.
+ *
  * Bug B — assignee change on a workflow step task silently failed.
  * Changing the top-level assignee of one step task ran the create-flow
  * cascade in handleAssigneeChange, which cleared the plan assignee of
@@ -57,6 +65,12 @@ const PICKER_ROWS = [
 
 function futureLocal(hoursFromNow: number): string {
   const d = new Date(Date.now() + hoursFromNow * 3600_000);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function pastLocal(hoursAgo: number): string {
+  const d = new Date(Date.now() - hoursAgo * 3600_000);
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
@@ -126,10 +140,27 @@ describe('Bug A: near-due persisted workflow stays editable', () => {
     await waitFor(() => expect(onSubmitWithPlan).toHaveBeenCalled());
   });
 
-  it('edit mode: changing the deadline to another inside-24h value re-arms the rule', () => {
-    render(<TaskForm {...stepTaskProps(2)} onSubmit={jest.fn()} onSubmitWithPlan={jest.fn()} />);
-    fireEvent.change(screen.getByLabelText('Deadline *'), { target: { value: futureLocal(3) } });
-    expect(screen.getByText(/Workflow deadline at least 24 hours from now/)).toBeInTheDocument();
+  it('edit mode: moving a persisted step deadline to +2h from now validates and saves', async () => {
+    const onSubmitWithPlan = jest.fn(async () => {});
+    render(<TaskForm {...stepTaskProps(72)} onSubmit={jest.fn()} onSubmitWithPlan={onSubmitWithPlan} />);
+    fireEvent.change(screen.getByLabelText('Deadline *'), { target: { value: futureLocal(2) } });
+    // The 24h create-time rule no longer applies to a persisted step;
+    // a future deadline inside 24h is a valid same-day extension.
+    expect(screen.queryByText(/Workflow deadline at least 24 hours from now/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Deadline in the future/)).not.toBeInTheDocument();
+    const button = screen.getByRole('button', { name: 'Update Task' });
+    expect(button).not.toBeDisabled();
+    fireEvent.click(button);
+    await waitFor(() => expect(onSubmitWithPlan).toHaveBeenCalled());
+    const [values] = onSubmitWithPlan.mock.calls[0] as any[];
+    expect(values.deadline).toBe(futureLocal(2));
+  });
+
+  it('edit mode: a past deadline on a persisted step task still fails validation', () => {
+    render(<TaskForm {...stepTaskProps(72)} onSubmit={jest.fn()} onSubmitWithPlan={jest.fn()} />);
+    fireEvent.change(screen.getByLabelText('Deadline *'), { target: { value: pastLocal(1) } });
+    expect(screen.getByText(/Deadline in the future/)).toBeInTheDocument();
+    expect(screen.queryByText(/Workflow deadline at least 24 hours from now/)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Update Task' })).toBeDisabled();
   });
 

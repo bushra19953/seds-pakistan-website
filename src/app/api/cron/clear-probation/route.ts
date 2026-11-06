@@ -7,6 +7,7 @@ import { notificationService } from '@/lib/server/notification-service';
 import { Timestamp } from 'firebase-admin/firestore';
 import { DEFAULT_WARNING_SETTINGS, WarningSettings } from '@/types/user';
 import { computeDerivedWarningCount } from '@/lib/server/discipline/derived-counter';
+import { ladderExpiryMap } from '@/lib/server/discipline/warning-ladder';
 import { runDefenceWindowSweeps, runDraftExpiry, runSuspensionLifts } from '@/lib/server/discipline/stanzas';
 import { processProbationRestores } from '@/lib/server/discipline/adapters-probation';
 import {
@@ -94,14 +95,23 @@ function toMillisSafe(val: MillisLike): number {
   return 0;
 }
 
-// Resolve a warning's expiry: stored expiresAt, else createdAt plus the
-// configured expiration window (same fallback the public registry uses).
+// Resolve a warning's expiry: stored expiresAt first (a recorded
+// value on the doc, never recomputed), else the founder-approved
+// warning sunset ladder (2026-11-06: Warning 1 lapses after 30 clean
+// days, Warning 2 after 60, Warning 3 never - see
+// src/lib/server/discipline/warning-ladder.ts), else the legacy
+// createdAt plus configured expiration window fallback for warnings
+// the ladder cannot place (no derivable issuance instant). A ladder
+// expiry of Infinity means the warning never lapses. The public
+// registry resolves expiry the same way.
 function getWarningExpiryMillis(
   w: Record<string, any>,
-  expirationDays: number
+  expirationDays: number,
+  ladderExpiryMs?: number
 ): number {
   const exp = toMillisSafe(w.expiresAt);
   if (exp > 0) return exp;
+  if (ladderExpiryMs !== undefined) return ladderExpiryMs;
   const created = toMillisSafe(w.createdAt);
   if (created > 0) return created + expirationDays * 24 * 60 * 60 * 1000;
   return 0;
@@ -188,6 +198,13 @@ async function runClearProbation(req: NextRequest) {
           .where('isActive', '==', true)
           .get();
 
+        // Sunset ladder placement for this member's live warnings:
+        // a warning's expiry depends on its chain, so the chains are
+        // built once per member before any per-warning resolution.
+        const ladderExpiries = ladderExpiryMap(
+          warnSnap.docs.map((d) => ({ id: d.id, ...((d.data() || {}) as Record<string, any>) }))
+        );
+
         const expired: FirebaseFirestore.DocumentSnapshot[] = [];
         let remainingActive = 0;
         for (const wdoc of warnSnap.docs) {
@@ -196,7 +213,7 @@ async function runClearProbation(req: NextRequest) {
             remainingActive++;
             continue;
           }
-          const expMillis = getWarningExpiryMillis(w, expirationDays);
+          const expMillis = getWarningExpiryMillis(w, expirationDays, ladderExpiries.get(wdoc.id));
           if (expMillis > 0 && expMillis <= nowMillis) {
             expired.push(wdoc);
           } else {

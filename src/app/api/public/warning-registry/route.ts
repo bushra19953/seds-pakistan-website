@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { DEFAULT_WARNING_SETTINGS, WarningSettings } from '@/types/user';
+import { ladderExpiryMap } from '@/lib/server/discipline/warning-ladder';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -32,7 +33,10 @@ export const runtime = 'nodejs';
  *  - a warning counts only while it is CURRENT: isActive, and not
  *    expired. Expiry follows the clear-probation cron
  *    (getWarningExpiryMillis): expiresAt when stored, otherwise
- *    createdAt + warningConfig expirationDays. A permanent warning
+ *    createdAt + warningConfig expirationDays. Since 2026-11-06 the
+ *    computed fallback is the founder-approved sunset ladder
+ *    (Warning 1: 30 clean days, Warning 2: 60, Warning 3: never)
+ *    wherever the ladder can place the warning. A permanent warning
  *    never expires. A revoked or archived warning is never current,
  *    whatever the stored counters still say: the feed does not wait
  *    for a cleanup pass to stop publishing a lapsed or voided
@@ -187,10 +191,20 @@ function toMillisSafe(val: any): number {
 
 // Expiry of a warning, computed exactly as the clear-probation cron
 // computes it (getWarningExpiryMillis): expiresAt when stored, else
-// createdAt + expirationDays, else 0 (no expiry derivable).
-function warningExpiryMillis(w: Record<string, any>, expirationDays: number): number {
+// the founder-approved warning sunset ladder (2026-11-06: Warning 1
+// lapses after 30 clean days, Warning 2 after 60, Warning 3 never;
+// the ladder placement is passed in per member because a warning's
+// expiry depends on its chain), else createdAt + expirationDays,
+// else 0 (no expiry derivable). A ladder expiry of Infinity means
+// the warning never lapses.
+function warningExpiryMillis(
+  w: Record<string, any>,
+  expirationDays: number,
+  ladderExpiryMs?: number
+): number {
   const exp = toMillisSafe(w.expiresAt);
   if (exp > 0) return exp;
+  if (ladderExpiryMs !== undefined) return ladderExpiryMs;
   const created = toMillisSafe(w.createdAt);
   if (created > 0) return created + expirationDays * DAY_MILLIS;
   return 0;
@@ -202,11 +216,12 @@ function warningExpiryMillis(w: Record<string, any>, expirationDays: number): nu
 function isCurrentlyActive(
   w: Record<string, any>,
   expirationDays: number,
-  nowMillis: number
+  nowMillis: number,
+  ladderExpiryMs?: number
 ): boolean {
   if (w.isActive !== true) return false;
   if (w.isPermanent === true) return true;
-  const expMillis = warningExpiryMillis(w, expirationDays);
+  const expMillis = warningExpiryMillis(w, expirationDays, ladderExpiryMs);
   return expMillis <= 0 || expMillis > nowMillis;
 }
 
@@ -492,9 +507,15 @@ export async function GET(request?: NextRequest) {
             .collection('warnings')
             .limit(WARNINGS_PER_MEMBER_LIMIT)
             .get();
+          // Sunset ladder placement for this member's warnings: a
+          // warning's expiry depends on its chain, so the chains are
+          // built once per member before judging any single warning.
+          const ladderExpiries = ladderExpiryMap(
+            warningsSnap.docs.map((wd: any) => ({ id: wd.id, ...((wd.data() || {}) as Record<string, any>) }))
+          );
           warningsSnap.docs.forEach((wd: any) => {
             const w = wd.data() as Record<string, any>;
-            if (isCurrentlyActive(w, expirationDays, nowMillis)) {
+            if (isCurrentlyActive(w, expirationDays, nowMillis, ladderExpiries.get(wd.id))) {
               activeCount += 1;
               latestActiveMillis = Math.max(
                 latestActiveMillis,
@@ -507,8 +528,8 @@ export async function GET(request?: NextRequest) {
               if (w.isPermanent === true) {
                 hasOpenEndedWarning = true;
               } else {
-                const exp = warningExpiryMillis(w, expirationDays);
-                if (exp <= 0) {
+                const exp = warningExpiryMillis(w, expirationDays, ladderExpiries.get(wd.id));
+                if (exp <= 0 || !Number.isFinite(exp)) {
                   hasOpenEndedWarning = true;
                 } else {
                   latestExpiryMillis = Math.max(latestExpiryMillis, exp);

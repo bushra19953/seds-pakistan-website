@@ -76,6 +76,11 @@ interface WorkflowStep {
   assigneePhoto?: string;
   assignees?: Array<{ id: string; name: string; photoURL?: string | null; role?: string | null; displayRole?: string | null; chapterName?: string | null }>;
   role?: string;
+  // Bottleneck flag (founder design, 2026-11-06): stamped on the task
+  // doc by the overdue cron's flag pass when this overdue step blocks
+  // its downstream step; see src/lib/server/workflow-bottleneck.ts.
+  dependencyFlag?: string | null;
+  dependencyBlockedTaskId?: string | null;
   individualDeadline?: string;
   isCurrentStep?: boolean;
   assigneeId?: string; // For profile linking
@@ -159,6 +164,9 @@ function WorkflowStepRow({ step, index }: { step: WorkflowStep; index: number })
           <span className="font-medium text-sm text-foreground truncate">{step.title}</span>
           {step.role && (
             <Badge variant="outline" className="text-[10px] border-current opacity-70">{step.role}</Badge>
+          )}
+          {step.dependencyFlag === 'AT_RISK_DEPENDENCY' && (
+            <Badge className="text-[10px] bg-red-500/20 text-red-400 border-red-500/30">At-Risk Dependency</Badge>
           )}
         </div>
 

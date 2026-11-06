@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server';
 import { getG3Db } from '@/lib/server/cron/g3-data';
 import { taskHasProofUploaded } from '@/lib/server/bug4-proof-guards';
 import { mirrorWorkflowLinkedTaskDocsByIds } from '@/lib/server/workflow-write-mirror';
+import { runPenaltyAccrual } from '@/lib/server/penalty-accrual';
+import { runBottleneckFlagPass } from '@/lib/server/workflow-bottleneck';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -168,6 +170,23 @@ export async function GET(request: Request) {
 
     console.log(`[OVERDUE] Scanned ${counts.scanned}, marked ${counts.newlyMarked} as overdue, skipped ${counts.proofUploadedSkipped} with proof uploaded`);
 
+    // PENALTY ACCRUAL (founder-approved design, 2026-11-06): the
+    // geometric hourly penalty settles here as a named step of this
+    // run, after marking, so freshly overdue tasks start accruing in
+    // the same pass. Its own try/catch: an accrual failure can never
+    // fail the overdue marking run.
+    let penaltyAccrual: Awaited<ReturnType<typeof runPenaltyAccrual>> | { error: string } = {
+      scanned: 0, tasksCharged: 0, assigneesCharged: 0, totalDeducted: 0,
+      skippedProof: 0, skippedNoPenalty: 0, skippedNotDue: 0, skippedLeaveExempt: 0, failed: 0,
+    };
+    try {
+      penaltyAccrual = await runPenaltyAccrual(db, now);
+      console.log(`[OVERDUE] Penalty accrual: ${penaltyAccrual.tasksCharged} task(s) charged, ${penaltyAccrual.totalDeducted} point(s) deducted`);
+    } catch (e: any) {
+      console.error('[OVERDUE] Penalty accrual failed:', e);
+      penaltyAccrual = { error: e?.message || String(e) };
+    }
+
     let releaseResult = { enabled: false, stepsReleased: 0 };
 
     try {
@@ -237,6 +256,22 @@ export async function GET(request: Request) {
       console.error('[OVERDUE] Failed to process workflow releases:', e);
     }
 
+    // BOTTLENECK FLAG (founder-approved design, 2026-11-06): after
+    // marking and releases settle, stamp AT_RISK_DEPENDENCY on
+    // overdue workflow steps whose downstream step is still waiting.
+    // Information for humans only: the pass writes flag fields, never
+    // warnings. Its own try/catch, like the accrual step above.
+    let bottleneck: Awaited<ReturnType<typeof runBottleneckFlagPass>> | { error: string } = {
+      scanned: 0, flagged: 0, cleared: 0, stillFlagged: 0,
+    };
+    try {
+      bottleneck = await runBottleneckFlagPass(db, now);
+      console.log(`[OVERDUE] Bottleneck flags: ${bottleneck.flagged} set, ${bottleneck.cleared} cleared, ${bottleneck.stillFlagged} standing`);
+    } catch (e: any) {
+      console.error('[OVERDUE] Bottleneck flag pass failed:', e);
+      bottleneck = { error: e?.message || String(e) };
+    }
+
     console.log('[OVERDUE] Overdue task check completed');
     return NextResponse.json({
       success: true,
@@ -245,6 +280,8 @@ export async function GET(request: Request) {
       skippedDetails,
       releaseOnOverdue: releaseResult.enabled,
       stepsReleased: releaseResult.stepsReleased,
+      penaltyAccrual,
+      bottleneck,
     });
 
   } catch (error: any) {

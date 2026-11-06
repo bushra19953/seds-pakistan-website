@@ -344,8 +344,8 @@ describe('GET /api/cron/clear-probation', () => {
     const body = await res.json();
 
     expect(body.success).toBe(true);
-    expect(body.warningsCleared).toBe(3);
-    expect(body.usersTouched).toBe(3);
+    expect(body.warningsCleared).toBe(2);
+    expect(body.usersTouched).toBe(2);
     expect(body.failed).toBe(0);
 
     // Archived warning: status marker set, deactivated.
@@ -379,30 +379,34 @@ describe('GET /api/cron/clear-probation', () => {
     expect(u2.data.activeWarningCount).toBe(0);
     expect(u2.data.isBlacklisted).toBe(true);
     expect(body.suspensionsLifted).toBe(0);
-    expect(body.usersFullyCleared).toBe(2); // u-blacklisted and u-fallback
+    expect(body.usersFullyCleared).toBe(1); // u-blacklisted only (see the ladder note below)
 
-    // Fallback expiry: no expiresAt recorded, createdAt + expirationDays
-    // (14d) lands in the past, so it is archived too.
+    // Sunset ladder (founder decision 2026-11-06): w-no-expiry has no
+    // stored expiresAt, so its expiry is COMPUTED - and the computed
+    // rule is now the ladder, not the flat createdAt + expirationDays
+    // (14d) fallback this fixture's settings carry. A lone Warning 1
+    // lapses after 30 clean days; issued 20 days ago, it is still
+    // active and is NOT archived by this run.
     const wNoExpiry = findUser('u-fallback').warnings.find(
       (w) => w.id === 'w-no-expiry'
     )!;
-    expect(wNoExpiry.data.isActive).toBe(false);
-    expect(wNoExpiry.data.status).toBe('probation_cleared');
+    expect(wNoExpiry.data.isActive).toBe(true);
+    expect(wNoExpiry.data.status).toBeUndefined();
 
     // Member notifications sent for every touched member.
     const clearedNotifs = state.notifications.filter(
       (n) => n.payload.type === 'probation_cleared'
     );
-    expect(clearedNotifs).toHaveLength(3);
+    expect(clearedNotifs).toHaveLength(2);
     expect(clearedNotifs.map((n) => n.userId).sort()).toEqual(
-      ['u-blacklisted', 'u-fallback', 'u-one']
+      ['u-blacklisted', 'u-one']
     );
     expect(clearedNotifs[0].priority).toBe('P1');
   });
 
   it('is idempotent: a rerun performs zero writes', async () => {
     const first = await GET(cronRequest('GET', true));
-    expect((await first.json()).warningsCleared).toBe(3);
+    expect((await first.json()).warningsCleared).toBe(2);
     const opsAfterFirst = state.batchOps.length;
     const commitsAfterFirst = state.commitCount;
 
@@ -439,7 +443,7 @@ describe('GET /api/cron/clear-probation', () => {
 
     const res = await POST(cronRequest('POST', false));
     expect(res.status).toBe(200);
-    expect((await res.json()).warningsCleared).toBe(3);
+    expect((await res.json()).warningsCleared).toBe(2);
   });
 
   it('returns 401 with no writes for unauthenticated callers', async () => {
@@ -549,6 +553,6 @@ describe('B3 cron auth patch (cron-takeover)', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
-    expect(body.warningsCleared).toBe(3);
+    expect(body.warningsCleared).toBe(2);
   });
 });

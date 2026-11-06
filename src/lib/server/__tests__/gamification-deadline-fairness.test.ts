@@ -72,6 +72,22 @@ const store: Record<string, any> = {
     individualDeadline: new FakeTimestamp(DEADLINE_MS),
     submittedAt: new FakeTimestamp(SUBMITTED_LATE_MS),
   },
+  'tasks/step-accrued': {
+    title: 'Late submission, penalty partly accrued while overdue',
+    status: 'submitted-for-review',
+    assigneeIds: ['ahmed-uid'],
+    assigneeId: 'ahmed-uid',
+    submittedBy: 'ahmed-uid',
+    points: 30,
+    penaltyPoints: 10,
+    individualDeadline: new FakeTimestamp(DEADLINE_MS),
+    submittedAt: new FakeTimestamp(SUBMITTED_LATE_MS),
+    // The hourly accrual pass already deducted 6 of the 10 penalty
+    // points from the assignee's balance while the task sat overdue.
+    penaltyAccrual: {
+      'ahmed-uid': { applied: 6, targetAccrued: 6, hoursOverdue: 3, updatedAt: '2026-10-27T03:34:00.000Z' },
+    },
+  },
   'tasks/plain-direct': {
     title: 'Direct completion, never submitted',
     status: 'pending',
@@ -220,6 +236,30 @@ describe('deadline fairness: submission instant decides lateness', () => {
     expect(ledger).toHaveLength(1);
     expect(ledger[0].data.points_awarded).toBe(20);
     expect(ledger[0].data.penalty_applied).toBe(10);
+    expect(ledger[0].data.completed_late).toBe(true);
+  });
+
+  test('late completion with penalty already accrued: only the remainder is deducted from the award', async () => {
+    const result = await executeGamificationTransaction(
+      'step-accrued',
+      { status: 'completed' },
+      { status: 'submitted-for-review' },
+      'founder-uid'
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.completedLate).toBe(true);
+
+    // 6 of the 10 penalty points were already taken by accrual, so
+    // the award loses only the remaining 4: 30 - 4 = 26, and the
+    // task's total cost stays at its 10-point cap.
+    const counters = userWrites('ahmed-uid').map((w) => w.data).reduce((acc, d) => ({ ...acc, ...d }), {});
+    expect(counters.total_points).toEqual({ __fv: 'increment', n: 26 });
+
+    const ledger = ledgerWrites('step-accrued');
+    expect(ledger).toHaveLength(1);
+    expect(ledger[0].data.points_awarded).toBe(26);
+    expect(ledger[0].data.penalty_applied).toBe(4);
     expect(ledger[0].data.completed_late).toBe(true);
   });
 

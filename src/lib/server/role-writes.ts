@@ -25,6 +25,7 @@
 import { FieldValue, type Firestore, type Timestamp } from 'firebase-admin/firestore';
 import {
   type CatalogRoleKey,
+  getCatalogRole,
   isCatalogRoleKey,
   normalizeRoleSlug,
   scopeOf,
@@ -32,6 +33,7 @@ import {
   effectiveRoleOf,
   sortAdditionalRoles,
 } from '../role-catalog';
+import { getMemberWarningLevel } from './discipline/warning-ladder';
 import { isCustomRoleSlug as isLawfulCustomRoleSlug } from '../custom-roles';
 import { VENDOR_PERMISSION_KEYS, isVendorRoleSlug } from '../vendor-role';
 import { isFounderUid } from '@/config/founder';
@@ -156,7 +158,10 @@ export type RoleWriteErrorCode =
   | 'custom_role_inactive'
   | 'custom_role_chapter_mismatch'
   | 'custom_role_reserved_permission'
-  | 'invalid_expiry';
+  | 'invalid_expiry'
+  // Warning ladder (founder decision 2026-11-06): an active Warning 2
+  // bars new leadership-role assignment while it stands.
+  | 'warning_restricted';
 
 export class RoleWriteError extends Error {
   code: RoleWriteErrorCode;
@@ -1091,6 +1096,44 @@ export async function addRoleChangeToBatch(
 }
 
 /**
+ * Leadership seats for the Warning 2 restriction, taken from the role
+ * catalog's own categories: A (global apex), B (national executive)
+ * and C (chapter leadership: presidents, vice presidents, chairs).
+ * Category D (deputies and officers without a vote) and GENERAL_BODY
+ * are not leadership seats, and custom (non-catalog) slugs carry no
+ * catalog category, so they are not gated by this rule.
+ */
+export function isLeadershipRoleKey(roleKey: unknown): boolean {
+  if (!isCatalogRoleKey(roleKey)) return false;
+  const category = getCatalogRole(roleKey).category;
+  return category === 'A' || category === 'B' || category === 'C';
+}
+
+/**
+ * Warning 2 privilege restriction (founder decision 2026-11-06,
+ * sunset ladder): while a member's current warning level is 2 or
+ * higher, they may not be assigned a NEW leadership role. The gate
+ * reads the member's live warning chain (see
+ * discipline/warning-ladder.ts); it blocks only grants that include a
+ * leadership seat, never member or deputy grants, and it never fires
+ * on an idempotent replay (callers invoke it only on the write path,
+ * after the replay check).
+ */
+export async function assertNoWarningRestriction(db: Db, input: AssignRoleInput): Promise<void> {
+  const grantsLeadership =
+    isLeadershipRoleKey(input.role) || (input.additionalRoles ?? []).some(isLeadershipRoleKey);
+  if (!grantsLeadership) return;
+  const level = await getMemberWarningLevel(db, input.uid, new Date());
+  if (level >= 2) {
+    throw new RoleWriteError(
+      'warning_restricted',
+      403,
+      `Member ${input.uid} is under an active Warning ${level} and cannot be assigned a new leadership role until it lapses.`,
+    );
+  }
+}
+
+/**
  * Assign (grant or change) a role: one transaction composing roles +
  * mirror + roleHistory + audit + authority_refresh. Idempotent on
  * idempotencyKey. Throws RoleWriteError; never swallows.
@@ -1154,6 +1197,10 @@ export async function assignRole(db: Db, input: AssignRoleInput): Promise<Assign
       alreadyApplied: true,
     };
   }
+
+  // Warning 2 restriction: checked on the write path only, after the
+  // idempotency replay above (a replay is not a new gated act).
+  await assertNoWarningRestriction(db, input);
 
   const recording = rolesPrimary ? new RecordingBatch() : null;
   const batch = recording
@@ -1285,6 +1332,10 @@ export async function validateAssignRoleInput(db: Db, input: AssignRoleInput): P
     }
   }
   validateExpiryInput(input, partition.stored, Date.now());
+  // Warning 2 restriction, mirrored here so pre-gate callers surface
+  // the same RoleWriteError assignRole would throw (see the function's
+  // contract above: it runs EVERY validation assignRole will run).
+  await assertNoWarningRestriction(db, input);
 }
 
 /**

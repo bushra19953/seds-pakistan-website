@@ -1,5 +1,6 @@
 import { admin, getDb } from '@/lib/server/firebase-admin';
 import { taskTimeToMs } from '@/lib/deadline-fairness';
+import { remainingPenaltyFor } from '@/lib/penalty-schedule';
 import { isExemptFromDeadlinePenalty } from '@/lib/server/leave-exemption';
 import { isSupaPrimary } from '@/lib/supa/flags';
 import {
@@ -259,7 +260,17 @@ export async function executeGamificationTransaction(
                 // leave window is NOT late for penalty purposes. Full
                 // points, no late counter, ledger flagged leave_exempt.
                 const assigneeLeave = leaveExemptFor(uid);
-                const assigneePenaltyToApply = assigneeLeave.exempt ? 0 : penaltyToApply;
+                // PENALTY ACCRUAL OFFSET (founder design, 2026-11-06):
+                // the hourly accrual pass may already have deducted
+                // part of this task's penalty from this assignee's
+                // balance while the task sat overdue. Completion
+                // applies only the remainder, so accrual + completion
+                // never charge more than the task's penaltyPoints.
+                const assigneePenaltyToApply = assigneeLeave.exempt
+                    ? 0
+                    : penaltyToApply > 0
+                      ? remainingPenaltyFor(tTaskBefore, uid, penaltyPoints)
+                      : 0;
                 const assigneeCompletedLate = isLate && !assigneeLeave.exempt;
 
                 // Apply deadline penalty: deduct from awarded points if late
@@ -393,7 +404,15 @@ export async function executeGamificationTransaction(
                 // independently of the assignee. One party can be exempt
                 // while the other is penalized.
                 const delegateeLeave = leaveExemptFor(String(delegateeUid));
-                const delegateePenaltyToApply = delegateeLeave.exempt ? 0 : penaltyToApply;
+                // Same accrual offset as the assignee path above,
+                // keyed by the delegatee's own accrual record (a
+                // delegatee who was never an assignee of record has
+                // none and owes the full remainder, as before).
+                const delegateePenaltyToApply = delegateeLeave.exempt
+                    ? 0
+                    : penaltyToApply > 0
+                      ? remainingPenaltyFor(tTaskBefore, String(delegateeUid), penaltyPoints)
+                      : 0;
                 const delegateeCompletedLate = isLate && !delegateeLeave.exempt;
                 const finalDelegateePoints = Math.max(0, delegateePoints - delegateePenaltyToApply);
 

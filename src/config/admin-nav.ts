@@ -32,7 +32,7 @@ export const adminNav: AdminNavGroup[] = [
     label: "People",
     items: [
       { label: "Users", path: "/admin/users", icon: "Users", requiredPermission: "canManageUsers" },
-      { label: "Roles", path: "/admin/users?tab=roles", icon: "Shield", requiredPermission: "canManageRoles" },
+      { label: "Roles", path: "/admin/roles", icon: "Shield", requiredPermission: "canManageRoles" },
     ],
   },
   {

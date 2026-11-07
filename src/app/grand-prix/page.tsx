@@ -3,7 +3,29 @@ import Link from 'next/link';
 import StarryBackground from '@/components/starry-background';
 import Footer from '@/components/layout/footer';
 import { MODULES, SERIES_NAME } from '@/lib/grand-prix/registration';
-import { PakistanFlag, SriLankaFlag } from './flags';
+import {
+  AngolaFlag,
+  ArgentinaFlag,
+  BrazilFlag,
+  CanadaFlag,
+  CostaRicaFlag,
+  FinlandFlag,
+  FranceFlag,
+  GermanyFlag,
+  IndiaFlag,
+  ItalyFlag,
+  KazakhstanFlag,
+  MexicoFlag,
+  NepalFlag,
+  PakistanFlag,
+  SingaporeFlag,
+  SouthAfricaFlag,
+  SriLankaFlag,
+  TurkeyFlag,
+  UnitedKingdomFlag,
+  UnitedStatesFlag,
+  ZimbabweFlag,
+} from './flags';
 
 const display = Fraunces({
   subsets: ['latin'],
@@ -78,6 +100,28 @@ const DISCIPLINES = [
       </svg>
     ),
   },
+];
+
+const FAMILY = [
+  { name: 'India', Flag: IndiaFlag },
+  { name: 'Nepal', Flag: NepalFlag },
+  { name: 'USA', Flag: UnitedStatesFlag },
+  { name: 'Canada', Flag: CanadaFlag },
+  { name: 'United Kingdom', Flag: UnitedKingdomFlag },
+  { name: 'Italy', Flag: ItalyFlag },
+  { name: 'France', Flag: FranceFlag },
+  { name: 'Germany', Flag: GermanyFlag },
+  { name: 'Finland', Flag: FinlandFlag },
+  { name: 'Turkey', Flag: TurkeyFlag },
+  { name: 'Singapore', Flag: SingaporeFlag },
+  { name: 'Kazakhstan', Flag: KazakhstanFlag },
+  { name: 'Mexico', Flag: MexicoFlag },
+  { name: 'Costa Rica', Flag: CostaRicaFlag },
+  { name: 'Brazil', Flag: BrazilFlag },
+  { name: 'Argentina', Flag: ArgentinaFlag },
+  { name: 'South Africa', Flag: SouthAfricaFlag },
+  { name: 'Zimbabwe', Flag: ZimbabweFlag },
+  { name: 'Angola', Flag: AngolaFlag },
 ];
 
 export default function GrandPrixPage() {
@@ -244,6 +288,35 @@ export default function GrandPrixPage() {
                   Chair Professor, Shanghai Jiao Tong University
                 </p>
               </div>
+            </div>
+          </section>
+
+          <section aria-labelledby="family-heading" className="mt-14">
+            <div className="flex items-center justify-center gap-4">
+              <span className="h-px w-10 bg-gradient-to-r from-transparent to-[#C9A45C]/60" />
+              <h2
+                id="family-heading"
+                className="text-center text-[11px] font-extrabold uppercase tracking-[0.32em] text-[#CBBFA5]"
+              >
+                Part of the Global SEDS Family
+              </h2>
+              <span className="h-px w-10 bg-gradient-to-l from-transparent to-[#C9A45C]/60" />
+            </div>
+            <p className="mx-auto mt-4 max-w-xl text-center text-[13px] leading-relaxed text-[#CFC8B8]">
+              SEDS Pakistan and SEDS Sri Lanka belong to a worldwide family of SEDS chapters spanning
+              22 nations, connecting space-minded students across borders.
+            </p>
+            <div className="mt-7 flex flex-wrap items-start justify-center gap-x-4 gap-y-4 sm:gap-x-5">
+              {FAMILY.map(({ name, Flag }) => (
+                <figure key={name} className="text-center">
+                  <span className="flex h-9 items-center justify-center sm:h-10">
+                    <Flag className="block h-full w-auto rounded-[3px] shadow-[0_8px_20px_rgba(0,0,0,0.4)] ring-1 ring-white/15" />
+                  </span>
+                  <figcaption className="mt-1.5 text-[9px] font-bold uppercase tracking-[0.14em] text-[#A79E8B]">
+                    {name}
+                  </figcaption>
+                </figure>
+              ))}
             </div>
           </section>
 

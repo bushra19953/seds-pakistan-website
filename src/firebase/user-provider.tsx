@@ -16,6 +16,12 @@ import {
 import { isClientSupaSurfaceOn, LIVE_AUTHORITY_SURFACE } from '@/lib/client-supa-flags';
 import { fetchAuthorityRoleDoc } from '@/lib/listeners-ce-client';
 import { usePollingRefresh, MIN_POLL_INTERVAL_MS } from '@/hooks/use-polling-refresh';
+import {
+    createRefreshGate,
+    definitionFingerprint,
+    ROLE_DEFINITION_REFRESH_INTERVAL_MS,
+    type RefreshGate,
+} from '@/lib/role-definition-refresh';
 
 // Tracks uids for which a self-healing profile check has already been
 // attempted in this page session, so the heal runs at most once per uid
@@ -127,6 +133,45 @@ export function UserProvider({ children }: { children: ReactNode }) {
         authorityPolling,
     );
 
+    // Live definition propagation (founder incident 2026-11-07): the
+    // roles/{uid} listener above fires when a holder's OWN role
+    // assignment changes, but fetchAndInjectOverrides — the one-shot
+    // fetch of roleDefinitions/{slug} that turns a DEFINITION edit
+    // (an admin widening a role's grants/paths) into this session's
+    // permissions — otherwise ran only at login. A definition edit
+    // therefore never reached live sessions (a 17:49 grant was still
+    // invisible at 18:54). The driver below re-runs that same fetch
+    // through the same seam on bounded triggers: the shared polling
+    // hook (10-minute interval, visible tabs only, one immediate fire
+    // on visibility return) plus a window-focus listener for returns
+    // that never hid the tab. Every trigger funnels through one
+    // refresh gate (the read-burn floor, MIN_POLL_INTERVAL_MS) that
+    // also counts the login/snapshot fetches, so the cost stays at
+    // one single-document read per gate window per user, and a
+    // refresh whose fetched definition is unchanged applies nothing.
+    // This deliberately does NOT flip the 'live-authority' surface:
+    // that cutover would remove the roles/{uid} onSnapshot and move
+    // A22/B10 with it, and its poll re-reads the whole snapshot chain
+    // per cycle — more reads than this fix's budget.
+    const definitionGateRef = useRef<RefreshGate | null>(null);
+    if (definitionGateRef.current === null) {
+        definitionGateRef.current = createRefreshGate(MIN_POLL_INTERVAL_MS);
+    }
+    const lastDefinitionRef = useRef<{ slug: string; fingerprint: string } | null>(null);
+    const currentRoleRef = useRef<UserRole | null>(null);
+    const definitionRefreshRef = useRef<(() => Promise<void>) | null>(null);
+    usePollingRefresh(
+        () => { void definitionRefreshRef.current?.(); },
+        ROLE_DEFINITION_REFRESH_INTERVAL_MS,
+        true,
+    );
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const onFocus = () => { void definitionRefreshRef.current?.(); };
+        window.addEventListener('focus', onFocus);
+        return () => window.removeEventListener('focus', onFocus);
+    }, []);
+
     useEffect(() => {
         if (DEBUG_AUTH) console.log('[UserProvider] Initializing auth listener.');
         let isMounted = true;
@@ -226,9 +271,17 @@ export function UserProvider({ children }: { children: ReactNode }) {
                             };
                         };
 
-                        const fetchAndInjectOverrides = async (resolvedRole: UserRole) => {
+                        const fetchAndInjectOverrides = async (
+                            resolvedRole: UserRole,
+                            opts?: { skipIfUnchanged?: boolean }
+                        ) => {
                             if (!firestore || resolvedRole === 'guest') return;
                             const roleSlug = normalizeRoleSlug(resolvedRole);
+                            // Every real definition fetch stamps the
+                            // live-refresh gate, so a focus/interval
+                            // trigger landing right after this login or
+                            // snapshot fetch does not re-read the doc.
+                            definitionGateRef.current?.stamp();
 
                             try {
                                 // 1. Attempt to fetch from roleDefinitions (Primary source for dynamic RBAC)
@@ -242,26 +295,69 @@ export function UserProvider({ children }: { children: ReactNode }) {
                                 // hasServerPermission. Previously a definition
                                 // doc without an array silently cut the client
                                 // off from the fallback the server still takes.
+                                let definitionData: Record<string, any> | null = null;
                                 let definitionInjected = false;
                                 if (rdSnap.exists()) {
-                                    const data = rdSnap.data();
-                                    if (data.name || data.label) setRoleLabel(data.name || data.label);
-                                    if (Array.isArray(data.allowedPaths)) setAllowedPaths(data.allowedPaths);
-                                    if (data.permissions && Array.isArray(data.permissions)) {
-                                        injectRoleOverrides(roleSlug, data.permissions);
+                                    definitionData = rdSnap.data();
+                                    if (definitionData.permissions && Array.isArray(definitionData.permissions)) {
                                         definitionInjected = true;
                                     }
                                 }
+                                let fallbackData: Record<string, any> | null = null;
                                 if (!definitionInjected) {
                                     // 2. Legacy fallback
                                     const rpSnap = await seamFirstGetDoc('role_permissions', roleSlug);
                                     if (rpSnap.exists()) {
-                                        const data = rpSnap.data();
-                                        if (data.label) setRoleLabel(data.label);
-                                        if (Array.isArray(data.allowedPaths)) setAllowedPaths(data.allowedPaths);
-                                        if (data.canAccessAdmin) injectRoleOverrides(roleSlug, ['canAccessAdmin']);
+                                        fallbackData = rpSnap.data();
                                     }
                                 }
+
+                                // Change detection for the live refresh:
+                                // a re-fetch whose definition fingerprints
+                                // identically to the last applied one is a
+                                // pure no-op — skip every state write so
+                                // steady-state polling never re-renders.
+                                const fingerprint = definitionFingerprint({
+                                    roleSlug,
+                                    definition: definitionData
+                                        ? {
+                                              name: definitionData.name,
+                                              label: definitionData.label,
+                                              allowedPaths: definitionData.allowedPaths,
+                                              permissions: definitionData.permissions,
+                                          }
+                                        : null,
+                                    fallback: fallbackData
+                                        ? {
+                                              label: fallbackData.label,
+                                              allowedPaths: fallbackData.allowedPaths,
+                                              canAccessAdmin: !!fallbackData.canAccessAdmin,
+                                          }
+                                        : null,
+                                });
+                                const lastDefinition = lastDefinitionRef.current;
+                                if (
+                                    opts?.skipIfUnchanged &&
+                                    lastDefinition &&
+                                    lastDefinition.slug === roleSlug &&
+                                    lastDefinition.fingerprint === fingerprint
+                                ) {
+                                    return;
+                                }
+
+                                if (definitionData) {
+                                    if (definitionData.name || definitionData.label) setRoleLabel(definitionData.name || definitionData.label);
+                                    if (Array.isArray(definitionData.allowedPaths)) setAllowedPaths(definitionData.allowedPaths);
+                                    if (definitionInjected) {
+                                        injectRoleOverrides(roleSlug, definitionData.permissions);
+                                    }
+                                }
+                                if (fallbackData) {
+                                    if (fallbackData.label) setRoleLabel(fallbackData.label);
+                                    if (Array.isArray(fallbackData.allowedPaths)) setAllowedPaths(fallbackData.allowedPaths);
+                                    if (fallbackData.canAccessAdmin) injectRoleOverrides(roleSlug, ['canAccessAdmin']);
+                                }
+                                lastDefinitionRef.current = { slug: roleSlug, fingerprint };
                             } catch (e: any) {
                                 console.warn('[UserProvider] Error fetching dynamic permissions:', e);
                             }
@@ -304,6 +400,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
                             if (claimedRoleRaw) {
                                 const claimedRole = normalizeRoleSlug(claimedRoleRaw);
                                 await fetchAndInjectOverrides(claimedRole);
+                                currentRoleRef.current = claimedRole;
                                 setRole(claimedRole);
                                 setIsLoading(false);
                             }
@@ -356,9 +453,12 @@ export function UserProvider({ children }: { children: ReactNode }) {
                                     }
 
                                     setRole(newRole);
+                                    currentRoleRef.current = newRole;
                                 } else {
                                     setCustomRoles([]);
                                     setCustomAllowedPaths([]);
+                                    currentRoleRef.current = null;
+                                    lastDefinitionRef.current = null;
                                     setRole('member');
                                     setRoleLabel('Member');
                                     setAllowedPaths([]);
@@ -367,6 +467,25 @@ export function UserProvider({ children }: { children: ReactNode }) {
                                 setRole('guest');
                             } finally {
                                 setIsLoading(false);
+                            }
+                        };
+
+                        // Live definition refresh target for this
+                        // session: re-run the definition fetch for the
+                        // currently resolved role, gated and
+                        // change-detected (see the provider-level driver
+                        // above). Installed regardless of the
+                        // live-authority flag — it reuses the one-shot
+                        // fetch, never a listener.
+                        definitionRefreshRef.current = async () => {
+                            const targetRole = currentRoleRef.current;
+                            if (!targetRole || targetRole === 'guest') return;
+                            const gate = definitionGateRef.current;
+                            if (!gate || !gate.tryBegin()) return;
+                            try {
+                                await fetchAndInjectOverrides(targetRole, { skipIfUnchanged: true });
+                            } finally {
+                                gate.end();
                             }
                         };
 
@@ -407,6 +526,9 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
                     } else {
                         authorityPollRef.current = null;
+                        definitionRefreshRef.current = null;
+                        currentRoleRef.current = null;
+                        lastDefinitionRef.current = null;
                         setRole('guest');
                         setAllowedPaths([]);
                         setCustomRoles([]);
@@ -429,6 +551,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
         return () => {
             isMounted = false;
             authorityPollRef.current = null;
+            definitionRefreshRef.current = null;
             if (unsubscribeAuth) unsubscribeAuth();
             if (unsubscribeRole) unsubscribeRole();
             if (timeoutId) clearTimeout(timeoutId);

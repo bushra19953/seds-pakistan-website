@@ -3,6 +3,29 @@ import Link from 'next/link';
 import StarryBackground from '@/components/starry-background';
 import Footer from '@/components/layout/footer';
 import { MODULES, SERIES_NAME } from '@/lib/grand-prix/registration';
+import {
+  AngolaFlag,
+  ArgentinaFlag,
+  BrazilFlag,
+  CanadaFlag,
+  CostaRicaFlag,
+  FinlandFlag,
+  FranceFlag,
+  GermanyFlag,
+  IndiaFlag,
+  ItalyFlag,
+  KazakhstanFlag,
+  MexicoFlag,
+  NepalFlag,
+  PakistanFlag,
+  SingaporeFlag,
+  SouthAfricaFlag,
+  SriLankaFlag,
+  TurkeyFlag,
+  UnitedKingdomFlag,
+  UnitedStatesFlag,
+  ZimbabweFlag,
+} from './flags';
 
 const display = Fraunces({
   subsets: ['latin'],
@@ -21,6 +44,85 @@ const IVORY = '#F5F0E4';
 const GOLD = '#C9A45C';
 const GOLD_LIGHT = '#E8CF8F';
 const displayFont = '[font-family:var(--gp-display)]';
+
+const iconProps = {
+  width: 30,
+  height: 30,
+  viewBox: '0 0 24 24',
+  fill: 'none',
+  stroke: GOLD_LIGHT,
+  strokeWidth: 1.4,
+  strokeLinecap: 'round',
+  strokeLinejoin: 'round',
+  'aria-hidden': true,
+} as const;
+
+const DISCIPLINES = [
+  {
+    name: 'Rocketry',
+    line: 'Propulsion ballistics and supersonic aerodynamics.',
+    icon: (
+      <svg {...iconProps}>
+        <path d="M12 2.5c2.3 2 3.5 4.9 3.5 8l-3.5 3.5-3.5-3.5c0-3.1 1.2-6 3.5-8Z" />
+        <circle cx="12" cy="8.5" r="1.5" />
+        <path d="M8.5 11.5 5.8 15l2.9.4M15.5 11.5 18.2 15l-2.9.4" />
+        <path d="M10.2 16.8c.5 1.6 1 2.9 1.8 4.2.8-1.3 1.3-2.6 1.8-4.2" />
+      </svg>
+    ),
+  },
+  {
+    name: 'CubeSat',
+    line: 'SmallSat power and comms, flight avionics and telemetry.',
+    icon: (
+      <svg {...iconProps}>
+        <rect x="9" y="9" width="6.5" height="6.5" rx="0.8" />
+        <rect x="2" y="10.2" width="5" height="4.1" />
+        <path d="M4.5 10.2v4.1M9 12.2H7M17.5 10.2v4.1" />
+        <rect x="17.5" y="10.2" width="5" height="4.1" />
+        <path d="M20 10.2v4.1M15.5 12.2h2" />
+        <path d="M12.2 9V5.8M10.8 5.8h2.9" />
+        <path d="M9.8 19.4c1.5.9 3 1.3 4.5 1.3" strokeDasharray="1.8 2.2" />
+      </svg>
+    ),
+  },
+  {
+    name: 'Rover',
+    line: 'Rover kinematics and digital twins.',
+    icon: (
+      <svg {...iconProps}>
+        <rect x="6" y="8.5" width="12.5" height="4.6" rx="1.2" />
+        <path d="M15.5 8.5 18.8 4h2.7v3.4" />
+        <rect x="20.3" y="3.4" width="2.4" height="2" rx="0.5" />
+        <path d="M7.5 13.1 6 17M12.2 13.1v3.9M17 13.1l1.4 3.9" />
+        <circle cx="5.6" cy="18.6" r="2" />
+        <circle cx="12.2" cy="18.6" r="2" />
+        <circle cx="18.8" cy="18.6" r="2" />
+      </svg>
+    ),
+  },
+];
+
+const FAMILY = [
+  { name: 'India', Flag: IndiaFlag },
+  { name: 'Nepal', Flag: NepalFlag },
+  { name: 'USA', Flag: UnitedStatesFlag },
+  { name: 'Canada', Flag: CanadaFlag },
+  { name: 'United Kingdom', Flag: UnitedKingdomFlag },
+  { name: 'Italy', Flag: ItalyFlag },
+  { name: 'France', Flag: FranceFlag },
+  { name: 'Germany', Flag: GermanyFlag },
+  { name: 'Finland', Flag: FinlandFlag },
+  { name: 'Turkey', Flag: TurkeyFlag },
+  { name: 'Singapore', Flag: SingaporeFlag },
+  { name: 'Kazakhstan', Flag: KazakhstanFlag },
+  { name: 'Mexico', Flag: MexicoFlag },
+  { name: 'Costa Rica', Flag: CostaRicaFlag },
+  { name: 'Brazil', Flag: BrazilFlag },
+  { name: 'Argentina', Flag: ArgentinaFlag },
+  { name: 'South Africa', Flag: SouthAfricaFlag },
+  { name: 'Zimbabwe', Flag: ZimbabweFlag },
+  { name: 'Angola', Flag: AngolaFlag },
+];
 
 export default function GrandPrixPage() {
   return (
@@ -61,11 +163,80 @@ export default function GrandPrixPage() {
             intensive virtual masterclasses connecting collegiate engineers with real-world astronautics,
             propulsion dynamics, and space mission design.
           </p>
+          <div className="mt-10 flex items-start justify-center gap-5 sm:gap-10">
+            <figure className="text-center">
+              <span className="block overflow-hidden rounded-md shadow-[0_18px_44px_rgba(0,0,0,0.5)] ring-1 ring-[#C9A45C]/45">
+                <PakistanFlag className="block h-auto w-32 sm:w-44" />
+              </span>
+              <figcaption className="mt-3 text-[11px] font-extrabold uppercase tracking-[0.32em] text-[#CBBFA5]">
+                Pakistan
+              </figcaption>
+              <p lang="ur" dir="rtl" className="mt-1.5 text-[13px] leading-relaxed text-[#CBBFA5]">
+                خوش آمدید
+              </p>
+            </figure>
+            <span
+              aria-hidden="true"
+              className={`mt-6 flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#C9A45C]/50 bg-white/[0.04] text-xl sm:mt-9 ${displayFont}`}
+              style={{ color: GOLD_LIGHT }}
+            >
+              &times;
+            </span>
+            <figure className="text-center">
+              <span className="block overflow-hidden rounded-md shadow-[0_18px_44px_rgba(0,0,0,0.5)] ring-1 ring-[#C9A45C]/45">
+                <SriLankaFlag className="block h-auto w-[10.5rem] sm:w-60" />
+              </span>
+              <figcaption className="mt-3 text-[11px] font-extrabold uppercase tracking-[0.32em] text-[#CBBFA5]">
+                Sri Lanka
+              </figcaption>
+              <p lang="si" className="mt-1.5 text-[13px] leading-relaxed text-[#CBBFA5]">
+                ආයුබෝවන්
+              </p>
+            </figure>
+          </div>
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 720 44"
+            className="mx-auto mt-2 w-full max-w-2xl opacity-60"
+            fill="none"
+          >
+            <ellipse cx="360" cy="22" rx="330" ry="17" stroke="#C9A45C" strokeOpacity="0.35" strokeWidth="1" />
+            <ellipse cx="360" cy="22" rx="238" ry="11" stroke="#E8CF8F" strokeOpacity="0.22" strokeWidth="1" />
+            <circle cx="52" cy="13" r="3" fill="#E8CF8F" fillOpacity="0.75" />
+            <circle cx="664" cy="30" r="2.2" fill="#C9A45C" fillOpacity="0.7" />
+            <circle cx="472" cy="7" r="1.6" fill="#F5F0E4" fillOpacity="0.65" />
+          </svg>
           <div className="mt-8 flex items-center justify-center gap-3" aria-hidden="true">
             <span className="h-px w-24 bg-white/15" />
             <span className="block h-1.5 w-1.5 rotate-45" style={{ backgroundColor: GOLD }} />
             <span className="h-px w-24 bg-white/15" />
           </div>
+
+          <section aria-labelledby="disciplines-heading" className="mt-14">
+            <h2
+              id="disciplines-heading"
+              className={`text-center text-3xl font-semibold ${displayFont}`}
+              style={{ color: GOLD_LIGHT }}
+            >
+              Three Engineering Disciplines
+            </h2>
+            <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
+              {DISCIPLINES.map((discipline) => (
+                <div
+                  key={discipline.name}
+                  className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-6 text-center shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-md"
+                >
+                  <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-[#C9A45C]/50 bg-white/[0.03]">
+                    {discipline.icon}
+                  </span>
+                  <p className={`mt-4 text-xl font-semibold leading-snug ${displayFont}`} style={{ color: IVORY }}>
+                    {discipline.name}
+                  </p>
+                  <p className="mt-2 text-[13px] leading-relaxed text-[#CFC8B8]">{discipline.line}</p>
+                </div>
+              ))}
+            </div>
+          </section>
 
           <section aria-labelledby="curriculum-heading" className="mt-14">
             <h2
@@ -94,6 +265,65 @@ export default function GrandPrixPage() {
               This series represents Phase 1 of our bilateral roadmap. Subsequent phases, fabrication, or
               flight campaigns are evaluated post-Phase 1.
             </p>
+          </section>
+
+          <section aria-labelledby="patrons-heading" className="mt-14">
+            <h2
+              id="patrons-heading"
+              className={`text-center text-3xl font-semibold ${displayFont}`}
+              style={{ color: GOLD_LIGHT }}
+            >
+              Patrons
+            </h2>
+            <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-6 text-center shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-md">
+                <p className="text-[11px] font-extrabold uppercase tracking-[0.24em] text-[#CBBFA5]">Patron</p>
+                <p className={`mt-2 text-xl font-semibold leading-snug ${displayFont}`} style={{ color: IVORY }}>
+                  Dr. Najam Abbas Naqvi
+                </p>
+                <p className="mt-2 text-[13px] leading-relaxed text-[#CFC8B8]">Patron, SEDS Pakistan</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-6 text-center shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-md">
+                <p className="text-[11px] font-extrabold uppercase tracking-[0.24em] text-[#CBBFA5]">
+                  International Patron
+                </p>
+                <p className={`mt-2 text-xl font-semibold leading-snug ${displayFont}`} style={{ color: IVORY }}>
+                  Professor Shufan Wu
+                </p>
+                <p className="mt-2 text-[13px] leading-relaxed text-[#CFC8B8]">
+                  Chair Professor, Shanghai Jiao Tong University
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section aria-labelledby="family-heading" className="mt-14">
+            <div className="flex items-center justify-center gap-4">
+              <span className="h-px w-10 bg-gradient-to-r from-transparent to-[#C9A45C]/60" />
+              <h2
+                id="family-heading"
+                className="text-center text-[11px] font-extrabold uppercase tracking-[0.32em] text-[#CBBFA5]"
+              >
+                Part of the Global SEDS Family
+              </h2>
+              <span className="h-px w-10 bg-gradient-to-l from-transparent to-[#C9A45C]/60" />
+            </div>
+            <p className="mx-auto mt-4 max-w-xl text-center text-[13px] leading-relaxed text-[#CFC8B8]">
+              SEDS Pakistan and SEDS Sri Lanka belong to a worldwide family of SEDS chapters spanning
+              22 nations, connecting space-minded students across borders.
+            </p>
+            <div className="mt-7 flex flex-wrap items-start justify-center gap-x-4 gap-y-4 sm:gap-x-5">
+              {FAMILY.map(({ name, Flag }) => (
+                <figure key={name} className="text-center">
+                  <span className="flex h-9 items-center justify-center sm:h-10">
+                    <Flag className="block h-full w-auto rounded-[3px] shadow-[0_8px_20px_rgba(0,0,0,0.4)] ring-1 ring-white/15" />
+                  </span>
+                  <figcaption className="mt-1.5 text-[9px] font-bold uppercase tracking-[0.14em] text-[#A79E8B]">
+                    {name}
+                  </figcaption>
+                </figure>
+              ))}
+            </div>
           </section>
 
           <div className="mt-12 text-center">

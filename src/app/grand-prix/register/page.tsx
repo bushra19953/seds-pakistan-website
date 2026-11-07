@@ -190,7 +190,7 @@ export default function GrandPrixRegisterPage() {
           <div className="flex items-center justify-center gap-4">
             <span className="h-px w-12 bg-gradient-to-r from-transparent to-[#C9A45C]/80" />
             <p
-              className="text-center text-[11px] font-extrabold uppercase tracking-[0.42em]"
+              className="text-center text-[11px] font-extrabold uppercase tracking-[0.3em] sm:tracking-[0.42em]"
               style={{ color: GOLD_LIGHT }}
             >
               SEDS Pakistan and SEDS Sri Lanka
@@ -226,7 +226,7 @@ export default function GrandPrixRegisterPage() {
                 <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full" style={{ backgroundColor: GOLD }} />
                 {countdownLabel}
               </p>
-              <div className="mx-auto mt-4 grid max-w-xl grid-cols-4 gap-3">
+              <div className="mx-auto mt-4 grid max-w-xl grid-cols-4 gap-2 sm:gap-3">
                 {[
                   { value: Math.floor(remainMs / 86400000), label: 'Days' },
                   { value: Math.floor(remainMs / 3600000) % 24, label: 'Hours' },
@@ -235,12 +235,12 @@ export default function GrandPrixRegisterPage() {
                 ].map((part) => (
                   <div
                     key={part.label}
-                    className="rounded-xl border border-white/10 bg-white/[0.04] py-3.5 text-center shadow-[0_16px_40px_rgba(0,0,0,0.4)] backdrop-blur-md"
+                    className="min-w-0 rounded-xl border border-white/10 bg-white/[0.04] px-1 py-3 text-center shadow-[0_16px_40px_rgba(0,0,0,0.4)] backdrop-blur-md sm:py-3.5"
                   >
-                    <p className={`text-3xl font-semibold tabular-nums ${displayFont}`} style={{ color: IVORY }}>
+                    <p className={`text-2xl font-semibold tabular-nums sm:text-3xl ${displayFont}`} style={{ color: IVORY }}>
                       {String(part.value).padStart(2, '0')}
                     </p>
-                    <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.24em] text-[#CBBFA5]">
+                    <p className="mt-1 text-[9px] font-bold uppercase tracking-[0.16em] text-[#CBBFA5] sm:text-[10px] sm:tracking-[0.24em]">
                       {part.label}
                     </p>
                   </div>

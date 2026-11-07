@@ -322,3 +322,63 @@ export function heldCustomRoleSlugs(
   }
   return held;
 }
+
+/**
+ * The structural minimum of a roles/{uid} document snapshot as the
+ * display-role resolution consumes it (an Admin SDK DocumentSnapshot
+ * and the Supa seam's SupaDocSnapshotLike both satisfy it). Only the
+ * snapshot's OWN `id` ties it to a uid - never its position in a list.
+ */
+export interface AssigneeRoleSnapLike {
+  id?: unknown;
+  exists?: unknown;
+  data?: () => Record<string, unknown> | undefined;
+}
+
+/**
+ * Resolve each assignee's DISPLAY role (the first held custom grant,
+ * heldCustomRoleSlugs) from their roles-doc snapshots, KEYED by each
+ * snapshot's own id.
+ *
+ * The snapshots may arrive in ANY order relative to `assigneeIds`:
+ * the workflow-detail Supa seam builds its snap list parallel to its
+ * own raw-fetch id order, while the route handler derives its id list
+ * from the sequenceIndex-sorted tasks, so the two orders routinely
+ * differ (2026-11-07 incident: the handler's [Ahmed, Emaan] zipped
+ * positionally against the seam's [Emaan, Ahmed] snaps, landing
+ * Emaan's custom grant on Ahmed's PDF personnel row). Pairing by
+ * position is therefore forbidden here: a snap is matched to a uid
+ * only through its own `id`, and a snap whose id is missing or not a
+ * non-empty string is SKIPPED - never positionally assigned.
+ *
+ * Returns a map uid -> first held custom slug, containing ONLY uids
+ * that hold a grant; absent uid = no display role (callers fall back
+ * to the primary role).
+ */
+export function resolveAssigneeDisplayRoles(
+  assigneeIds: readonly string[],
+  roleSnaps: readonly (AssigneeRoleSnapLike | null | undefined)[],
+  primaryRoleByUid: Readonly<Record<string, string | null | undefined>>,
+  now: Date,
+): Record<string, string> {
+  const snapByUid = new Map<string, AssigneeRoleSnapLike>();
+  for (const snap of roleSnaps) {
+    if (!snap) continue;
+    const id = snap.id;
+    if (typeof id !== 'string' || id === '') continue;
+    if (!snapByUid.has(id)) snapByUid.set(id, snap);
+  }
+  const displayRoles: Record<string, string> = {};
+  for (const uid of assigneeIds) {
+    const snap = snapByUid.get(uid);
+    if (!snap || !snap.exists || typeof snap.data !== 'function') continue;
+    const doc = (snap.data() ?? {}) as {
+      additionalRoles?: unknown;
+      expiresAt?: unknown;
+      expiresRoleKey?: string | null;
+    };
+    const grants = heldCustomRoleSlugs(doc, primaryRoleByUid[uid] ?? null, now);
+    if (grants.length > 0) displayRoles[uid] = grants[0];
+  }
+  return displayRoles;
+}

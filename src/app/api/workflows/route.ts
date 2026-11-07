@@ -16,7 +16,7 @@ import {
   userNotificationsPath,
 } from '@/lib/server/notifications-supa-seam';
 import { resolveUserEmail, getUserContacts, stripContactFields, type UserContact } from '@/lib/server/user-contact';
-import { heldCustomRoleSlugs } from '@/lib/custom-roles';
+import { resolveAssigneeDisplayRoles } from '@/lib/custom-roles';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -795,8 +795,14 @@ export async function GET(request: NextRequest) {
       // expired grants dropped — heldCustomRoleSlugs, the client
       // mirror of the server's resolveHolderRoles). It is set ONLY
       // when a grant is held; otherwise callers fall back to `role`.
-      // The roles fetch rides the Supa seam (assigneeRoleSnaps,
-      // parallel to uniqueAssigneeIds) so the seam never mixes stores.
+      // The roles fetch rides the Supa seam (assigneeRoleSnaps) so the
+      // seam never mixes stores. KEYING: the seam's snaps are parallel
+      // to the SEAM's own id list (raw task fetch order), NOT to this
+      // handler's uniqueAssigneeIds (sequenceIndex-sorted task order),
+      // so the two orders routinely differ. resolveAssigneeDisplayRoles
+      // matches every snap to its uid by the snap's own id; pairing by
+      // position once landed one assignee's grant on another's PDF
+      // personnel row (2026-11-07 role-grant incident).
       try {
         const assigneeRoleSnaps = supaReads
           ? supaReads.assigneeRoleSnaps
@@ -805,18 +811,15 @@ export async function GET(request: NextRequest) {
                 db.collection('roles').doc(uid).get().catch(() => null),
               ),
             );
-        const now = new Date();
-        for (let i = 0; i < uniqueAssigneeIds.length; i++) {
-          const uid = uniqueAssigneeIds[i];
-          const snap: any = assigneeRoleSnaps[i];
-          if (!snap || !snap.exists) continue;
-          const grants = heldCustomRoleSlugs(
-            (snap.data() as any) || {},
-            primaryRoleByUid[uid] || null,
-            now,
-          );
-          if (grants.length > 0 && assigneeInfo[uid]) {
-            assigneeInfo[uid].displayRole = grants[0];
+        const displayRoles = resolveAssigneeDisplayRoles(
+          uniqueAssigneeIds,
+          assigneeRoleSnaps,
+          primaryRoleByUid,
+          new Date(),
+        );
+        for (const [uid, displayRole] of Object.entries(displayRoles)) {
+          if (assigneeInfo[uid]) {
+            assigneeInfo[uid].displayRole = displayRole;
           }
         }
       } catch (e) {

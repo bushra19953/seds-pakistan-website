@@ -171,6 +171,9 @@ export default function GrandPrixPage() {
               <figcaption className="mt-3 text-[11px] font-extrabold uppercase tracking-[0.32em] text-[#CBBFA5]">
                 Pakistan
               </figcaption>
+              <p lang="ur" dir="rtl" className="mt-1.5 text-[13px] leading-relaxed text-[#CBBFA5]">
+                خوش آمدید
+              </p>
             </figure>
             <span
               aria-hidden="true"
@@ -186,6 +189,9 @@ export default function GrandPrixPage() {
               <figcaption className="mt-3 text-[11px] font-extrabold uppercase tracking-[0.32em] text-[#CBBFA5]">
                 Sri Lanka
               </figcaption>
+              <p lang="si" className="mt-1.5 text-[13px] leading-relaxed text-[#CBBFA5]">
+                ආයුබෝවන්
+              </p>
             </figure>
           </div>
           <svg

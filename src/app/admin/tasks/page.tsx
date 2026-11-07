@@ -16,8 +16,10 @@ import {
 } from '@/lib/task-management';
 import AuthorizationGate from '@/components/admin/AuthorizationGate';
 import { useFirestore } from '@/firebase';
-import { getCustomRoleDefinitions } from '@/lib/role-definitions';
+import { getCustomRoleDefinitions, getAllRoleDefinitionsCached, type RoleDefinition } from '@/lib/role-definitions';
 import { getAllProjectsCached } from '@/lib/projects-cached';
+import { getChaptersCached, type ChapterListItem } from '@/lib/chapters-client';
+import { taskMatchesChapter, taskMatchesRole, taskMatchesType, type TaskTypeFilter } from '@/lib/task-filters';
 import { isCustomRoleSlug } from '@/lib/custom-roles';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -186,6 +188,10 @@ function AdminTasksPageInner() {
   // New global filters: Assignee and Status (replace the old Project filter UI)
   const [assigneeFilterUid, setAssigneeFilterUid] = useState<string>(''); // empty = All assignees
   const [statusFilter, setStatusFilter] = useState<'all' | TaskStatus>('all');
+  // Role / Chapter / Type filters (client-side only, ANDed with the rest)
+  const [roleFilter, setRoleFilter] = useState<string>('all'); // 'all' | role key
+  const [chapterFilter, setChapterFilter] = useState<string>('all'); // 'all' | chapterId
+  const [typeFilter, setTypeFilter] = useState<TaskTypeFilter>('all');
 
   // Task form local state
   const [formData, setFormData] = useState({
@@ -266,6 +272,9 @@ function AdminTasksPageInner() {
           photoURL: row.photoURL || null,
           chapterId: row.chapterId || null,
           role: row.role ? String(row.role) : undefined,
+          // The picker API already returns additionalRoles; the Role
+          // filter matches on primary OR additional roles.
+          additionalRoles: Array.isArray(row.additionalRoles) ? row.additionalRoles.map(String) : [],
         }));
         setUsers(rows);
       } catch (err) {
@@ -311,6 +320,46 @@ function AdminTasksPageInner() {
     return () => { cancelled = true; };
   }, [firestore]);
 
+
+  // Role definitions + chapters for the Role / Chapter filters.
+  // Both come from the module-cached helpers (same pattern as projects
+  // above), so repeat mounts pay these small reads once per TTL window.
+  const [roleDefinitions, setRoleDefinitions] = useState<RoleDefinition[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    getAllRoleDefinitionsCached(firestore)
+      .then((list) => { if (!cancelled) setRoleDefinitions(list as RoleDefinition[]); })
+      .catch((err) => console.error('Failed to load role definitions:', err));
+    return () => { cancelled = true; };
+  }, [firestore]);
+
+  const [chapters, setChapters] = useState<ChapterListItem[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    getChaptersCached(firestore)
+      .then((list) => { if (!cancelled) setChapters(list); })
+      .catch((err) => console.error('Failed to load chapters:', err));
+    return () => { cancelled = true; };
+  }, [firestore]);
+
+  // Role filter options: every active definition (value = the role key
+  // users hold), plus any role key actually held by a picker user that
+  // has no definition row, so a held role is never unfilterable.
+  const roleFilterOptions = useMemo(() => {
+    const byKey = new Map<string, string>();
+    for (const def of roleDefinitions) {
+      const key = (def as any).role || (def as any).slug;
+      if (!key || (def as any).isActive === false) continue;
+      byKey.set(String(key), String((def as any).name || (def as any).label || key));
+    }
+    for (const u of users) {
+      const held: string[] = [u.role, ...((u.additionalRoles as string[]) || [])].filter(Boolean);
+      for (const k of held) if (!byKey.has(k)) byKey.set(k, k);
+    }
+    return Array.from(byKey.entries())
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [roleDefinitions, users]);
 
   // Single fetch effect (read-bleed fix): this page previously had TWO
   // effects calling fetchTasks() on mount — one keyed on auth state and
@@ -1317,6 +1366,7 @@ function AdminTasksPageInner() {
   }, [projects]);
 
   const filteredTasks = useMemo(() => {
+    const now = new Date();
     return (tasks || []).filter((task) => {
       // Filter by Project
       const tProj = (task as any).projectId;
@@ -1330,9 +1380,19 @@ function AdminTasksPageInner() {
       // collection). This client-side check ensures the UI is always correct.
       const statusMatch = statusFilter === 'all' || tStatus === statusFilter;
 
-      return projectMatch && statusMatch;
+      // Filter by Role: any assignee holds the role, primary or additional
+      const roleMatch = roleFilter === 'all' || taskMatchesRole(task as any, usersMap, roleFilter);
+
+      // Filter by Chapter: the task record's own chapterId
+      const chapterMatch = taskMatchesChapter(task as any, chapterFilter);
+
+      // Filter by Type: overdue (effective) / due today / due this week /
+      // standalone / workflow steps
+      const typeMatch = taskMatchesType(task as any, typeFilter, now);
+
+      return projectMatch && statusMatch && roleMatch && chapterMatch && typeMatch;
     });
-  }, [tasks, viewProjectId, statusFilter]);
+  }, [tasks, viewProjectId, statusFilter, roleFilter, chapterFilter, typeFilter, usersMap]);
 
   // Export a standalone task as a one-step workflow PDF via the task adapter.
   // Mirrors handleExportPDF in src/components/admin/workflows/missions-tab.tsx.
@@ -1593,9 +1653,66 @@ function AdminTasksPageInner() {
             </SelectContent>
           </Select>
         </div>
+        <div className="min-w-[240px]">
+          <Label className="mb-1 block">Filter by Role</Label>
+          <Select
+            value={roleFilter}
+            onValueChange={(value) => setRoleFilter(value)}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="All Roles" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Roles</SelectItem>
+              {roleFilterOptions.map((r) => (
+                <SelectItem key={r.value} value={r.value}>
+                  {r.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="min-w-[240px]">
+          <Label className="mb-1 block">Filter by Chapter</Label>
+          <Select
+            value={chapterFilter}
+            onValueChange={(value) => setChapterFilter(value)}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="All Chapters" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Chapters</SelectItem>
+              {chapters.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="min-w-[240px]">
+          <Label className="mb-1 block">Filter by Type</Label>
+          <Select
+            value={typeFilter}
+            onValueChange={(value: TaskTypeFilter) => setTypeFilter(value)}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="All Types" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Types</SelectItem>
+              <SelectItem value="overdue">Overdue</SelectItem>
+              <SelectItem value="due-today">Due Today</SelectItem>
+              <SelectItem value="due-this-week">Due This Week</SelectItem>
+              <SelectItem value="standalone">Standalone Tasks</SelectItem>
+              <SelectItem value="workflow-steps">Workflow Steps</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         <Button
           variant="secondary"
-          onClick={() => { setStatusFilter('all'); setAssigneeFilterUid(''); setCursor(null); setCursorStack([]); fetchTasks(); }}
+          onClick={() => { setStatusFilter('all'); setAssigneeFilterUid(''); setRoleFilter('all'); setChapterFilter('all'); setTypeFilter('all'); setCursor(null); setCursorStack([]); fetchTasks(); }}
         >
           Clear Filters
         </Button>

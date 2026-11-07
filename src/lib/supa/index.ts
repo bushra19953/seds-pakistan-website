@@ -17,6 +17,7 @@ export {
   firebaseUidForPath,
   SupaAdapterError,
   SupaUnavailableError,
+  SUPA_CALL_DEADLINE_MS,
   type SupaAdapter,
   type SupaDoc,
   type DocData,

@@ -829,6 +829,62 @@ export interface SupaAdapter {
   tx<T = unknown>(fn: string, args?: RpcArgs, options?: TxOptions): Promise<T>;
 }
 
+/* ------------------------------------------------- call deadlines */
+
+/**
+ * Per-call deadline for every adapter operation — the cure for the
+ * 2026-11-07 workflow-create submit hang.
+ *
+ * WHY: the supabase-js client is built with no timeout and no fetch
+ * wrapper (src/lib/supa/client.ts), so an adapter call whose
+ * transport stalls (a PostgREST fetch whose promise never settles)
+ * blocked its caller FOREVER. POST /api/workflows awaits adapter
+ * calls sequentially — role/permission reads in its prelude and one
+ * mirror setDoc per step task + per workflow member — so a single
+ * stalled call pinned the whole create: the form's spinner ran 8+
+ * minutes, nothing was created, and a retry landed instantly (the
+ * stall is per-call and transient, not payload- or quota-shaped).
+ * Every Firestore read in the server layer already carries an
+ * app-level deadline for exactly this failure class
+ * (src/lib/server/read-deadline.ts, 2026-10-30 incident); the
+ * Supabase layer never got one.
+ *
+ * CONTRACT (identical to read-deadline.ts): the deadline NEVER
+ * manufactures data. A call that outlives it rejects with a
+ * SupaAdapterError (code 'deadline-exceeded') — a failure exactly
+ * like any other adapter error, so every seam's existing semantics
+ * apply unchanged: reads report unavailable and fall back to
+ * Firestore, mirror writes degrade to a logged no-op and the
+ * Firestore write stands. The losing transport call is not
+ * cancelled (the SDK exposes no per-call abort); it may settle
+ * later and is deliberately swallowed by the race.
+ *
+ * The value matches FIRESTORE_LIST_DEADLINE_MS: a single PostgREST
+ * request normally lands in well under a second, so 10 s is
+ * generous headroom over every legitimate call while converting an
+ * indefinite pin into a bounded degradation.
+ */
+export const SUPA_CALL_DEADLINE_MS = 10000;
+
+async function withSupaCallDeadline<T>(label: string, run: () => Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      run(),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          reject(new SupaAdapterError(
+            `supa call "${label}" exceeded its deadline of ${SUPA_CALL_DEADLINE_MS}ms`,
+            'deadline-exceeded',
+          ));
+        }, SUPA_CALL_DEADLINE_MS);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export function createSupaAdapter(client: SupabaseClient | null): SupaAdapter {
   const supa = client as unknown as SupaLike | null;
 
@@ -1145,7 +1201,27 @@ export function createSupaAdapter(client: SupabaseClient | null): SupaAdapter {
     return rpc<T>(fn, finalArgs);
   }
 
-  return { getDoc, listDocs, countDocs, setDoc, updateDoc, deleteDoc, rpc, tx };
+  // Every method is raced against SUPA_CALL_DEADLINE_MS (see the
+  // call-deadline block above): a stalled transport rejects as an
+  // ordinary adapter failure instead of pinning the caller forever.
+  return {
+    getDoc: (collectionPath, id) =>
+      withSupaCallDeadline(`getDoc ${collectionPath}/${id}`, () => getDoc(collectionPath, id)),
+    listDocs: (collectionPath, options) =>
+      withSupaCallDeadline(`listDocs ${collectionPath}`, () => listDocs(collectionPath, options)),
+    countDocs: (collectionPath, where) =>
+      withSupaCallDeadline(`countDocs ${collectionPath}`, () => countDocs(collectionPath, where)),
+    setDoc: (collectionPath, id, data, options) =>
+      withSupaCallDeadline(`setDoc ${collectionPath}/${id}`, () => setDoc(collectionPath, id, data, options)),
+    updateDoc: (collectionPath, id, updates) =>
+      withSupaCallDeadline(`updateDoc ${collectionPath}/${id}`, () => updateDoc(collectionPath, id, updates)),
+    deleteDoc: (collectionPath, id) =>
+      withSupaCallDeadline(`deleteDoc ${collectionPath}/${id}`, () => deleteDoc(collectionPath, id)),
+    rpc: <T = unknown>(fn: string, args?: RpcArgs) =>
+      withSupaCallDeadline<T>(`rpc ${fn}`, () => rpc<T>(fn, args)),
+    tx: <T = unknown>(fn: string, args?: RpcArgs, options?: TxOptions) =>
+      withSupaCallDeadline<T>(`tx ${fn}`, () => tx<T>(fn, args, options)),
+  };
 }
 
 function setDeep(target: DocData, parts: string[], value: unknown): void {

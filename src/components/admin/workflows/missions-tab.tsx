@@ -95,6 +95,22 @@ interface WorkflowStep {
 }
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
+
+// The effective role the PDF export may print for a step's primary:
+// assigneeDisplayRole (the step-level field) is trusted ONLY when the
+// step's OWN assignees[] entry for the same uid carries the same
+// displayRole. The two fields travel in the same detail response, but
+// a stale or misaligned copy once put another person's custom slug in
+// the step-level field while the person's own entry stayed correct
+// (role-grant PDF, 2026-11-07) — on any disagreement the step-level
+// field is dropped and the primary role is used.
+function effectiveStepRole(s: WorkflowStep): string | undefined {
+  const displayRole = s.assigneeDisplayRole;
+  if (!displayRole) return s.assigneeRole;
+  const own = (s.assignees || []).find((a) => a.id === s.assigneeId);
+  return own?.displayRole === displayRole ? displayRole : s.assigneeRole;
+}
+
 async function urlToBase64(url: string): Promise<string | undefined> {
   if (!url) return undefined;
   try {
@@ -327,7 +343,7 @@ function WorkflowCard({
       let roleTitles: Record<string, string> | undefined;
       const customSlugs = new Set<string>();
       for (const s of processedSteps) {
-        const primaryRole = (s as any).assigneeDisplayRole || s.assigneeRole;
+        const primaryRole = effectiveStepRole(s);
         if (primaryRole && isCustomRoleSlug(primaryRole)) customSlugs.add(primaryRole);
         for (const a of (s as any).processedAssignees || []) {
           const fellowRole = a.displayRole || a.role;
@@ -364,7 +380,9 @@ function WorkflowCard({
           // MSG47: feed the effective role to the exporter — the custom
           // grant slug when held, else the primary role. The exporter's
           // titleForRole then resolves the custom title via roleTitles.
-          assigneeRole: (s as any).assigneeDisplayRole || s.assigneeRole,
+          // effectiveStepRole cross-checks the displayRole against the
+          // step's own assignees[] entry first (stale-response guard).
+          assigneeRole: effectiveStepRole(s),
           assigneeName: s.assigneeName,
           assigneeEmail: s.assigneeEmail,
           assigneeWhatsapp: s.assigneeWhatsapp,

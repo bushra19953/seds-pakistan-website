@@ -294,9 +294,11 @@ describe('contract 3: workflows GET detail — the PDF export data source', () =
     expect(Object.keys(body).sort()).toEqual(
       ['ok', 'tasks', 'progress', 'analytics', 'assigneeInfo', 'chapterName', 'description'].sort(),
     );
-    expect(res.headers.get('cache-control')).toBe(
-      'private, max-age=60, stale-while-revalidate=300',
-    );
+    // 2026-11-07: the detail response is no-store. It carries the
+    // per-person displayRole resolution the PDF exporters trust; the
+    // old cacheable header let a stale copy put one person's custom
+    // slug on another person's steps in an exported mission PDF.
+    expect(res.headers.get('cache-control')).toBe('no-store');
     expect(body.chapterName).toBe('SEDS IST');
     // MSG46: the parent workflow description rides the detail response
     // so the PDF export data source carries it: step1's denormalized

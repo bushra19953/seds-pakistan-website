@@ -1424,8 +1424,18 @@ function AdminTasksPageInner() {
           // custom title instead of the primary's. Standalone tasks
           // (no workflowId) have no detail response, so they keep
           // today's primary-only role.
+          // Guard (2026-11-07): displayRole is by contract ALWAYS a
+          // custom-role slug; honor it only when it has that shape. A
+          // stale or malformed value falls back to the picker-resolved
+          // primary role instead of reaching print unchecked. The
+          // detail endpoint itself is now no-store, and the exporter's
+          // primary-row guard re-checks the label against the person's
+          // own assignees entry before a "(custom)" title can print.
+          const fetchedDisplayRole = pdfAssigneeInfo[uid]?.displayRole;
           const rawRole =
-            pdfAssigneeInfo[uid]?.displayRole ||
+            (fetchedDisplayRole && isCustomRoleSlug(fetchedDisplayRole)
+              ? fetchedDisplayRole
+              : undefined) ||
             (u?.role as string | undefined) ||
             userRolesMap[uid] ||
             undefined;

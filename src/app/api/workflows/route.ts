@@ -651,8 +651,11 @@ export async function GET(request: NextRequest) {
       // Sort by most recently updated
       workflows.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 
+      // no-store: the payload carries per-viewer data (participants,
+      // role resolution); an HTTP-cached copy can serve one viewer's
+      // resolved roles to a later export in the same browser session.
       return NextResponse.json({ ok: true, workflows: visibleWorkflows }, {
-        headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=120' }
+        headers: { 'Cache-Control': 'no-store' }
       });
     }
 
@@ -896,8 +899,13 @@ export async function GET(request: NextRequest) {
     };
     const progress = { workflowId, totalSteps, completedSteps, currentStepIndex: currentIndex, progressPercentage, isCompleted: allApproved };
 
+    // no-store: assigneeInfo carries per-viewer masked contacts and
+    // per-person displayRole resolution that the PDF exporters trust.
+    // A stale cached copy once put one person's custom-role slug on
+    // another person's steps in an exported mission PDF (2026-11-07);
+    // this response must never be HTTP-cached.
     return NextResponse.json({ ok: true, tasks: tasksWithNames, progress, analytics, assigneeInfo, chapterName, description: detailDescription }, {
-      headers: { 'Cache-Control': 'private, max-age=60, stale-while-revalidate=300' }
+      headers: { 'Cache-Control': 'no-store' }
     });
   } catch (e: any) {
     console.error('[workflows:GET] CRITICAL ERROR:', e);

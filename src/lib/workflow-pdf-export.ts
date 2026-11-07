@@ -354,6 +354,37 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
     }
     return canonicalRoleTitle(role);
   };
+  // Guard for the PRIMARY personnel row: step.assigneeRole is a
+  // step-level field, separate from the person's own assignees[]
+  // entry, and a stale/misaligned caller payload once carried another
+  // person's custom slug in it (role-grant PDF, 2026-11-07). A
+  // "(custom)" label may print for the primary ONLY when the step's
+  // own assignees[] entry for the primary's uid carries the same
+  // slug; on disagreement the person's own entry decides the label.
+  // Fellow rows need no such check: their label is resolved from
+  // their own entry (a.role) in the first place. When the caller
+  // supplies no assignees[] at all there is nothing to cross-check
+  // against and the previous behaviour stands.
+  const titleForPrimaryRole = (step: WorkflowPDFStep): string => {
+    const role = step.assigneeRole;
+    if (role && roleTitles?.[normalizeRoleSlug(role)]) {
+      const own = (step.assignees || []).find(
+        (a) => a.id && step.assigneeId && a.id === step.assigneeId,
+      );
+      if (own) {
+        return normalizeRoleSlug(own.role || '') === normalizeRoleSlug(role)
+          ? titleForRole(role)
+          : titleForRole(own.role);
+      }
+      if (step.assignees && step.assignees.length > 0) {
+        // Assignees were supplied but the primary is not among them:
+        // the custom label is uncorroborated, print the canonical
+        // title instead of the "(custom)" form.
+        return canonicalRoleTitle(role);
+      }
+    }
+    return titleForRole(role);
+  };
 
   const doc = new jsPDF({
     orientation: 'portrait',
@@ -647,7 +678,7 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
     const personnelRows: PersonnelRowData[] = [];
     const primaryNameValid = !!(step.assigneeName && !step.assigneeName.includes('@'));
     if (primaryNameValid) {
-      const primaryRole = titleForRole(step.assigneeRole);
+      const primaryRole = titleForPrimaryRole(step);
       personnelRows.push({
         name: step.assigneeName as string,
         roleLabel: primaryRole && primaryRole !== 'Guest' ? primaryRole : undefined,

@@ -29,6 +29,7 @@ import {
 } from '@/lib/mission-board';
 import { usePollingRefresh } from '@/hooks/use-polling-refresh';
 import { Progress } from '@/components/ui/progress';
+import { motion, useReducedMotion } from 'framer-motion';
 import { Dialog, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import ResponsiveDialogContent from '@/components/ui/responsive-dialog-content';
 
@@ -183,6 +184,19 @@ export default function ProjectsPage() {
   // PERF: useTransition defers non-urgent filter/search state updates so they
   // don't block user input — directly reduces Max Potential FID.
   const [, startTransition] = useTransition();
+  const reduceMotion = useReducedMotion();
+
+  // Spotlight Card pattern (21st.dev community components, BuildWithMe
+  // UI): a soft pool of light follows the pointer across a project card.
+  // The position is written straight to CSS custom properties on the
+  // element, so pointer movement never triggers a React re-render.
+  const handleSpotlightMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType !== 'mouse') return;
+    const el = e.currentTarget;
+    const rect = el.getBoundingClientRect();
+    el.style.setProperty('--spot-x', `${e.clientX - rect.left}px`);
+    el.style.setProperty('--spot-y', `${e.clientY - rect.top}px`);
+  };
 
   // PERF: Clear stale Firestore IndexedDB cache on first page load.
   // This directly addresses the Lighthouse warning:
@@ -743,7 +757,9 @@ export default function ProjectsPage() {
                               </div>
                             </div>
                             <div className="flex flex-wrap gap-3">
-                              <Button asChild className="bg-primary text-black hover:bg-white font-accent font-black tracking-[0.15em] uppercase">
+                              {/* Gold is this page's single accent and is
+                                  reserved for the primary CTA only. */}
+                              <Button asChild className="bg-amber-400 text-black hover:bg-amber-300 font-accent font-black tracking-[0.15em] uppercase">
                                 <Link href={`/projects/detail?slug=${featuredProject.slug || featuredProject.id}`}>View Project</Link>
                               </Button>
                               <Button
@@ -766,7 +782,29 @@ export default function ProjectsPage() {
               )}
               <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
               {gridProjects.map((project, index) => (
-                <div key={project.id} className="group block animate-in fade-in slide-in-from-bottom-12 duration-500" style={{ animationDelay: `${index * 100}ms` }}>
+                <motion.div
+                  key={project.id}
+                  className="group relative block rounded-lg"
+                  initial={reduceMotion ? false : { opacity: 0, y: 16 }}
+                  whileInView={reduceMotion ? undefined : { opacity: 1, y: 0 }}
+                  viewport={{ once: true, margin: '-40px' }}
+                  transition={{ duration: 0.45, delay: Math.min(index * 0.06, 0.3), ease: 'easeOut' }}
+                  onPointerMove={reduceMotion ? undefined : handleSpotlightMove}
+                >
+                  {/* Spotlight glow: a primary-blue pool of light follows
+                      the pointer across the card. Purely decorative, so
+                      it is aria-hidden, ignores pointer events, and is
+                      not rendered at all for reduced-motion users. */}
+                  {!reduceMotion && (
+                    <div
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-0 z-10 rounded-lg opacity-0 transition-opacity duration-500 group-hover:opacity-100"
+                      style={{
+                        background:
+                          'radial-gradient(320px circle at var(--spot-x, 50%) var(--spot-y, 50%), rgba(59, 130, 246, 0.13), transparent 65%)',
+                      }}
+                    />
+                  )}
                   <Card className="bg-card/80 backdrop-blur-sm border-accent/20 shadow-xl shadow-accent/5 overflow-hidden flex flex-col h-full group-hover:border-primary transition-all">
                     <CardHeader>
                       <div className="flex items-start justify-between gap-2">
@@ -822,7 +860,7 @@ export default function ProjectsPage() {
                                 alt={project.title}
                                 width={600}
                                 height={400}
-                                className="w-full h-auto object-cover aspect-video group-hover:scale-105 transition-transform duration-500"
+                                className={`w-full h-auto object-cover aspect-video ${reduceMotion ? '' : 'group-hover:scale-105 transition-transform duration-500'}`}
                                 // Drive thumbnails fail through the Next.js image optimizer
                                 // (server-side fetch gets blocked, returns 502). Load them
                                 // directly with a plain img tag instead.
@@ -930,7 +968,7 @@ export default function ProjectsPage() {
                       </div>
                     </CardFooter>
                   </Card>
-                </div>
+                </motion.div>
               ))}
               </div>
             </>

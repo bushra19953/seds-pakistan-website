@@ -128,7 +128,14 @@ export default function Home() {
           <JoinUsSection />
         </LazySection>
       </main>
-      <Footer />
+      {/* Footer sits below 13 sections: gate it like every other
+          below-fold block so its chunk is fetched only when the reader
+          scrolls near it, not during first paint / hydration. The empty
+          fallback reserves space without new visuals (today nothing
+          renders there until the chunk arrives anyway). */}
+      <LazySection minHeight="400px" fallback={<div aria-hidden="true" />}>
+        <Footer />
+      </LazySection>
     </div>
   );
 }

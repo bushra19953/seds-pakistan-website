@@ -8,8 +8,8 @@
  * other action in this dialog.
  *
  * Mocks mirror authority-inspector-expiry.test.tsx (native-select
- * double for Radix Select, toDatetimeLocal double for the heavy
- * task-form, real Radix Dialog). New props under test: `grants`
+ * double for Radix Select, toDatetimeLocal double for the
+ * datetime-local helper, real Radix Dialog). New props under test: `grants`
  * (null = still loading, [] = none held) and `onRemoveGrant`.
  */
 
@@ -39,7 +39,7 @@ jest.mock('@/components/ui/select', () => {
   };
 });
 
-jest.mock('@/components/admin/tasks/task-form', () => ({
+jest.mock('@/lib/datetime-local', () => ({
   toDatetimeLocal: (iso?: string): string => {
     if (!iso || typeof iso !== 'string') return '';
     const d = new Date(iso);

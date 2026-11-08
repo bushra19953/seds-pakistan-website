@@ -7,12 +7,12 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { financeFetch, pkr, type FinanceUser } from './finance-api';
-import {
-  generateBalanceSheetPdf,
-  generateIncomeExpenditurePdf,
-  generateVariancePdf,
-} from '@/lib/finance/pdf/finance-report-pdf';
 import type { BalanceSheetSummary, IncomeExpenditureReport, VarianceReport } from '@/lib/finance/reports';
+
+// The PDF generators (and jspdf behind them) load on click, not with the
+// finance page: they are only ever called from the three export handlers
+// below, following the same dynamic-import pattern as the workflow PDF
+// export on /admin/tasks.
 
 /**
  * Reports panel (spec Part C 5.5). Figures come only from the reporting
@@ -46,6 +46,7 @@ export function ReportsPanel({ user, userLabel }: { user: FinanceUser; userLabel
     setSummary(
       `Income ${pkr(data.report.totalIncomePkr)} - Expenditure ${pkr(data.report.totalExpensePkr)} - Net ${pkr(data.report.netPkr)}`,
     );
+    const { generateIncomeExpenditurePdf } = await import('@/lib/finance/pdf/finance-report-pdf');
     download(generateIncomeExpenditurePdf(data.report, meta()), `income-expenditure-${fy}.pdf`);
   };
 
@@ -57,6 +58,7 @@ export function ReportsPanel({ user, userLabel }: { user: FinanceUser; userLabel
     setSummary(
       `Allocated ${pkr(data.report.variance.totalAllocatedPkr)} - Actual ${pkr(data.report.variance.totalActualPkr)} - Unbudgeted posted ${pkr(data.report.variance.unbudgetedPostedExpensePkr)}`,
     );
+    const { generateVariancePdf } = await import('@/lib/finance/pdf/finance-report-pdf');
     download(generateVariancePdf(data.report.variance, meta(data.report.consentPending)), `variance-${fy}.pdf`);
   };
 
@@ -68,6 +70,7 @@ export function ReportsPanel({ user, userLabel }: { user: FinanceUser; userLabel
     setSummary(
       `Total funds held ${pkr(data.report.totalFundsHeldPkr)} - Related-party unreceipted note ${pkr(data.report.relatedPartyUnreceiptedNotePkr)}`,
     );
+    const { generateBalanceSheetPdf } = await import('@/lib/finance/pdf/finance-report-pdf');
     download(generateBalanceSheetPdf(data.report, meta()), `balance-sheet-${fy}.pdf`);
   };
 

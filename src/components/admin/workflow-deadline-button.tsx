@@ -14,7 +14,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
-import { toDatetimeLocal } from '@/components/admin/tasks/task-form';
+import { toDatetimeLocal } from '@/lib/datetime-local';
 import { safeFormat } from '@/lib/date-utils';
 
 interface WorkflowDeadlineButtonProps {

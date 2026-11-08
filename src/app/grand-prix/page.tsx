@@ -164,12 +164,16 @@ export default function GrandPrixPage() {
             propulsion dynamics, and space mission design.
           </p>
           {/* Hero flags sit in identical frames (same width, height and
-              styling for both); the official artwork is letterboxed with
-              object-contain so neither flag is ever cropped. */}
+              styling for both) and each flag fills its frame edge to edge
+              (object-cover), so the two flags display at exactly the same
+              size. Pakistan crops symmetrically top/bottom around its
+              central crescent and star; Sri Lanka's crop is biased to the
+              stripes side (object-position 65%) so the lion field and all
+              four bo leaves stay fully in frame. */}
           <div className="mt-10 flex items-start justify-center gap-5 sm:gap-10">
             <figure className="text-center">
               <span className="flex aspect-[7/4] w-36 items-center justify-center overflow-hidden rounded-md shadow-[0_18px_44px_rgba(0,0,0,0.5)] ring-1 ring-[#C9A45C]/45 sm:w-60">
-                <PakistanFlag className="h-full w-full object-contain" />
+                <PakistanFlag className="h-full w-full object-cover object-center" />
               </span>
               <figcaption className="mt-3 text-[11px] font-extrabold uppercase tracking-[0.32em] text-[#CBBFA5]">
                 Pakistan
@@ -187,7 +191,7 @@ export default function GrandPrixPage() {
             </span>
             <figure className="text-center">
               <span className="flex aspect-[7/4] w-36 items-center justify-center overflow-hidden rounded-md shadow-[0_18px_44px_rgba(0,0,0,0.5)] ring-1 ring-[#C9A45C]/45 sm:w-60">
-                <SriLankaFlag className="h-full w-full object-contain" />
+                <SriLankaFlag className="h-full w-full object-cover object-[65%_50%]" />
               </span>
               <figcaption className="mt-3 text-[11px] font-extrabold uppercase tracking-[0.32em] text-[#CBBFA5]">
                 Sri Lanka

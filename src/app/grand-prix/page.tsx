@@ -3,6 +3,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import StarryBackground from '@/components/starry-background';
 import Footer from '@/components/layout/footer';
+import { FadeRise, OrbitRings, SpotlightCard } from './motion';
 import { MODULES, SERIES_NAME } from '@/lib/grand-prix/registration';
 import {
   AngolaFlag,
@@ -150,26 +151,32 @@ export default function GrandPrixPage() {
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_55%_40%_at_50%_-5%,rgba(201,164,92,0.14),transparent),linear-gradient(180deg,rgba(6,9,16,0.35),rgba(6,9,16,0.78))]" />
       <main className="container relative z-10 mx-auto flex-1 px-4 py-16 sm:py-20">
         <div className="mx-auto max-w-3xl">
-          <div className="flex items-center justify-center gap-4">
-            <span className="h-px w-12 bg-gradient-to-r from-transparent to-[#C9A45C]/80" />
-            <p
-              className="text-center text-[11px] font-extrabold uppercase tracking-[0.42em]"
-              style={{ color: GOLD_LIGHT }}
+          <FadeRise>
+            <div className="flex items-center justify-center gap-4">
+              <span className="h-px w-12 bg-gradient-to-r from-transparent to-[#C9A45C]/80" />
+              <p
+                className="text-center text-[11px] font-extrabold uppercase tracking-[0.42em]"
+                style={{ color: GOLD_LIGHT }}
+              >
+                SEDS Pakistan and SEDS Sri Lanka
+              </p>
+              <span className="h-px w-12 bg-gradient-to-l from-transparent to-[#C9A45C]/80" />
+            </div>
+          </FadeRise>
+          <FadeRise delay={0.12}>
+            <h1
+              className={`mt-6 bg-gradient-to-r from-[#E8CF8F] via-[#C9A45C] to-[#E8CF8F] bg-clip-text text-center text-4xl font-semibold leading-[1.08] text-transparent sm:text-[3.4rem] ${displayFont}`}
             >
-              SEDS Pakistan and SEDS Sri Lanka
+              {SERIES_NAME}
+            </h1>
+          </FadeRise>
+          <FadeRise delay={0.24}>
+            <p className="mx-auto mt-5 max-w-2xl text-center text-[15px] leading-relaxed text-[#CFC8B8]">
+              A joint bilateral engineering initiative co-hosted by SEDS Pakistan and SEDS Sri Lanka. Six
+              intensive virtual masterclasses connecting collegiate engineers with real-world astronautics,
+              propulsion dynamics, and space mission design.
             </p>
-            <span className="h-px w-12 bg-gradient-to-l from-transparent to-[#C9A45C]/80" />
-          </div>
-          <h1
-            className={`mt-6 bg-gradient-to-r from-[#E8CF8F] via-[#C9A45C] to-[#E8CF8F] bg-clip-text text-center text-4xl font-semibold leading-[1.08] text-transparent sm:text-[3.4rem] ${displayFont}`}
-          >
-            {SERIES_NAME}
-          </h1>
-          <p className="mx-auto mt-5 max-w-2xl text-center text-[15px] leading-relaxed text-[#CFC8B8]">
-            A joint bilateral engineering initiative co-hosted by SEDS Pakistan and SEDS Sri Lanka. Six
-            intensive virtual masterclasses connecting collegiate engineers with real-world astronautics,
-            propulsion dynamics, and space mission design.
-          </p>
+          </FadeRise>
           {/* Hero flags sit in identical frames (same width, height and
               styling for both) and each flag fills its frame edge to edge
               (object-cover), so the two flags display at exactly the same
@@ -177,49 +184,40 @@ export default function GrandPrixPage() {
               central crescent and star; Sri Lanka's crop is biased to the
               stripes side (object-position 65%) so the lion field and all
               four bo leaves stay fully in frame. */}
-          <div className="mt-10 flex items-start justify-center gap-5 sm:gap-10">
-            <figure className="text-center">
-              <span className="flex aspect-[7/4] w-36 items-center justify-center overflow-hidden rounded-md shadow-[0_18px_44px_rgba(0,0,0,0.5)] ring-1 ring-[#C9A45C]/45 sm:w-60">
-                <PakistanFlag className="h-full w-full object-cover object-center" />
+          <FadeRise delay={0.36}>
+            <div className="mt-10 flex items-start justify-center gap-5 sm:gap-10">
+              <figure className="text-center">
+                <span className="flex aspect-[7/4] w-36 items-center justify-center overflow-hidden rounded-md shadow-[0_18px_44px_rgba(0,0,0,0.5)] ring-1 ring-[#C9A45C]/45 sm:w-60">
+                  <PakistanFlag className="h-full w-full object-cover object-center" />
+                </span>
+                <figcaption className="mt-3 text-[11px] font-extrabold uppercase tracking-[0.32em] text-[#CBBFA5]">
+                  Pakistan
+                </figcaption>
+                <p lang="ur" dir="rtl" className="mt-1.5 text-[13px] leading-relaxed text-[#CBBFA5]">
+                  خوش آمدید
+                </p>
+              </figure>
+              <span
+                aria-hidden="true"
+                className={`mt-[19px] flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#C9A45C]/50 bg-white/[0.04] text-xl sm:mt-[46px] ${displayFont}`}
+                style={{ color: GOLD_LIGHT }}
+              >
+                &times;
               </span>
-              <figcaption className="mt-3 text-[11px] font-extrabold uppercase tracking-[0.32em] text-[#CBBFA5]">
-                Pakistan
-              </figcaption>
-              <p lang="ur" dir="rtl" className="mt-1.5 text-[13px] leading-relaxed text-[#CBBFA5]">
-                خوش آمدید
-              </p>
-            </figure>
-            <span
-              aria-hidden="true"
-              className={`mt-[19px] flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#C9A45C]/50 bg-white/[0.04] text-xl sm:mt-[46px] ${displayFont}`}
-              style={{ color: GOLD_LIGHT }}
-            >
-              &times;
-            </span>
-            <figure className="text-center">
-              <span className="flex aspect-[7/4] w-36 items-center justify-center overflow-hidden rounded-md shadow-[0_18px_44px_rgba(0,0,0,0.5)] ring-1 ring-[#C9A45C]/45 sm:w-60">
-                <SriLankaFlag className="h-full w-full object-cover object-[65%_50%]" />
-              </span>
-              <figcaption className="mt-3 text-[11px] font-extrabold uppercase tracking-[0.32em] text-[#CBBFA5]">
-                Sri Lanka
-              </figcaption>
-              <p lang="si" className="mt-1.5 text-[13px] leading-relaxed text-[#CBBFA5]">
-                ආයුබෝවන්
-              </p>
-            </figure>
-          </div>
-          <svg
-            aria-hidden="true"
-            viewBox="0 0 720 44"
-            className="mx-auto mt-2 w-full max-w-2xl opacity-60"
-            fill="none"
-          >
-            <ellipse cx="360" cy="22" rx="330" ry="17" stroke="#C9A45C" strokeOpacity="0.35" strokeWidth="1" />
-            <ellipse cx="360" cy="22" rx="238" ry="11" stroke="#E8CF8F" strokeOpacity="0.22" strokeWidth="1" />
-            <circle cx="52" cy="13" r="3" fill="#E8CF8F" fillOpacity="0.75" />
-            <circle cx="664" cy="30" r="2.2" fill="#C9A45C" fillOpacity="0.7" />
-            <circle cx="472" cy="7" r="1.6" fill="#F5F0E4" fillOpacity="0.65" />
-          </svg>
+              <figure className="text-center">
+                <span className="flex aspect-[7/4] w-36 items-center justify-center overflow-hidden rounded-md shadow-[0_18px_44px_rgba(0,0,0,0.5)] ring-1 ring-[#C9A45C]/45 sm:w-60">
+                  <SriLankaFlag className="h-full w-full object-cover object-[65%_50%]" />
+                </span>
+                <figcaption className="mt-3 text-[11px] font-extrabold uppercase tracking-[0.32em] text-[#CBBFA5]">
+                  Sri Lanka
+                </figcaption>
+                <p lang="si" className="mt-1.5 text-[13px] leading-relaxed text-[#CBBFA5]">
+                  ආයුබෝවන්
+                </p>
+              </figure>
+            </div>
+          </FadeRise>
+          <OrbitRings />
           <div className="mt-8 flex items-center justify-center gap-3" aria-hidden="true">
             <span className="h-px w-24 bg-white/15" />
             <span className="block h-1.5 w-1.5 rotate-45" style={{ backgroundColor: GOLD }} />
@@ -236,7 +234,7 @@ export default function GrandPrixPage() {
             </h2>
             <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
               {DISCIPLINES.map((discipline) => (
-                <div
+                <SpotlightCard
                   key={discipline.name}
                   className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-6 text-center shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-md"
                 >
@@ -247,7 +245,7 @@ export default function GrandPrixPage() {
                     {discipline.name}
                   </p>
                   <p className="mt-2 text-[13px] leading-relaxed text-[#CFC8B8]">{discipline.line}</p>
-                </div>
+                </SpotlightCard>
               ))}
             </div>
           </section>
@@ -262,7 +260,7 @@ export default function GrandPrixPage() {
             </h2>
             <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
               {MODULES.map((module, i) => (
-                <div
+                <SpotlightCard
                   key={module.id}
                   className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-5 shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-md"
                 >
@@ -272,7 +270,7 @@ export default function GrandPrixPage() {
                   <p className={`mt-2 text-xl font-semibold leading-snug ${displayFont}`} style={{ color: IVORY }}>
                     {module.title}
                   </p>
-                </div>
+                </SpotlightCard>
               ))}
             </div>
             <p className="mx-auto mt-8 max-w-2xl text-center text-sm leading-relaxed text-[#CFC8B8]">
@@ -290,14 +288,14 @@ export default function GrandPrixPage() {
               Patrons
             </h2>
             <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-6 text-center shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-md">
+              <SpotlightCard className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-6 text-center shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-md">
                 <p className="text-[11px] font-extrabold uppercase tracking-[0.24em] text-[#CBBFA5]">Patron</p>
                 <p className={`mt-2 text-xl font-semibold leading-snug ${displayFont}`} style={{ color: IVORY }}>
                   Dr. Najam Abbas Naqvi
                 </p>
                 <p className="mt-2 text-[13px] leading-relaxed text-[#CFC8B8]">Patron, SEDS Pakistan</p>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-6 text-center shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-md">
+              </SpotlightCard>
+              <SpotlightCard className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-6 text-center shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-md">
                 <p className="text-[11px] font-extrabold uppercase tracking-[0.24em] text-[#CBBFA5]">
                   International Patron
                 </p>
@@ -307,7 +305,7 @@ export default function GrandPrixPage() {
                 <p className="mt-2 text-[13px] leading-relaxed text-[#CFC8B8]">
                   Chair Professor, Shanghai Jiao Tong University
                 </p>
-              </div>
+              </SpotlightCard>
             </div>
           </section>
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo, ReactNode } from 'react';
 import { User, onIdTokenChanged } from 'firebase/auth';
 import { doc, getDoc, serverTimestamp, onSnapshot, setDoc } from 'firebase/firestore';
 import { auth, firestore } from './core';
@@ -101,14 +101,15 @@ export function UserProvider({ children }: { children: ReactNode }) {
     // Multi-tenant Chapter Context
     const [activeChapterContext, setActiveChapterContextState] = useState<string | null>(null);
 
-    // Persist and Apply Context
-    const setActiveChapterContext = (chapterId: string | null) => {
+    // Persist and Apply Context. Stable identity (useCallback) so the
+    // memoised context value below is not invalidated on every render.
+    const setActiveChapterContext = useCallback((chapterId: string | null) => {
         setActiveChapterContextState(chapterId);
         if (typeof window !== 'undefined') {
             if (chapterId) localStorage.setItem('seds.activeChapter', chapterId);
             else localStorage.removeItem('seds.activeChapter');
         }
-    };
+    }, []);
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
@@ -433,7 +434,16 @@ export function UserProvider({ children }: { children: ReactNode }) {
                                         );
                                     }
 
-                                    await fetchAndInjectOverrides(newRole);
+                                    // skipIfUnchanged: the token-claims fast
+                                    // path above (or a previous snapshot) may
+                                    // already have applied this exact
+                                    // definition; an identical fingerprint
+                                    // makes re-applying a pure no-op, so skip
+                                    // the state writes and the re-render
+                                    // churn they cause. A changed definition
+                                    // or a different role still applies in
+                                    // full, exactly as before.
+                                    await fetchAndInjectOverrides(newRole, { skipIfUnchanged: true });
 
                                     // Custom-role grants held via this same
                                     // roles doc: resolve the held slugs
@@ -558,18 +568,39 @@ export function UserProvider({ children }: { children: ReactNode }) {
         };
     }, []);
 
-    const value = {
-        user,
-        role,
-        roleLabel,
-        allowedPaths,
-        customRoles,
-        customAllowedPaths,
-        isLoading,
-        error,
-        activeChapterContext,
-        setActiveChapterContext
-    };
+    // Memoised context value: a fresh object literal here would give
+    // every consumer of useUser()/useUserContext() a new context value
+    // on EVERY provider render (each auth/role fetch stage sets several
+    // states), re-rendering the whole admin shell — sidebar, layout
+    // gate and every mounted page hook — per stage. With the memo,
+    // consumers re-render only when a field they receive actually
+    // changes identity. Field set and semantics are unchanged.
+    const value = useMemo<UserContextType>(
+        () => ({
+            user,
+            role,
+            roleLabel,
+            allowedPaths,
+            customRoles,
+            customAllowedPaths,
+            isLoading,
+            error,
+            activeChapterContext,
+            setActiveChapterContext,
+        }),
+        [
+            user,
+            role,
+            roleLabel,
+            allowedPaths,
+            customRoles,
+            customAllowedPaths,
+            isLoading,
+            error,
+            activeChapterContext,
+            setActiveChapterContext,
+        ]
+    );
 
     return <UserContext.Provider value={value}>{children}</UserContext.Provider>;
 }

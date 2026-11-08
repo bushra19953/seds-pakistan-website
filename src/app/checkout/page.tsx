@@ -29,7 +29,7 @@ import {
 } from 'lucide-react';
 import { fetchOwnContact } from '@/lib/client/user-contact';
 import { Product } from '@/types/store';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import type Confetti from 'canvas-confetti';
 import ReceiptUploader from '@/components/checkout/receipt-uploader';
 import type { DriveUploadMeta } from '@/lib/uploads/client';
@@ -553,6 +553,7 @@ function CheckoutContent() {
     const searchParams = useSearchParams();
     const router = useRouter();
     const { user } = useUser();
+    const reduceMotion = useReducedMotion();
     const { toast } = useToast();
     const { settings, loading: settingsLoading } = useSiteSettings();
 
@@ -1153,32 +1154,56 @@ function CheckoutContent() {
                                             {/* Method selector tabs — only shown when >1 method */}
                                             {enabledMethods.length > 1 && (
                                                 <div className="space-y-2">
-                                                    <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                                                    <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider" id="payment-method-label">
                                                         Select Payment Method
                                                     </p>
-                                                    <div className="flex flex-wrap gap-2">
-                                                        {enabledMethods.map(m => (
-                                                            <button
-                                                                key={m.key}
-                                                                type="button"
-                                                                onClick={() => setSelectedMethodKey(m.key)}
-                                                                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all duration-200
-                                                                    ${selectedMethodKey === m.key
-                                                                        ? 'bg-primary/20 border-primary/50 text-primary shadow-[0_0_12px_hsl(var(--primary)/0.2)]'
-                                                                        : 'bg-muted border-border text-muted-foreground hover:bg-muted'}`}
-                                                            >
-                                                                {m.iconUrl ? (
-                                                                    <Image src={m.iconUrl} alt={m.name} width={16} height={16} className="w-4 h-4 object-contain rounded-sm" onError={e => (e.currentTarget.style.display = 'none')} />
-                                                                ) : <CreditCard className="w-3.5 h-3.5" />}
-                                                                {m.name}
-                                                            </button>
-                                                        ))}
+                                                    {/* Radio-tile selector, adapted from the 21st.dev
+                                                        "Payment Methods" pattern (@f0rextasy): each
+                                                        method is a full tile with icon, name and a
+                                                        radio affordance; the selected tile carries
+                                                        the theme border and a filled radio dot. */}
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2" role="radiogroup" aria-labelledby="payment-method-label">
+                                                        {enabledMethods.map(m => {
+                                                            const isSelected = selectedMethodKey === m.key;
+                                                            return (
+                                                                <button
+                                                                    key={m.key}
+                                                                    type="button"
+                                                                    role="radio"
+                                                                    aria-checked={isSelected}
+                                                                    onClick={() => setSelectedMethodKey(m.key)}
+                                                                    className={`flex items-center gap-3 px-3.5 py-3 rounded-xl border text-left transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60
+                                                                        ${isSelected
+                                                                            ? 'bg-primary/10 border-primary/60'
+                                                                            : 'bg-background/40 border-border hover:border-muted-foreground/40 hover:bg-muted/40'}`}
+                                                                >
+                                                                    <span className="w-8 h-8 rounded-lg bg-muted/60 border border-border flex items-center justify-center shrink-0">
+                                                                        {m.iconUrl ? (
+                                                                            <Image src={m.iconUrl} alt="" width={18} height={18} className="w-[18px] h-[18px] object-contain rounded-sm" onError={e => (e.currentTarget.style.display = 'none')} />
+                                                                        ) : <CreditCard className="w-4 h-4 text-muted-foreground" />}
+                                                                    </span>
+                                                                    <span className={`flex-1 text-sm font-semibold leading-tight ${isSelected ? 'text-foreground' : 'text-muted-foreground'}`}>{m.name}</span>
+                                                                    <span className={`w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${isSelected ? 'border-primary' : 'border-muted-foreground/50'}`} aria-hidden="true">
+                                                                        {isSelected && (reduceMotion ? (
+                                                                            <span className="w-2 h-2 rounded-full bg-primary" />
+                                                                        ) : (
+                                                                            <motion.span
+                                                                                initial={{ scale: 0 }}
+                                                                                animate={{ scale: 1 }}
+                                                                                transition={{ type: 'spring', stiffness: 500, damping: 22 }}
+                                                                                className="w-2 h-2 rounded-full bg-primary"
+                                                                            />
+                                                                        ))}
+                                                                    </span>
+                                                                </button>
+                                                            );
+                                                        })}
                                                     </div>
                                                 </div>
                                             )}
                                             {/* Instructions for selected method */}
                                             {selectedMethod && (
-                                                <div className="p-4 bg-background/50 rounded-xl space-y-2 border border-primary/20 shadow-sm">
+                                                <div className="p-4 bg-background/50 rounded-xl space-y-2 border border-border shadow-sm">
                                                     <p className="font-bold text-foreground flex items-center gap-2 text-sm">
                                                         {selectedMethod.iconUrl ? (
                                                             <Image src={selectedMethod.iconUrl} alt={selectedMethod.name} width={20} height={20} className="w-5 h-5 object-contain rounded-sm" onError={e => (e.currentTarget.style.display = 'none')} />

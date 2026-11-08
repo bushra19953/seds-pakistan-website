@@ -202,14 +202,22 @@ const nextConfig = {
       // in array order and the last rule wins per key, so these
       // later rules replace ONLY the Cache-Control for exactly
       // these paths; the security set still arrives via the
-      // catch-all rule above. Short shared TTL plus a long
+      // catch-all rule above. /grand-prix joined the set on
+      // 2026-11-08 under the same verification: its page is a pure
+      // server component (no 'use client', no data fetch, content
+      // from static lib constants), it has no layout of its own so
+      // it uses the same verified root layout, and nothing in its
+      // tree (page, flags.tsx, StarryBackground, Footer) imports
+      // next/headers or reads cookies/searchParams. The register
+      // subtree is deliberately NOT included: it is a form surface
+      // and was not verified as a set. Short shared TTL plus a long
       // stale-while-revalidate window lets repeat document and RSC
       // fetches serve stale instead of queueing on the single
       // instance during a saturation window (the /timeline 502
       // incident class). Subtrees are deliberately NOT included:
       // /blog/new is an authoring surface, so the blog subtree was
       // not verified personalization-free as a set.
-      ...['/', '/timeline', '/events', '/blog', '/hierarchy'].map((source) => ({
+      ...['/', '/timeline', '/events', '/blog', '/hierarchy', '/grand-prix'].map((source) => ({
         source,
         headers: [
           {
@@ -250,6 +258,34 @@ const nextConfig = {
       },
       {
         source: '/chapter-logos/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=604800, stale-while-revalidate=86400',
+          },
+        ],
+      },
+      {
+        // PERF (2026-11-08): same asset class as above, two directories
+        // the 2026-10-30 rules predate or missed. /flags holds the
+        // Grand Prix hero flags (official Wikimedia art, added
+        // 2026-11-07); without a rule they fell under the catch-all
+        // max-age=0, so every Grand Prix visit revalidated both SVGs.
+        // /projects holds the public projects page cover art (12 JPGs,
+        // ~7 MB total, plus the 361 KB grand-prix-hero-logos.jpg);
+        // without a rule, repeat /projects visits revalidated all of
+        // it. Both change only on a deliberate asset swap, like the
+        // logo and badge art above.
+        source: '/flags/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=604800, stale-while-revalidate=86400',
+          },
+        ],
+      },
+      {
+        source: '/projects/:path*',
         headers: [
           {
             key: 'Cache-Control',

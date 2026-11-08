@@ -22,7 +22,7 @@
  * "simplified" into caching personalized payloads later.
  *
  * How the config achieves it: dedicated rules for exactly the
- * five public paths sit AFTER the catch-all page rule. Next.js
+ * six public paths sit AFTER the catch-all page rule. Next.js
  * applies matching header rules in array order and the last rule
  * wins per key (documented headers() behaviour), so the later
  * rules replace only Cache-Control for those paths while the
@@ -76,20 +76,36 @@ const PUBLIC_PAGE_VALUE = 'public, max-age=0, s-maxage=60, stale-while-revalidat
 const DEFAULT_PAGE_VALUE = 'public, max-age=0, must-revalidate';
 
 describe('page payload Cache-Control (wave-2)', () => {
-  test.each(['/', '/timeline', '/events', '/blog', '/hierarchy'])(
+  test.each(['/', '/timeline', '/events', '/blog', '/hierarchy', '/grand-prix'])(
     'fully public page %s gets shared + SWR caching',
     async (pathname) => {
       expect(await effectiveCacheControl(pathname)).toBe(PUBLIC_PAGE_VALUE);
     },
   );
 
-  test.each(['/profile', '/profile/unified/some-uid', '/admin', '/admin/users', '/auth/login', '/community', '/missions', '/blog/a-public-post', '/blog/new', '/events/some-event'])(
+  test.each(['/profile', '/profile/unified/some-uid', '/admin', '/admin/users', '/auth/login', '/community', '/missions', '/blog/a-public-post', '/blog/new', '/events/some-event', '/grand-prix/register'])(
     // Blog and events SUBTREES stay on the default on purpose: the
     // blog subtree contains the /blog/new authoring surface, so the
-    // subtree was not verified personalization-free as a set.
+    // subtree was not verified personalization-free as a set. The
+    // Grand Prix register subtree stays on the default for the same
+    // reason: it is a form surface, not a verified set.
     'personalized or unreviewed page %s keeps must-revalidate (do-not-cache)',
     async (pathname) => {
       expect(await effectiveCacheControl(pathname)).toBe(DEFAULT_PAGE_VALUE);
+    },
+  );
+
+  test.each(['/flags/pakistan.svg', '/flags/sri-lanka.svg', '/projects/covers/mars-rover.jpg', '/projects/grand-prix-hero-logos.jpg'])(
+    // Static public art directories get the same week of browser
+    // freshness as /assets, /badges and /chapter-logos (2026-11-08):
+    // before that, /flags and /projects fell under the catch-all
+    // max-age=0 and repeat visits revalidated the hero flags and
+    // roughly 7 MB of project cover JPGs on every load.
+    'static public art %s gets the week-long asset cache',
+    async (pathname) => {
+      expect(await effectiveCacheControl(pathname)).toBe(
+        'public, max-age=604800, stale-while-revalidate=86400',
+      );
     },
   );
 
@@ -106,9 +122,9 @@ describe('page payload Cache-Control (wave-2)', () => {
     ).toBe('public, max-age=31536000, immutable');
   });
 
-  test('the five public pages still receive the full security header set (union of matching rules)', async () => {
+  test('the six public pages still receive the full security header set (union of matching rules)', async () => {
     const rules = (await nextConfig.headers()) as HeaderRule[];
-    for (const pathname of ['/', '/timeline', '/events', '/blog', '/hierarchy']) {
+    for (const pathname of ['/', '/timeline', '/events', '/blog', '/hierarchy', '/grand-prix']) {
       const keys = new Set<string>();
       for (const rule of rules) {
         if (!matches(rule.source, pathname)) continue;

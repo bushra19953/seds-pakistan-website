@@ -236,9 +236,12 @@ describe('next.config security headers (audit items 18 + 7)', () => {
 
   test('public asset directories get week-long browser caching (PERF 2026-10-30)', async () => {
     const rules = await loadRules();
-    // Only the three asset directories carry the long-cache value:
-    // the logo / OG art, the badge PNGs and the chapter logos. The
-    // service worker and every page keep the revalidating rule.
+    // Only the five asset directories carry the long-cache value:
+    // the logo / OG art, the badge PNGs, the chapter logos, the
+    // Grand Prix hero flags and the project cover art (the last
+    // two added 2026-11-08; before that they fell under the
+    // revalidating catch-all). The service worker and every page
+    // keep the revalidating rule.
     const longCache = rules.filter((r) =>
       (headerMap(r).get('cache-control') || '').includes('max-age=604800'),
     );
@@ -246,6 +249,8 @@ describe('next.config security headers (audit items 18 + 7)', () => {
       '/assets/:path*',
       '/badges/:path*',
       '/chapter-logos/:path*',
+      '/flags/:path*',
+      '/projects/:path*',
     ]);
     for (const rule of longCache) {
       expect(headerMap(rule).get('cache-control')).toBe(

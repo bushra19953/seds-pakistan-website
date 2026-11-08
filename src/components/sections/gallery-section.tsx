@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Boxes } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,20 +10,119 @@ import { Button } from '@/components/ui/button';
 
 type GalleryItem = { id: string; title: string; assetUrl: string; thumbnailUrl?: string | null };
 
+// The <model-viewer> library is heavy (the element bundle plus its Wasm
+// mesh decoders), so it is fetched only when the first model card is
+// activated — never on page load, and never for an empty gallery. The
+// promise is shared so several cards activating together inject the
+// script exactly once.
+let modelViewerLoadPromise: Promise<void> | null = null;
+function loadModelViewer(): Promise<void> {
+  if (typeof window === 'undefined') return Promise.resolve();
+  if ((window as any).customElements?.get?.('model-viewer')) return Promise.resolve();
+  if (!modelViewerLoadPromise) {
+    modelViewerLoadPromise = new Promise<void>((resolve) => {
+      const script = document.createElement('script');
+      script.type = 'module';
+      script.src = 'https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js';
+      script.onload = () => resolve();
+      script.onerror = () => resolve();
+      document.head.appendChild(script);
+    });
+  }
+  return modelViewerLoadPromise;
+}
+
+// Help TypeScript accept the custom element in JSX
+const ModelViewer = 'model-viewer' as any;
+
+/**
+ * One 3D model card body. Until the card is activated it renders only
+ * the poster (the item thumbnail), so neither the model-viewer library
+ * nor the multi-megabyte model file is downloaded for cards the visitor
+ * never reaches. Activation happens when the card scrolls near the
+ * viewport, or immediately when the visitor clicks "Load 3D model".
+ * Once loaded, the viewer renders with the exact props it always had.
+ */
+function LazyModelViewer({ model }: { model: GalleryItem }) {
+  const [activated, setActivated] = useState(false);
+  const [viewerReady, setViewerReady] = useState(false);
+  const boxRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (activated) return;
+    const el = boxRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') {
+      setActivated(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setActivated(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '300px' }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [activated]);
+
+  useEffect(() => {
+    if (!activated) return;
+    let cancelled = false;
+    loadModelViewer().then(() => {
+      if (!cancelled) setViewerReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activated]);
+
+  if (activated && viewerReady) {
+    return (
+      <div className="h-[400px] w-full">
+        <ModelViewer
+          src={model.assetUrl}
+          alt={`${model.title} 3D model`}
+          poster={model.thumbnailUrl ? String(model.thumbnailUrl) : undefined}
+          camera-controls
+          auto-rotate
+          ar
+          touch-action="pan-y"
+          shadow-intensity="1"
+          exposure="0.9"
+          style={{ height: '100%', width: '100%', touchAction: 'pan-y' }}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div ref={boxRef} className="relative h-[400px] w-full overflow-hidden rounded bg-muted/20">
+      {model.thumbnailUrl ? (
+        <Image
+          src={String(model.thumbnailUrl)}
+          alt={`${model.title} thumbnail`}
+          fill
+          sizes="(max-width: 768px) 100vw, 50vw"
+          className="object-cover"
+        />
+      ) : null}
+      <div className="absolute inset-0 flex items-center justify-center">
+        <Button type="button" variant="secondary" onClick={() => setActivated(true)}>
+          <Boxes className="mr-2 h-4 w-4" aria-hidden="true" />
+          Load 3D model
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export default function GallerySection() {
   const [items, setItems] = useState<GalleryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // Load the model-viewer script on the client if not already registered
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const isDefined = !!(window as any).customElements?.get?.('model-viewer');
-    if (isDefined) return;
-    const script = document.createElement('script');
-    script.type = 'module';
-    script.src = 'https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js';
-    document.head.appendChild(script);
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -52,9 +151,6 @@ export default function GallerySection() {
     return () => { cancelled = true; };
   }, []);
 
-  // Help TypeScript accept the custom element in JSX
-  const ModelViewer = 'model-viewer' as any;
-
   return (
     <section id="gallery" className="py-20 md:py-32">
       <div className="container mx-auto px-4 md:px-6">
@@ -82,19 +178,7 @@ export default function GallerySection() {
                       <Image src={String(model.thumbnailUrl)} alt={`${model.title} thumbnail`} width={320} height={128} className="h-32 w-auto object-cover rounded" />
                     </div>
                   )}
-                  <div className="h-[400px] w-full">
-                    <ModelViewer
-                      src={model.assetUrl}
-                      alt={`${model.title} 3D model`}
-                      camera-controls
-                      auto-rotate
-                      ar
-                      touch-action="pan-y"
-                      shadow-intensity="1"
-                      exposure="0.9"
-                      style={{ height: '100%', width: '100%', touchAction: 'pan-y' }}
-                    />
-                  </div>
+                  <LazyModelViewer model={model} />
                 </CardContent>
               </Card>
             </div>

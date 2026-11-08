@@ -16,6 +16,7 @@
  * component renders Tooltip parts only.
  */
 import { memo } from 'react';
+import { motion, useReducedMotion } from 'framer-motion';
 import { format } from 'date-fns';
 import { TableCell, TableRow } from '@/components/ui/table';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -63,6 +64,7 @@ function TaskTableRowInner({
   onViewSubmission,
   onRequestRevisions,
 }: TaskTableRowProps) {
+  const reduceMotion = useReducedMotion();
   const assigneeName = assigneeUser?.displayName || assigneeUser?.email || task.assigneeId;
   const coAssigneeIds = (Array.isArray((task as any).assigneeIds) ? (task as any).assigneeIds : [])
     .map(String).filter((id: string) => id && id !== task.assigneeId);
@@ -78,9 +80,15 @@ function TaskTableRowInner({
         </TableCell>
         <TableCell className="font-medium max-w-xs truncate">
           <div className="flex items-center gap-2">
-            <span className="truncate">{task.title}</span>
+            <span className="min-w-0 truncate">{task.title}</span>
             {task.status === 'submitted-for-review' && (
-              <span className="px-2 py-0.5 text-xs rounded bg-violet-100 text-violet-800 border border-violet-200">
+              <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-violet-200 bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-800 dark:border-violet-500/30 dark:bg-violet-500/15 dark:text-violet-300">
+                <motion.span
+                  aria-hidden="true"
+                  className="h-1.5 w-1.5 shrink-0 rounded-full bg-violet-500"
+                  animate={reduceMotion ? undefined : { opacity: [1, 0.3, 1] }}
+                  transition={reduceMotion ? undefined : { duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
+                />
                 Submitted for Review
               </span>
             )}
@@ -141,20 +149,33 @@ function TaskTableRowInner({
             const d = toDate(task.individualDeadline) || toDate(task.deadline);
             const now = new Date();
             const isOverdue = d && d < now;
+            // Status pill system (21st.dev "Status Badge" pattern): one pill
+            // shape, a tone per status, and a leading dot in the tone colour.
+            // The hue-to-status mapping is unchanged from the original
+            // classes; dark mode swaps the pastel fill for a translucent
+            // tint so the pill reads on the dark admin theme.
             const klass = task.status === 'completed'
-              ? 'bg-green-100 text-green-800'
+              ? 'border-green-200 bg-green-100 text-green-800 dark:border-green-500/30 dark:bg-green-500/15 dark:text-green-300'
               : task.status === 'in-progress'
-                ? 'bg-blue-100 text-blue-800'
+                ? 'border-blue-200 bg-blue-100 text-blue-800 dark:border-blue-500/30 dark:bg-blue-500/15 dark:text-blue-300'
                 : (isOverdue && task.status !== 'submitted-for-review')
-                  ? 'bg-red-100 text-red-800'
-                  : 'bg-yellow-100 text-yellow-800';
+                  ? 'border-red-200 bg-red-100 text-red-800 dark:border-red-500/30 dark:bg-red-500/15 dark:text-red-300'
+                  : 'border-yellow-200 bg-yellow-100 text-yellow-800 dark:border-yellow-500/30 dark:bg-yellow-500/15 dark:text-yellow-300';
+            const dotKlass = task.status === 'completed'
+              ? 'bg-green-500'
+              : task.status === 'in-progress'
+                ? 'bg-blue-500'
+                : (isOverdue && task.status !== 'submitted-for-review')
+                  ? 'bg-red-500'
+                  : 'bg-yellow-500';
 
             // Display status label
             let label = task.status;
             if (isOverdue && task.status !== 'completed' && task.status !== 'submitted-for-review') label = 'overdue';
 
             return (
-              <span className={`px-2 py-1 rounded-full text-xs ${klass}`}>
+              <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-medium ${klass}`}>
+                <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotKlass}`} />
                 {label}
               </span>
             );
@@ -166,7 +187,7 @@ function TaskTableRowInner({
               ? (task as any).deliverableFiles.length
               : 0;
             return n > 0 ? (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded bg-sky-100 text-sky-800 border border-sky-200 whitespace-nowrap">
+              <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-sky-200 bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/15 dark:text-sky-300">
                 {n} file{n === 1 ? '' : 's'}
               </span>
             ) : (

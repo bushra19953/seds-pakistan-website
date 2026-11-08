@@ -214,7 +214,13 @@ export default function RoleRegistry() {
   const roleDefinitions = authorityPolling ? polledRoleDefinitions : fsRoleDefinitions;
   const roleDefsLoading = authorityPolling ? polledRoleDefinitions === null : fsRoleDefsLoading;
 
-  // Sync role options whenever definitions change
+  // Role options for the create dialog's parent picker. Called
+  // WITHOUT a chapterId, getUnifiedRoleOptions returns catalog-only
+  // options (see src/lib/unified-roles.ts), so the result cannot
+  // change when roleDefinitions change; it depends only on the
+  // signed-in user (founder visibility). This effect previously
+  // re-ran on every roleDefinitions snapshot and re-set an identical
+  // new array, re-rendering the registry for no change.
   useEffect(() => {
     if (!firestore) return;
     let mounted = true;
@@ -226,7 +232,7 @@ export default function RoleRegistry() {
     return () => {
       mounted = false;
     };
-  }, [firestore, roleDefinitions, user?.uid]);
+  }, [firestore, user?.uid]);
 
   // Chapters for the create dialog's chapter picker. The doc id is the
   // chapterId the route validates against the chapters collection.
@@ -259,6 +265,10 @@ export default function RoleRegistry() {
       name: USER_ROLES[key],
       category: 'System',
       permissions: [], // Permissions are hardcoded in config but registry shows [] for now
+      // Recognized-permission count, computed ONCE per row here: the
+      // sort comparator and the row render both read it, and counting
+      // inside the comparator rebuilt a Set per comparison.
+      permCount: 0,
       scope: 'global',
       isSystem: true
     }));
@@ -280,6 +290,7 @@ export default function RoleRegistry() {
       return {
         ...rd,
         name,
+        permCount: recognizedPermissionCount(rd.permissions),
         customDef: toCustomRoleDefinition(effectiveSlug, rd),
         isSystem: false
       };
@@ -328,7 +339,7 @@ export default function RoleRegistry() {
         if (aOrder !== bOrder) return aOrder - bOrder;
       }
 
-      const pDiff = recognizedPermissionCount(b.permissions) - recognizedPermissionCount(a.permissions);
+      const pDiff = (b.permCount ?? 0) - (a.permCount ?? 0);
       if (pDiff !== 0) return pDiff;
 
       if (isNationalRow(a) && !isNationalRow(b)) return -1;
@@ -544,7 +555,7 @@ export default function RoleRegistry() {
                   </TableRow>
                 ) : paginatedRoleDefs.map((rd: any) => {
                   const totalPerms = Object.keys(ADMIN_PERMISSIONS).length;
-                  const assignedPerms = recognizedPermissionCount(rd.permissions);
+                  const assignedPerms = rd.permCount ?? recognizedPermissionCount(rd.permissions);
                   const powerPercentage = Math.min(100, (assignedPerms / totalPerms) * 100);
                   const isGlobal = isNationalRow(rd); // NATIONAL vs LOCAL badge
 

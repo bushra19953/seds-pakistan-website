@@ -253,6 +253,11 @@ export function OptimizedProfile({
   const bannerInputRef = useRef<HTMLInputElement | null>(null);
   const taskIdParam = searchParams.get('task');
   const editFormRef = useRef<(() => any) | null>(null);
+  // Uid whose core+extended profile fetch has already been started by the
+  // load effect below. Auth-state identity changes re-run that effect (the
+  // sign-in flow writes lastSeenAt, which re-emits the user object), and
+  // without this guard every re-run refetched both sections in full.
+  const profileFetchKeyRef = useRef<string | null>(null);
 
   // Data extraction at top level to avoid TDZ errors in hooks
   const { profile, projects, badges, chapter, certificates, warnings, tasks, sectionStatuses } = profileData || {};
@@ -262,10 +267,19 @@ export function OptimizedProfile({
   // if the user already resolved. If not yet resolved we retry once auth settles.
   useEffect(() => {
     if (!uid) return;
-    if (isEditing) return;
+    if (isEditing) {
+      // Clear the duplicate guard so leaving the editor refetches, as before.
+      profileFetchKeyRef.current = null;
+      return;
+    }
     // If auth is still loading we'll re-run once userLoading flips to false.
     // But we start the fetch immediately if uid is already present from URL.
     if (userLoading && !currentUser) return;
+    // Skip a duplicate full fetch for a uid already loaded by this mount;
+    // the guard resets in the catch below, so a failed load can still
+    // retry when auth settles and re-runs the effect.
+    if (profileFetchKeyRef.current === uid) return;
+    profileFetchKeyRef.current = uid;
 
     const fetchProfileData = async () => {
       setLoading(true);
@@ -312,9 +326,14 @@ export function OptimizedProfile({
             } : extData);
           }
         } catch (extErr) {
+          // Extended data is still missing, so let a later effect re-run
+          // retry the load, exactly as it would have before the guard.
+          profileFetchKeyRef.current = null;
           console.warn('[OptimizedProfile] Extended sections fetch failed:', extErr instanceof Error ? extErr.message : extErr);
         }
       } catch (err) {
+        // Allow a later effect re-run (e.g. once auth settles) to retry.
+        profileFetchKeyRef.current = null;
         // Downgrade to warn — profile fetch failures are recoverable and expected in dev/offline
         console.warn('[OptimizedProfile] Profile fetch failed:', err instanceof Error ? err.message : err);
         const params = new URLSearchParams(window.location.search);

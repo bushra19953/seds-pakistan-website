@@ -256,7 +256,10 @@ function GoogleOnlyAuthFormContent() {
 
           try {
             const existingSnap = await getDoc(userDocRef);
-            const currentTermsVersion = await getCurrentTermsVersion();
+            // The terms version is only written into the CREATE payload
+            // below, so fetching it for returning users put a whole
+            // collection query on the sign-in critical path for nothing.
+            const currentTermsVersion = existingSnap.exists() ? null : await getCurrentTermsVersion();
             const baseData: Record<string, any> = {
               uid: user.uid,
               photoURL: user.photoURL,
@@ -284,11 +287,18 @@ function GoogleOnlyAuthFormContent() {
               };
 
             await setDoc(userDocRef, userProfileData, { merge: true });
+            // The three writes below are independent of each other (contact
+            // doc, name-search index, role backfill), so they run in parallel
+            // instead of three sequential round trips gating the redirect.
+            // Failure semantics are unchanged: the contact write still
+            // propagates to the outer catch, while the keywords and backfill
+            // writes keep their own non-blocking catches, exactly as before.
+            const sideWrites: Promise<unknown>[] = [];
             // Contact fields live in the gated users/{uid}/private/contact
             // doc, not on the public user doc; this runs every sign-in and
             // keeps the gated copy fresh from Auth (merge).
             if (user.email) {
-              await saveOwnContact(firestore, user.uid, { email: user.email });
+              sideWrites.push(saveOwnContact(firestore, user.uid, { email: user.email }));
             }
             // Name-search keywords index (directory option (c)): a SEPARATE
             // merge write, never folded into the create payload - the user-create
@@ -296,11 +306,13 @@ function GoogleOnlyAuthFormContent() {
             // in could deny the whole signup write. Owner updates have no such
             // list. Non-blocking, mirroring the role backfill in this handler.
             if (!existingSnap.exists()) {
-              try {
-                await setDoc(userDocRef, { nameSearchKeywords: buildNameSearchKeywords(user.displayName) }, { merge: true });
-              } catch (kwError) {
-                console.error('[auth] Name-search index write failed (non-blocking):', kwError);
-              }
+              sideWrites.push((async () => {
+                try {
+                  await setDoc(userDocRef, { nameSearchKeywords: buildNameSearchKeywords(user.displayName) }, { merge: true });
+                } catch (kwError) {
+                  console.error('[auth] Name-search index write failed (non-blocking):', kwError);
+                }
+              })());
             }
 
             // Role backfill: accounts whose users doc was created by
@@ -318,14 +330,17 @@ function GoogleOnlyAuthFormContent() {
             if (existingSnap.exists()) {
               const backfill = memberRoleBackfill(existingSnap.data());
               if ('role' in backfill) {
-                try {
-                  await setDoc(userDocRef, backfill, { merge: true });
-                  console.log('[auth] Backfilled missing users-doc role with member_basic for', user.uid);
-                } catch (backfillError) {
-                  console.error('[auth] Role backfill failed (non-blocking):', backfillError);
-                }
+                sideWrites.push((async () => {
+                  try {
+                    await setDoc(userDocRef, backfill, { merge: true });
+                    console.log('[auth] Backfilled missing users-doc role with member_basic for', user.uid);
+                  } catch (backfillError) {
+                    console.error('[auth] Role backfill failed (non-blocking):', backfillError);
+                  }
+                })());
               }
             }
+            await Promise.all(sideWrites);
 
             // Handle invite-based role assignment.
             // Phase 2 F.6 guard: while an application is in progress, an
@@ -502,11 +517,17 @@ function GoogleOnlyAuthFormContent() {
 
     try {
       await setDoc(userDocRef, userProfileData, { merge: true });
+      // The contact write and the name-search index write are independent,
+      // so they run in parallel instead of two sequential round trips
+      // gating the redirect. Failure semantics are unchanged: a contact
+      // failure still lands in the catch below, and the keywords write
+      // keeps its own non-blocking catch, exactly as before.
+      const sideWrites: Promise<unknown>[] = [];
       // Contact fields live in the gated users/{uid}/private/contact
       // doc, not on the public user doc; this runs every sign-in and
       // keeps the gated copy fresh from Auth (merge).
       if (user.email) {
-        await saveOwnContact(firestore, user.uid, { email: user.email });
+        sideWrites.push(saveOwnContact(firestore, user.uid, { email: user.email }));
       }
       // Name-search keywords index (directory option (c)): a SEPARATE
       // merge write, never folded into the create payload - the user-create
@@ -514,12 +535,15 @@ function GoogleOnlyAuthFormContent() {
       // in could deny the whole signup write. Owner updates have no such
       // list. Non-blocking, mirroring the role backfill in this handler.
       if (!existingSnap.exists()) {
-        try {
-          await setDoc(userDocRef, { nameSearchKeywords: buildNameSearchKeywords(user.displayName) }, { merge: true });
-        } catch (kwError) {
-          console.error('[auth] Name-search index write failed (non-blocking):', kwError);
-        }
+        sideWrites.push((async () => {
+          try {
+            await setDoc(userDocRef, { nameSearchKeywords: buildNameSearchKeywords(user.displayName) }, { merge: true });
+          } catch (kwError) {
+            console.error('[auth] Name-search index write failed (non-blocking):', kwError);
+          }
+        })());
       }
+      await Promise.all(sideWrites);
     } catch (error) {
       console.error('[auth] Error creating user profile:', error);
       pendingCredentialRef.current = userCredential;

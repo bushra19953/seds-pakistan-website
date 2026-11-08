@@ -101,8 +101,13 @@ async function loadTaskDocs(db: any, userId: string): Promise<any[]> {
   if (seamS1 && seamS2) {
     rawDocs = [...seamS1.docs, ...seamS2.docs];
   } else {
-    const s1 = await db.collection('tasks').where('assigneeId', '==', userId).limit(100).get();
-    const s2 = await db.collection('tasks').where('assigneeIds', 'array-contains', userId).limit(100).get();
+    // Both legs always run (the result is their union, deduplicated
+    // below), so fetch them in parallel instead of two sequential
+    // round trips.
+    const [s1, s2] = await Promise.all([
+      db.collection('tasks').where('assigneeId', '==', userId).limit(100).get(),
+      db.collection('tasks').where('assigneeIds', 'array-contains', userId).limit(100).get(),
+    ]);
     rawDocs = [...s1.docs, ...s2.docs];
   }
   const seen = new Set<string>();

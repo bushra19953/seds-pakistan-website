@@ -44,6 +44,8 @@ import { isCustomRoleSlug, customRoleTitle } from "@/lib/custom-roles";
 import { getCustomRoleDefinitionSync } from "@/lib/custom-role-sync";
 import { useCustomRoleDefinitions } from "@/components/roles/custom-role-registry";
 import { normalizeToCanonical } from "@/lib/role-catalog";
+import { toDatetimeLocal } from "@/lib/datetime-local";
+export { toDatetimeLocal };
 
 /**
  * Display label for a step role, used for the assignee filter strip
@@ -195,20 +197,10 @@ type TaskFormProps = {
   editMode?: boolean;
 };
 
-// Helper: convert an ISO datetime to an input[type="datetime-local"] string in
-// the browser's local time. Exported for the admin tasks page so dialog
-// prefills render true local wall clock instead of raw UTC.
-export function toDatetimeLocal(iso?: string): string {
-  if (!iso || typeof iso !== 'string') return '';
-  try {
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return '';
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  } catch {
-    return '';
-  }
-}
+// toDatetimeLocal lives in @/lib/datetime-local (imported and re-exported
+// above) so its other consumers no longer pull this whole form module into
+// their route bundles. The re-export keeps existing imports from this file
+// working; new code should import it from the lib module directly.
 
 // Persisted task docs do not always match the form's contract. Docs written
 // outside the API (direct console writes, legacy shapes, synthetic proof

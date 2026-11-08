@@ -40,7 +40,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn, formatDate } from '@/lib/utils';
 import { permissionsConfig, Privilege, Role } from '@/config/permissions';
 import { USER_ROLES } from '@/lib/roles';
-import { toDatetimeLocal } from '@/components/admin/tasks/task-form';
+import { toDatetimeLocal } from '@/lib/datetime-local';
 import {
     ExpiryDateField,
     GrantExpiryBadge,

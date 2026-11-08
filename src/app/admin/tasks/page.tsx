@@ -121,7 +121,7 @@ async function urlToBase64(url: string): Promise<string | undefined> {
 
 // Type imports for TaskForm
 import type { TaskFormValues, WorkflowStep } from '@/components/admin/tasks/task-form';
-import { toDatetimeLocal } from '@/components/admin/tasks/task-form';
+import { toDatetimeLocal } from '@/lib/datetime-local';
 
 import { useAuthorization } from '@/hooks/use-authorization';
 

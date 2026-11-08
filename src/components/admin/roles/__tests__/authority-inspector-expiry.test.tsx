@@ -44,10 +44,10 @@ jest.mock('@/components/ui/select', () => {
   };
 });
 
-// The real task-form is a very heavy module; only its toDatetimeLocal
-// helper is consumed here. This double reproduces that helper exactly
-// (local wall-clock YYYY-MM-DDTHH:mm).
-jest.mock('@/components/admin/tasks/task-form', () => ({
+// Only the toDatetimeLocal helper is consumed here; it lives in the
+// @/lib/datetime-local leaf module. This double reproduces that helper
+// exactly (local wall-clock YYYY-MM-DDTHH:mm), keeping the suite hermetic.
+jest.mock('@/lib/datetime-local', () => ({
   toDatetimeLocal: (iso?: string): string => {
     if (!iso || typeof iso !== 'string') return '';
     const d = new Date(iso);

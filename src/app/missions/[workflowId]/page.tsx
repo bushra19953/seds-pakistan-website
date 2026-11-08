@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import { motion, useReducedMotion } from 'framer-motion';
 import { usePollingRefresh } from '@/hooks/use-polling-refresh';
 
 interface MissionStep {
@@ -65,6 +66,7 @@ function formatDate(iso: string | null): string {
  * /api/tasks); it has no direct Firestore reads either.
  */
 export default function PublicMissionPage() {
+  const reduceMotion = useReducedMotion();
   const params = useParams();
   const workflowId = params?.workflowId as string;
   const [mission, setMission] = useState<Mission | null>(null);
@@ -177,8 +179,11 @@ export default function PublicMissionPage() {
 
         {mission && !loading && (
           <>
-            {/* Mission title + progress */}
-            <div className="text-center mb-10">
+            {/* Mission title + progress. Pattern adapted from the 21st.dev
+                "Progress Tracker" component (flohoeller): an animated
+                progress header whose fill sweeps to the current value.
+                Gold is the page's single accent and lives only here. */}
+            <div className="text-center mb-10 rounded-3xl border border-white/10 bg-white/[0.03] backdrop-blur px-5 py-8 sm:px-10 sm:py-10 shadow-[0_20px_60px_-30px_rgba(0,0,0,0.8)]">
               <h1 className="text-3xl sm:text-4xl font-bold leading-tight mb-6">{mission.title}</h1>
               <div className="max-w-md mx-auto">
                 <div className="flex justify-between text-sm mb-2">
@@ -187,10 +192,19 @@ export default function PublicMissionPage() {
                     {mission.progressPercentage}%
                   </span>
                 </div>
-                <div className="h-3 rounded-full bg-muted overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all duration-1000 ${mission.isCompleted ? 'bg-green-400' : 'bg-gradient-to-r from-amber-500 to-amber-300'}`}
-                    style={{ width: `${mission.progressPercentage}%` }}
+                <div
+                  className="h-3 rounded-full bg-white/10 overflow-hidden"
+                  role="progressbar"
+                  aria-label="Mission Progress"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={mission.progressPercentage}
+                >
+                  <motion.div
+                    className={`h-full rounded-full ${mission.isCompleted ? 'bg-green-400' : 'bg-gradient-to-r from-amber-500 to-amber-300'}`}
+                    initial={{ width: 0 }}
+                    animate={{ width: `${mission.progressPercentage}%` }}
+                    transition={reduceMotion ? { duration: 0 } : { duration: 1.1, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
                   />
                 </div>
                 <div className="flex justify-between text-xs text-muted-foreground mt-2">
@@ -210,18 +224,60 @@ export default function PublicMissionPage() {
               {mission.steps.map((step, i) => {
                 const st = STATUS_STYLES[step.status] || STATUS_STYLES.pending;
                 const isDone = step.status === 'completed';
+                const isCurrent = step.status === 'in-progress';
+                const isLast = i === mission.steps.length - 1;
                 return (
-                  <div
+                  <motion.div
                     key={i}
-                    className={`rounded-2xl border p-5 sm:p-6 backdrop-blur transition ${
+                    initial={reduceMotion ? false : { opacity: 0, y: 14 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={reduceMotion ? { duration: 0 } : { duration: 0.45, delay: Math.min(i * 0.06, 0.3), ease: 'easeOut' }}
+                    className={`rounded-2xl border p-5 sm:p-6 backdrop-blur ${
                       isDone ? 'border-green-500/30 bg-green-500/5' : 'border-border bg-muted'
                     }`}
                   >
                     <div className="flex items-start gap-4">
-                      <div className={`mt-1 h-10 w-10 shrink-0 rounded-full flex items-center justify-center font-bold text-lg border ${
-                        isDone ? 'bg-green-500/20 border-green-500/40 text-green-300' : 'bg-muted border-white/15 text-muted-foreground'
-                      }`}>
-                        {isDone ? '✓' : String(i + 1).padStart(2, '0')}
+                      {/* Node column: the steps are a real sequence, so a
+                          rail links each node to the next (Progress Tracker
+                          pattern). The completed check draws itself in;
+                          the current step carries the only moving ring.
+                          The rail is absolutely positioned so it runs past
+                          the card's bottom padding and the inter-card gap
+                          and lands on the next node, instead of stopping
+                          at this card's edge. */}
+                      <div className="relative flex flex-col items-center self-stretch shrink-0">
+                        <div className={`relative mt-1 h-10 w-10 shrink-0 rounded-full flex items-center justify-center font-bold text-lg border ${
+                          isDone ? 'bg-green-500/20 border-green-500/40 text-green-300' : 'bg-muted border-white/15 text-muted-foreground'
+                        }`}>
+                          {isCurrent && !reduceMotion && (
+                            <motion.span
+                              aria-hidden
+                              className="absolute inset-0 rounded-full border border-amber-400/60"
+                              animate={{ scale: [1, 1.4], opacity: [0.7, 0] }}
+                              transition={{ duration: 1.8, repeat: Infinity, ease: 'easeOut' }}
+                            />
+                          )}
+                          {isDone ? (
+                            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" aria-hidden>
+                              <motion.path
+                                d="M5 12.5l4.5 4.5L19 7.5"
+                                stroke="currentColor"
+                                strokeWidth={2.5}
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                initial={{ pathLength: reduceMotion ? 1 : 0 }}
+                                animate={{ pathLength: 1 }}
+                                transition={{ duration: reduceMotion ? 0 : 0.45, delay: 0.25 + Math.min(i * 0.06, 0.3), ease: 'easeOut' }}
+                              />
+                            </svg>
+                          ) : String(i + 1).padStart(2, '0')}
+                        </div>
+                        {!isLast && (
+                          <span
+                            aria-hidden
+                            className={`absolute left-1/2 -translate-x-1/2 top-[52px] -bottom-[40px] sm:-bottom-[44px] w-px ${isDone ? 'bg-green-500/40' : 'bg-white/10'}`}
+                          />
+                        )}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex flex-wrap items-center gap-2 mb-2">
@@ -259,7 +315,7 @@ export default function PublicMissionPage() {
                         </div>
                       </div>
                     </div>
-                  </div>
+                  </motion.div>
                 );
               })}
             </div>

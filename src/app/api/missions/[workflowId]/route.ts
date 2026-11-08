@@ -147,11 +147,31 @@ export async function GET(
     const uniqueAssigneeIds = Array.from(new Set(tasks.flatMap(t => stepAssigneeIds(t))));
     const assigneeInfo: Record<string, { name: string; chapterName?: string }> = {};
 
+    // Chapter names for assignees AND for the workflow-level header
+    // share one cache: the workflow's chapter is almost always one of
+    // the assignees' chapters, so the header lookup below must not
+    // re-read a chapter this block already fetched.
+    const chapterCache: Record<string, string> = {};
+
     if (uniqueAssigneeIds.length > 0) {
       const userSnaps = await Promise.all(
         uniqueAssigneeIds.map(uid => userSnapVia(uid))
       );
-      const chapterCache: Record<string, string> = {};
+      // Fetch every distinct assignee chapter in parallel up front
+      // instead of one awaited read at a time inside the loop below.
+      const wantedChapterIds = Array.from(new Set(
+        userSnaps
+          .filter(doc => doc.exists)
+          .map(doc => (doc.data() as any)?.chapterId)
+          .filter(Boolean)
+          .map(String)
+      ));
+      await Promise.all(wantedChapterIds.map(async (cid) => {
+        try {
+          const chapSnap = await chapterSnapVia(cid);
+          if (chapSnap.exists) chapterCache[cid] = chapSnap.data()?.name || '';
+        } catch { /* ignore */ }
+      }));
       for (const doc of userSnaps) {
         if (!doc.exists) {
           assigneeInfo[doc.id] = { name: 'SEDS Member' };
@@ -161,15 +181,7 @@ export async function GET(
         let chapterName: string | undefined;
         const userChapterId = userData?.chapterId;
         if (userChapterId) {
-          if (!chapterCache[userChapterId]) {
-            try {
-              const chapSnap = await chapterSnapVia(userChapterId);
-              if (chapSnap.exists) {
-                chapterCache[userChapterId] = chapSnap.data()?.name || '';
-              }
-            } catch { /* ignore */ }
-          }
-          chapterName = chapterCache[userChapterId] || undefined;
+          chapterName = chapterCache[String(userChapterId)] || undefined;
         }
         assigneeInfo[doc.id] = {
           name: userData?.displayName || 'SEDS Member',
@@ -178,14 +190,20 @@ export async function GET(
       }
     }
 
-    // Workflow-level chapter name
+    // Workflow-level chapter name (served from the shared cache when
+    // an assignee already pulled this chapter in)
     let chapterName: string | null = null;
     const firstTaskWithChapter = tasks.find(t => !!t.chapterId);
     if (firstTaskWithChapter?.chapterId) {
-      try {
-        const chapSnap = await chapterSnapVia(firstTaskWithChapter.chapterId);
-        if (chapSnap.exists) chapterName = chapSnap.data()?.name || null;
-      } catch { /* ignore */ }
+      const workflowChapterId = String(firstTaskWithChapter.chapterId);
+      if (workflowChapterId in chapterCache) {
+        chapterName = chapterCache[workflowChapterId] || null;
+      } else {
+        try {
+          const chapSnap = await chapterSnapVia(firstTaskWithChapter.chapterId);
+          if (chapSnap.exists) chapterName = chapSnap.data()?.name || null;
+        } catch { /* ignore */ }
+      }
     }
 
     const firstTask = tasks[0] as any;

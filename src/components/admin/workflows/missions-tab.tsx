@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useUser, useFirestore } from '@/firebase';
 import { getCustomRoleDefinitions } from '@/lib/role-definitions';
 import { isCustomRoleSlug } from '@/lib/custom-roles';
@@ -257,7 +257,10 @@ function WorkflowCard({
     if (stepsLoaded || !user) return;
     setStepsLoading(true);
     try {
-      const token = await user.getIdToken(true);
+      // No forced refresh: getIdToken() returns the cached token and
+      // the SDK refreshes it itself once it has expired; forcing a
+      // refresh added a securetoken round trip to every expansion.
+      const token = await user.getIdToken();
       const res = await fetch(`/api/workflows?workflowId=${encodeURIComponent(workflow.id)}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -602,7 +605,9 @@ export function MissionsTab() {
       setLoading(true);
       setErrorMessage('');
       if (!user) throw new Error('User not authenticated');
-      const idToken = await user.getIdToken(true);
+      // Cached token (SDK auto-refreshes on expiry) — a forced
+      // refresh cost a network round trip on every list load.
+      const idToken = await user.getIdToken();
       const response = await fetch('/api/workflows', {
         headers: { Authorization: `Bearer ${idToken}` },
       });
@@ -644,7 +649,10 @@ export function MissionsTab() {
     setWorkflows((prev) => prev.map((w) => (w.id === id ? { ...w, deadline: deadlineIso } : w)));
   };
 
-  const filteredWorkflows = (() => {
+  // Memoised: both derivations re-ran on every render (toast state,
+  // expansion toggles, …) even though they depend only on the list
+  // and the filter/sort controls.
+  const filteredWorkflows = useMemo(() => {
     let list = [...workflows];
     switch (filterStatus) {
       case 'active':
@@ -665,14 +673,14 @@ export function MissionsTab() {
       }
     });
     return list;
-  })();
+  }, [workflows, filterStatus, sortBy]);
 
-  const analytics = {
+  const analytics = useMemo(() => ({
     total: workflows.length,
     completed: workflows.filter(w => w.isCompleted).length,
     active: workflows.filter(w => !w.isCompleted && w.progressPercentage > 0).length,
     overdue: workflows.filter(w => w.overdueSteps && w.overdueSteps > 0).length,
-  };
+  }), [workflows]);
 
   if (userLoading || authLoading) {
     return (

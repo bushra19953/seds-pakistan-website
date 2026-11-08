@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
+import { motion, useReducedMotion } from 'framer-motion';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useUserContext } from '@/firebase/user-provider';
@@ -75,6 +76,7 @@ export function ProfileHub({ uid }: { uid: string }) {
   // Populate the custom-role registry so role labels resolve custom
   // definition titles on this surface (consumers Surface 5).
   useCustomRoleDefinitions();
+  const reduceMotion = useReducedMotion();
   const router = useRouter();
   const { user: currentUser, isLoading: userLoading } = useUserContext();
   // Depend on the uid primitive, not the User object, in fetch effects
@@ -202,13 +204,23 @@ export function ProfileHub({ uid }: { uid: string }) {
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-7xl space-y-6">
-      <Card className="border-border bg-background/70 backdrop-blur-md overflow-hidden">
-        <CardContent className="pt-6">
+      <motion.div
+        initial={reduceMotion ? false : { opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, ease: 'easeOut' }}
+      >
+      <Card className="relative border-border bg-background/70 backdrop-blur-md overflow-hidden">
+        {/* Soft internal glow, adapted from the 21st.dev Profile Card pattern */}
+        <div aria-hidden className="pointer-events-none absolute -top-24 -right-24 h-48 w-48 rounded-full bg-primary/10 blur-[80px]" />
+        <div aria-hidden className="pointer-events-none absolute -bottom-24 -left-24 h-48 w-48 rounded-full bg-primary/5 blur-[80px]" />
+        <CardContent className="relative pt-6">
           <div className="flex flex-col md:flex-row md:items-center gap-5">
-            <Avatar className="h-20 w-20">
-              <AvatarImage src={profile.photoURL || undefined} alt={profile.displayName || 'Member'} />
-              <AvatarFallback className="text-xl font-bold">{initials}</AvatarFallback>
-            </Avatar>
+            <div className="shrink-0 self-start rounded-full bg-gradient-to-tr from-white/25 via-white/10 to-transparent p-[3px] ring-1 ring-white/10 shadow-lg shadow-black/20">
+              <Avatar className="h-20 w-20 md:h-24 md:w-24 border-2 border-background">
+                <AvatarImage src={profile.photoURL || undefined} alt={profile.displayName || 'Member'} />
+                <AvatarFallback className="text-xl md:text-2xl font-bold">{initials}</AvatarFallback>
+              </Avatar>
+            </div>
             <div className="flex-1 min-w-0">
               <h1 className="text-2xl md:text-3xl font-heading font-bold text-foreground truncate">
                 {profile.displayName || 'Member'}
@@ -251,7 +263,7 @@ export function ProfileHub({ uid }: { uid: string }) {
             <div className="shrink-0 flex flex-col gap-2">
               {optedIn && username ? (
                 <Link href={`/u/${username}`}>
-                  <Button variant="outline" size="sm" className="gap-1.5 w-full">
+                  <Button size="sm" className="gap-1.5 w-full bg-amber-400 font-semibold text-neutral-950 hover:bg-amber-300">
                     <ExternalLink className="h-3.5 w-3.5" /> Public portfolio
                   </Button>
                 </Link>
@@ -268,8 +280,21 @@ export function ProfileHub({ uid }: { uid: string }) {
               <OfficeObligationsLink />
             </div>
           </div>
+          <dl className="mt-6 grid grid-cols-3 divide-x divide-border/60 border-t border-border/60">
+            {[
+              { label: 'Badges', value: badges.length },
+              { label: 'Skills', value: skills.length },
+              { label: 'Missions', value: data.missionTimeline.length },
+            ].map((s) => (
+              <div key={s.label} className="flex flex-col items-center gap-0.5 py-4 transition-colors hover:bg-white/5">
+                <dd className="text-lg font-heading font-bold leading-none text-foreground">{s.value}</dd>
+                <dt className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">{s.label}</dt>
+              </div>
+            ))}
+          </dl>
         </CardContent>
       </Card>
+      </motion.div>
 
       <Tabs defaultValue="overview" className="w-full">
         <TabsList className="w-full justify-start bg-background/80 border border-border p-1.5 h-auto rounded-xl backdrop-blur-md mb-6 gap-2 flex-wrap">

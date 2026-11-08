@@ -68,7 +68,10 @@ describe('B1 — user-provider founder branch is deleted (source pins)', () => {
     expect(source).not.toMatch(/fetchAndInjectOverrides\(\s*['"]/);
     // ...and the variable-driven calls of the normal path are still there.
     expect(source).toMatch(/fetchAndInjectOverrides\(claimedRole\)/);
-    expect(source).toMatch(/fetchAndInjectOverrides\(newRole\)/);
+    // The snapshot call carries the change-detection option since the
+    // admin-shell perf pass (skipIfUnchanged); the pin asserts the
+    // variable slug AND that option, so dropping either fails here.
+    expect(source).toMatch(/fetchAndInjectOverrides\(newRole, \{ skipIfUnchanged: true \}\)/);
   });
 });
 

@@ -216,20 +216,30 @@ export default function Header() {
         className={`container flex items-center justify-between px-4 transition-[height] duration-300 motion-reduce:transition-none ${scrolled ? 'h-14 md:h-16' : 'h-16 md:h-20'
           }`}
       >
-        {/* Group 1: Logo (Far Left) */}
-        <div className="flex items-center justify-start shrink-0">
-          <Link href="/" prefetch className="flex items-center">
+        {/* Group 1: Logo (Far Left). Sizing must NOT rely on utilities on
+            the <img>: OptimizedLogo hardcodes style width/height 'auto'
+            inline, which outranks className utilities, so the img renders
+            at its intrinsic 667x374 unless the caller overrides the style
+            (later {...props} spread wins) inside a definite-width box —
+            the same pattern the footer uses. Width-led box for the 1.78:1
+            wordmark: 80px/100px wide renders ~45px/~56px tall, condensed
+            72px/80px renders ~40px/~45px. */}
+        <div
+          className={`flex items-center justify-start shrink-0 transition-[width] duration-300 motion-reduce:transition-none ${scrolled ? 'w-[72px] md:w-[80px]' : 'w-[80px] md:w-[100px]'
+            }`}
+        >
+          <Link href="/" prefetch className="flex w-full items-center">
             <OptimizedLogo
               src="/assets/logo.png"
               webpSrc="/assets/logo.webp"
               avifSrc="/assets/logo.avif"
               alt="SEDS Logo"
               width={128}
-              height={128}
+              height={72}
               priority
-              sizes="(max-width: 768px) 44px, 56px"
-              className={`object-contain transition-all duration-300 motion-reduce:transition-none ${scrolled ? 'h-10 w-10 md:h-11 md:w-11' : 'h-11 w-11 md:h-14 md:w-14'
-                }`}
+              sizes="(max-width: 768px) 80px, 100px"
+              className="object-contain"
+              style={{ width: '100%', height: 'auto' }}
             />
           </Link>
         </div>

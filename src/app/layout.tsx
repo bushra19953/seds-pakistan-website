@@ -101,10 +101,42 @@ export const metadata: Metadata = {
     description: `The digital hub for ${LEGAL_NAME}.`,
     images: ['https://sedspakistan.live/images/og-image.jpg'],
     creator: '@SEDSPakistan'
-  },
-  verification: {
-    google: 'your-google-verification-code'
   }
+};
+
+// Structured data so search engines and AI assistants can identify the
+// organisation unambiguously (name, home, official profiles, key site).
+const ORGANIZATION_JSON_LD = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'Organization',
+      '@id': 'https://sedspakistan.live/#organization',
+      name: 'SEDS Pakistan',
+      legalName: LEGAL_NAME,
+      url: 'https://sedspakistan.live',
+      logo: 'https://sedspakistan.live/assets/logo.png',
+      description: `The digital hub for ${LEGAL_NAME}. Join us in advancing space science and technology education.`,
+      address: {
+        '@type': 'PostalAddress',
+        streetAddress: 'Institute of Space Technology',
+        addressLocality: 'Islamabad',
+        addressCountry: 'PK',
+      },
+      sameAs: [
+        'https://twitter.com/sedspakistan',
+        'https://www.linkedin.com/company/seds-pakistan/',
+        'https://instagram.com/seds_pakistanofficial',
+      ],
+    },
+    {
+      '@type': 'WebSite',
+      '@id': 'https://sedspakistan.live/#website',
+      url: 'https://sedspakistan.live',
+      name: 'SEDS Pakistan',
+      publisher: { '@id': 'https://sedspakistan.live/#organization' },
+    },
+  ],
 };
 
 export default function RootLayout({
@@ -121,6 +153,10 @@ export default function RootLayout({
         <link rel="preconnect" href="https://firestore.googleapis.com" />
         <link rel="dns-prefetch" href="https://firestore.googleapis.com" />
         <link rel="dns-prefetch" href="https://apis.google.com" />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(ORGANIZATION_JSON_LD) }}
+        />
       </head>
       <body className="font-body antialiased overflow-x-hidden" style={{ touchAction: 'pan-y' }}>
         <AppClientShell>

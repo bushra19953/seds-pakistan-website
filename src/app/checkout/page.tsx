@@ -25,11 +25,11 @@ import {
     Loader2, CheckCircle2, ArrowRight, CreditCard, AlertTriangle,
     FileText, Sparkles, Ticket,
     Clock, User, ChevronRight, PartyPopper, Copy,
-    Check, ShieldCheck, Zap, Star
+    Check, ShieldCheck, Zap
 } from 'lucide-react';
 import { fetchOwnContact } from '@/lib/client/user-contact';
 import { Product } from '@/types/store';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import type Confetti from 'canvas-confetti';
 import ReceiptUploader from '@/components/checkout/receipt-uploader';
 import type { DriveUploadMeta } from '@/lib/uploads/client';
@@ -108,6 +108,7 @@ const STEPS = [
 ];
 
 function ProgressStepper({ current }: { current: 0 | 1 | 2 }) {
+    const reduceMotion = useReducedMotion();
     return (
         <div className="flex items-center justify-center gap-0 mb-10" role="list" aria-label="Checkout progress">
             {STEPS.map((step, i) => {
@@ -117,8 +118,8 @@ function ProgressStepper({ current }: { current: 0 | 1 | 2 }) {
                     <div key={step.label} className="flex items-center" role="listitem">
                         <div className="flex flex-col items-center gap-1.5">
                             <motion.div
-                                animate={active ? { scale: [1, 1.12, 1], boxShadow: ['0 0 0 0 rgba(var(--primary-rgb),0)', '0 0 0 8px rgba(var(--primary-rgb),0.15)', '0 0 0 0 rgba(var(--primary-rgb),0)'] } : {}}
-                                transition={{ duration: 1.8, repeat: active ? Infinity : 0, ease: 'easeInOut' }}
+                                animate={active && !reduceMotion ? { scale: [1, 1.12, 1], boxShadow: ['0 0 0 0 rgba(var(--primary-rgb),0)', '0 0 0 8px rgba(var(--primary-rgb),0.15)', '0 0 0 0 rgba(var(--primary-rgb),0)'] } : {}}
+                                transition={{ duration: 1.8, repeat: active && !reduceMotion ? Infinity : 0, ease: 'easeInOut' }}
                                 className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold border-2 transition-all duration-500
                                     ${done ? 'bg-green-500 border-green-500 text-foreground shadow-[0_0_16px_rgba(34,197,94,0.5)]' :
                                         active ? 'bg-primary border-primary text-foreground shadow-[0_0_20px_hsl(var(--primary)/0.65)]' :
@@ -193,6 +194,7 @@ function SuccessScreen({ productName, orderId, total, currency, isEvent, isVendo
     onGoToOrders: () => void;
     onGoHome: () => void;
 }) {
+    const reduceMotion = useReducedMotion();
     const [countdown, setCountdown] = useState(12);
     const [copied, setCopied] = useState(false);
     const [showTicketPreview, setShowTicketPreview] = useState(false);
@@ -261,17 +263,17 @@ function SuccessScreen({ productName, orderId, total, currency, isEvent, isVendo
             {/* Animated background radial glows */}
             <div className="absolute inset-0 pointer-events-none overflow-hidden">
                 <motion.div
-                    animate={{ scale: [1, 1.15, 1], opacity: [0.15, 0.3, 0.15] }}
+                    animate={reduceMotion ? {} : { scale: [1, 1.15, 1], opacity: [0.15, 0.3, 0.15] }}
                     transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut' }}
                     className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] bg-green-500/20 rounded-full blur-[140px]"
                 />
                 <motion.div
-                    animate={{ scale: [1.1, 1, 1.1], opacity: [0.1, 0.2, 0.1] }}
+                    animate={reduceMotion ? {} : { scale: [1.1, 1, 1.1], opacity: [0.1, 0.2, 0.1] }}
                     transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut', delay: 0.5 }}
                     className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] bg-primary/20 rounded-full blur-[90px]"
                 />
                 {/* Floating star particles */}
-                {[...Array(8)].map((_, i) => (
+                {!reduceMotion && [...Array(8)].map((_, i) => (
                     <motion.div
                         key={i}
                         initial={{ opacity: 0, scale: 0, x: '50%', y: '50%' }}
@@ -293,7 +295,7 @@ function SuccessScreen({ productName, orderId, total, currency, isEvent, isVendo
             {/* ── Animated pulsing success ring ── */}
             <div className="relative mb-8">
                 {/* Outer pulse rings */}
-                {[0, 1, 2].map(i => (
+                {!reduceMotion && [0, 1, 2].map(i => (
                     <motion.div
                         key={i}
                         className="absolute inset-0 rounded-full border-2 border-green-400/30"
@@ -553,6 +555,7 @@ function CheckoutContent() {
     const searchParams = useSearchParams();
     const router = useRouter();
     const { user } = useUser();
+    const reduceMotion = useReducedMotion();
     const { toast } = useToast();
     const { settings, loading: settingsLoading } = useSiteSettings();
 
@@ -1040,21 +1043,21 @@ function CheckoutContent() {
                                             <div className="space-y-2 mt-4 pt-4 border-t border-border text-sm">
                                                 <div className="flex justify-between items-center">
                                                     <span className="text-muted-foreground">Subtotal</span>
-                                                    <span className="font-semibold">PKR {vendorSubtotalPkr.toLocaleString()}</span>
+                                                    <span className="font-semibold tabular-nums">PKR {vendorSubtotalPkr.toLocaleString()}</span>
                                                 </div>
                                                 <div className="flex justify-between items-center">
                                                     <span className="text-muted-foreground">Delivery</span>
-                                                    <span className="font-semibold">PKR {vendorDeliveryPkr.toLocaleString()}</span>
+                                                    <span className="font-semibold tabular-nums">PKR {vendorDeliveryPkr.toLocaleString()}</span>
                                                 </div>
                                                 {creditAppliedPkr > 0 && (
                                                     <div className="flex justify-between items-center">
                                                         <span className="text-muted-foreground">Store credit</span>
-                                                        <span className="font-semibold text-green-400">-PKR {creditAppliedPkr.toLocaleString()}</span>
+                                                        <span className="font-semibold tabular-nums text-green-400">-PKR {creditAppliedPkr.toLocaleString()}</span>
                                                     </div>
                                                 )}
-                                                <div className="flex justify-between items-center pt-2 border-t border-border">
+                                                <div className="flex justify-between items-center pt-3 mt-1 border-t border-dashed border-border">
                                                     <span className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Total Due</span>
-                                                    <span className="text-2xl font-extrabold text-foreground tracking-tight">
+                                                    <span className="text-2xl font-extrabold text-foreground tracking-tight tabular-nums">
                                                         PKR {transferDuePkr.toLocaleString()}
                                                     </span>
                                                 </div>
@@ -1063,9 +1066,9 @@ function CheckoutContent() {
                                                 </p>
                                             </div>
                                         ) : (
-                                            <div className="flex justify-between items-center mt-4 pt-4 border-t border-border">
+                                            <div className="flex justify-between items-center mt-4 pt-4 border-t border-dashed border-border">
                                                 <span className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Total Due</span>
-                                                <span className="text-2xl font-extrabold text-foreground tracking-tight">
+                                                <span className="text-2xl font-extrabold text-foreground tracking-tight tabular-nums">
                                                     {product?.currency} {parseFloat((product?.price || 0).toString()).toLocaleString()}
                                                 </span>
                                             </div>
@@ -1153,32 +1156,56 @@ function CheckoutContent() {
                                             {/* Method selector tabs — only shown when >1 method */}
                                             {enabledMethods.length > 1 && (
                                                 <div className="space-y-2">
-                                                    <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                                                    <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider" id="payment-method-label">
                                                         Select Payment Method
                                                     </p>
-                                                    <div className="flex flex-wrap gap-2">
-                                                        {enabledMethods.map(m => (
-                                                            <button
-                                                                key={m.key}
-                                                                type="button"
-                                                                onClick={() => setSelectedMethodKey(m.key)}
-                                                                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all duration-200
-                                                                    ${selectedMethodKey === m.key
-                                                                        ? 'bg-primary/20 border-primary/50 text-primary shadow-[0_0_12px_hsl(var(--primary)/0.2)]'
-                                                                        : 'bg-muted border-border text-muted-foreground hover:bg-muted'}`}
-                                                            >
-                                                                {m.iconUrl ? (
-                                                                    <Image src={m.iconUrl} alt={m.name} width={16} height={16} className="w-4 h-4 object-contain rounded-sm" onError={e => (e.currentTarget.style.display = 'none')} />
-                                                                ) : <CreditCard className="w-3.5 h-3.5" />}
-                                                                {m.name}
-                                                            </button>
-                                                        ))}
+                                                    {/* Radio-tile selector, adapted from the 21st.dev
+                                                        "Payment Methods" pattern (@f0rextasy): each
+                                                        method is a full tile with icon, name and a
+                                                        radio affordance; the selected tile carries
+                                                        the theme border and a filled radio dot. */}
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2" role="radiogroup" aria-labelledby="payment-method-label">
+                                                        {enabledMethods.map(m => {
+                                                            const isSelected = selectedMethodKey === m.key;
+                                                            return (
+                                                                <button
+                                                                    key={m.key}
+                                                                    type="button"
+                                                                    role="radio"
+                                                                    aria-checked={isSelected}
+                                                                    onClick={() => setSelectedMethodKey(m.key)}
+                                                                    className={`flex items-center gap-3 px-3.5 py-3 rounded-xl border text-left transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60
+                                                                        ${isSelected
+                                                                            ? 'bg-primary/10 border-primary/60'
+                                                                            : 'bg-background/40 border-border hover:border-muted-foreground/40 hover:bg-muted/40'}`}
+                                                                >
+                                                                    <span className="w-8 h-8 rounded-lg bg-muted/60 border border-border flex items-center justify-center shrink-0">
+                                                                        {m.iconUrl ? (
+                                                                            <Image src={m.iconUrl} alt="" width={18} height={18} className="w-[18px] h-[18px] object-contain rounded-sm" onError={e => (e.currentTarget.style.display = 'none')} />
+                                                                        ) : <CreditCard className="w-4 h-4 text-muted-foreground" />}
+                                                                    </span>
+                                                                    <span className={`flex-1 text-sm font-semibold leading-tight ${isSelected ? 'text-foreground' : 'text-muted-foreground'}`}>{m.name}</span>
+                                                                    <span className={`w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${isSelected ? 'border-primary' : 'border-muted-foreground/50'}`} aria-hidden="true">
+                                                                        {isSelected && (reduceMotion ? (
+                                                                            <span className="w-2 h-2 rounded-full bg-primary" />
+                                                                        ) : (
+                                                                            <motion.span
+                                                                                initial={{ scale: 0 }}
+                                                                                animate={{ scale: 1 }}
+                                                                                transition={{ type: 'spring', stiffness: 500, damping: 22 }}
+                                                                                className="w-2 h-2 rounded-full bg-primary"
+                                                                            />
+                                                                        ))}
+                                                                    </span>
+                                                                </button>
+                                                            );
+                                                        })}
                                                     </div>
                                                 </div>
                                             )}
                                             {/* Instructions for selected method */}
                                             {selectedMethod && (
-                                                <div className="p-4 bg-background/50 rounded-xl space-y-2 border border-primary/20 shadow-sm">
+                                                <div className="p-4 bg-background/50 rounded-xl space-y-2 border border-border shadow-sm">
                                                     <p className="font-bold text-foreground flex items-center gap-2 text-sm">
                                                         {selectedMethod.iconUrl ? (
                                                             <Image src={selectedMethod.iconUrl} alt={selectedMethod.name} width={20} height={20} className="w-5 h-5 object-contain rounded-sm" onError={e => (e.currentTarget.style.display = 'none')} />
@@ -1278,8 +1305,8 @@ function CheckoutContent() {
                                         Your data is securely stored and never shared.
                                     </p>
                                     <motion.div
-                                        animate={isReadyToSubmit && !isSubmitting ? {
-                                            boxShadow: ['0 0 0 0 hsl(var(--primary)/0)', '0 0 20px 4px hsl(var(--primary)/0.4)', '0 0 0 0 hsl(var(--primary)/0)']
+                                        animate={isReadyToSubmit && !isSubmitting && !reduceMotion ? {
+                                            boxShadow: ['0 0 0 0 rgba(251,191,36,0)', '0 0 20px 4px rgba(251,191,36,0.35)', '0 0 0 0 rgba(251,191,36,0)']
                                         } : {}}
                                         transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
                                         className="rounded-lg w-full sm:w-auto"
@@ -1290,7 +1317,7 @@ function CheckoutContent() {
                                             disabled={isSubmitting || !receipt || vendorPaymentBlocked}
                                             className={`w-full sm:w-auto min-w-[200px] font-bold h-12 transition-all duration-300
                                                 ${isReadyToSubmit && !isSubmitting
-                                                    ? 'bg-gradient-to-r from-primary to-violet-600 hover:from-primary/90 hover:to-violet-600/90 shadow-[0_0_24px_hsl(var(--primary)/0.35)]'
+                                                    ? 'bg-amber-400 hover:bg-amber-300 text-black shadow-[0_8px_30px_rgba(251,191,36,0.35)]'
                                                     : 'opacity-60 cursor-not-allowed'}`}
                                         >
                                             {isSubmitting ? (
@@ -1300,7 +1327,7 @@ function CheckoutContent() {
                                                 </span>
                                             ) : (
                                                 <span className="flex items-center gap-2">
-                                                    <Star className="h-4 w-4" />
+                                                    <ShieldCheck className="h-4 w-4" />
                                                     Complete Payment
                                                     <ArrowRight className="h-4 w-4" />
                                                 </span>

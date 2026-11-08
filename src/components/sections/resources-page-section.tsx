@@ -74,7 +74,7 @@ export default function ResourcesPageSection() {
           Resources & Collaborations
         </h1>
         <p className="text-xl text-muted-foreground font-body max-w-3xl mx-auto">
-          Access valuable space resources and explore our partnerships with leading organizations.
+          Access valuable space resources and explore our partnerships with leading organisations.
         </p>
       </div>
 
@@ -155,7 +155,7 @@ export default function ResourcesPageSection() {
         <div className="text-center mb-12">
           <h2 className="text-4xl md:text-5xl font-bold mb-4 text-glow">Our Partners</h2>
           <p className="max-w-2xl mx-auto text-muted-foreground font-body text-lg">
-            Collaborating with leading organizations to advance space exploration in Pakistan.
+            Collaborating with leading organisations to advance space exploration in Pakistan.
           </p>
         </div>
 

@@ -7,7 +7,7 @@ const newsItems = [
   { id: 2, text: "NASA confirms liquid water on Mars, opening new possibilities for future missions." },
   { id: 3, text: "SEDS Pakistan to host National Space Hackathon in collaboration with industry leaders." },
   { id: 4, text: "SpaceX successfully launches another batch of Starlink satellites." },
-  { id: 5, text: "Our CubeSat team finalizes the design for the SEDS-SAT-1 mission." },
+  { id: 5, text: "Our CubeSat team finalises the design for the SEDS-SAT-1 mission." },
   { id: 6, text: "James Webb Telescope discovers most distant galaxy ever observed." },
 ];
 

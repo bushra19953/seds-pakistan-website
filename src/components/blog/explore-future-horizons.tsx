@@ -46,10 +46,10 @@ export function ExploreFutureHorizons({
       keyMilestones: [
         'Habitat module prototyping',
         'Life support system testing',
-        'Resource utilization trials',
+        'Resource utilisation trials',
         'Colony establishment'
       ],
-      technologies: ['Closed-loop life support', 'In-situ resource utilization', 'Radiation shielding'],
+      technologies: ['Closed-loop life support', 'In-situ resource utilisation', 'Radiation shielding'],
       challenges: ['Radiation exposure', 'Resource scarcity', 'Psychological isolation']
     },
     {
@@ -63,7 +63,7 @@ export function ExploreFutureHorizons({
       keyMilestones: [
         'Quantum field manipulation',
         'Prototype engine testing',
-        'Efficiency optimization',
+        'Efficiency optimisation',
         'Commercial deployment'
       ],
       technologies: ['Quantum field theory', 'Exotic matter manipulation', 'Energy containment'],

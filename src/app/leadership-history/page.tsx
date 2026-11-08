@@ -277,7 +277,7 @@ export default function LeadershipHistoryPage() {
                 Leadership history will be displayed here once positions are recorded.
               </p>
               <p className="text-sm text-muted-foreground">
-                Check back later to see our organization&apos;s leadership timeline.
+                Check back later to see our organisation&apos;s leadership timeline.
               </p>
             </div>
           </div>
@@ -387,7 +387,7 @@ export default function LeadershipHistoryPage() {
             <div className="text-center mb-8">
               <h2 className="text-3xl font-bold mb-2">Complete Leadership Timeline</h2>
               <p className="text-muted-foreground">
-                Explore the complete history of leadership transitions and organizational growth
+                Explore the complete history of leadership transitions and organisational growth
               </p>
             </div>
 

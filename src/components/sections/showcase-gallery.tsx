@@ -129,7 +129,7 @@ export default function ShowcaseGallery() {
                 <div className="flex justify-center mt-16">
                     <Button asChild size="lg" className="h-14 px-10 rounded-2xl bg-slate-950/60 text-foreground border-2 border-primary/30 font-accent font-black tracking-[0.2em] uppercase hover:bg-primary hover:text-black hover:border-primary transition-all duration-500 group shadow-2xl relative overflow-hidden backdrop-blur-3xl">
                         <Link href="/projects" className="relative z-10 flex items-center gap-3">
-                            Explore Full Command Center
+                            Explore Full Command Centre
                             <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
                             <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
                         </Link>

@@ -43,7 +43,7 @@ const AboutPage = () => {
         </section>
       </div>
     `,
-    meta_description: 'Learn more about our organization and mission',
+    meta_description: 'Learn more about our organisation and mission',
   };
 
   const [pageContent, setPageContent] = useState<PageContent>(defaultContent);

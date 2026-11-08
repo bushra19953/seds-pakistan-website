@@ -471,7 +471,7 @@ function SuccessScreen({ productName, orderId, total, currency, isEvent, isVendo
                                 </div>
                                 <div className="flex-1 text-left">
                                     <p className="font-bold text-foreground text-sm leading-tight">{productName}</p>
-                                    <p className="text-muted-foreground text-xs mt-1">Your personalized e-ticket will appear in your profile once our team verifies your payment.</p>
+                                    <p className="text-muted-foreground text-xs mt-1">Your personalised e-ticket will appear in your profile once our team verifies your payment.</p>
                                     <div className="flex items-center gap-1.5 mt-2">
                                         {[...Array(5)].map((_, i) => (
                                             <motion.div
@@ -954,7 +954,7 @@ function CheckoutContent() {
                     <Sparkles className="w-3 h-3 mr-1.5" /> Secure Checkout
                 </Badge>
                 <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight text-foreground mb-2">
-                    Finalize Your Order
+                    Finalise Your Order
                 </h1>
                 <p className="text-muted-foreground max-w-xl mx-auto text-sm md:text-base">
                     Payments are manually verified by our finance team. Submit your receipt link below to lock in your spot.

@@ -57,7 +57,7 @@ export default function CommunityPage() {
       {/* Hero header — passes preload flag so PageHero injects <link rel="preload"> */}
       <PageHero
         title="Community Leaderboard"
-        subtitle="Recognize top contributors across chapters and projects."
+        subtitle="Recognise top contributors across chapters and projects."
         backgroundImageUrl={HERO_IMAGE}
         preload
       />

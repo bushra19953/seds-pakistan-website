@@ -25,7 +25,7 @@ import {
     Loader2, CheckCircle2, ArrowRight, CreditCard, AlertTriangle,
     FileText, Sparkles, Ticket,
     Clock, User, ChevronRight, PartyPopper, Copy,
-    Check, ShieldCheck, Zap, Star
+    Check, ShieldCheck, Zap
 } from 'lucide-react';
 import { fetchOwnContact } from '@/lib/client/user-contact';
 import { Product } from '@/types/store';
@@ -108,6 +108,7 @@ const STEPS = [
 ];
 
 function ProgressStepper({ current }: { current: 0 | 1 | 2 }) {
+    const reduceMotion = useReducedMotion();
     return (
         <div className="flex items-center justify-center gap-0 mb-10" role="list" aria-label="Checkout progress">
             {STEPS.map((step, i) => {
@@ -117,8 +118,8 @@ function ProgressStepper({ current }: { current: 0 | 1 | 2 }) {
                     <div key={step.label} className="flex items-center" role="listitem">
                         <div className="flex flex-col items-center gap-1.5">
                             <motion.div
-                                animate={active ? { scale: [1, 1.12, 1], boxShadow: ['0 0 0 0 rgba(var(--primary-rgb),0)', '0 0 0 8px rgba(var(--primary-rgb),0.15)', '0 0 0 0 rgba(var(--primary-rgb),0)'] } : {}}
-                                transition={{ duration: 1.8, repeat: active ? Infinity : 0, ease: 'easeInOut' }}
+                                animate={active && !reduceMotion ? { scale: [1, 1.12, 1], boxShadow: ['0 0 0 0 rgba(var(--primary-rgb),0)', '0 0 0 8px rgba(var(--primary-rgb),0.15)', '0 0 0 0 rgba(var(--primary-rgb),0)'] } : {}}
+                                transition={{ duration: 1.8, repeat: active && !reduceMotion ? Infinity : 0, ease: 'easeInOut' }}
                                 className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold border-2 transition-all duration-500
                                     ${done ? 'bg-green-500 border-green-500 text-foreground shadow-[0_0_16px_rgba(34,197,94,0.5)]' :
                                         active ? 'bg-primary border-primary text-foreground shadow-[0_0_20px_hsl(var(--primary)/0.65)]' :
@@ -193,6 +194,7 @@ function SuccessScreen({ productName, orderId, total, currency, isEvent, isVendo
     onGoToOrders: () => void;
     onGoHome: () => void;
 }) {
+    const reduceMotion = useReducedMotion();
     const [countdown, setCountdown] = useState(12);
     const [copied, setCopied] = useState(false);
     const [showTicketPreview, setShowTicketPreview] = useState(false);
@@ -261,17 +263,17 @@ function SuccessScreen({ productName, orderId, total, currency, isEvent, isVendo
             {/* Animated background radial glows */}
             <div className="absolute inset-0 pointer-events-none overflow-hidden">
                 <motion.div
-                    animate={{ scale: [1, 1.15, 1], opacity: [0.15, 0.3, 0.15] }}
+                    animate={reduceMotion ? {} : { scale: [1, 1.15, 1], opacity: [0.15, 0.3, 0.15] }}
                     transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut' }}
                     className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] bg-green-500/20 rounded-full blur-[140px]"
                 />
                 <motion.div
-                    animate={{ scale: [1.1, 1, 1.1], opacity: [0.1, 0.2, 0.1] }}
+                    animate={reduceMotion ? {} : { scale: [1.1, 1, 1.1], opacity: [0.1, 0.2, 0.1] }}
                     transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut', delay: 0.5 }}
                     className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] bg-primary/20 rounded-full blur-[90px]"
                 />
                 {/* Floating star particles */}
-                {[...Array(8)].map((_, i) => (
+                {!reduceMotion && [...Array(8)].map((_, i) => (
                     <motion.div
                         key={i}
                         initial={{ opacity: 0, scale: 0, x: '50%', y: '50%' }}
@@ -293,7 +295,7 @@ function SuccessScreen({ productName, orderId, total, currency, isEvent, isVendo
             {/* ── Animated pulsing success ring ── */}
             <div className="relative mb-8">
                 {/* Outer pulse rings */}
-                {[0, 1, 2].map(i => (
+                {!reduceMotion && [0, 1, 2].map(i => (
                     <motion.div
                         key={i}
                         className="absolute inset-0 rounded-full border-2 border-green-400/30"
@@ -1041,21 +1043,21 @@ function CheckoutContent() {
                                             <div className="space-y-2 mt-4 pt-4 border-t border-border text-sm">
                                                 <div className="flex justify-between items-center">
                                                     <span className="text-muted-foreground">Subtotal</span>
-                                                    <span className="font-semibold">PKR {vendorSubtotalPkr.toLocaleString()}</span>
+                                                    <span className="font-semibold tabular-nums">PKR {vendorSubtotalPkr.toLocaleString()}</span>
                                                 </div>
                                                 <div className="flex justify-between items-center">
                                                     <span className="text-muted-foreground">Delivery</span>
-                                                    <span className="font-semibold">PKR {vendorDeliveryPkr.toLocaleString()}</span>
+                                                    <span className="font-semibold tabular-nums">PKR {vendorDeliveryPkr.toLocaleString()}</span>
                                                 </div>
                                                 {creditAppliedPkr > 0 && (
                                                     <div className="flex justify-between items-center">
                                                         <span className="text-muted-foreground">Store credit</span>
-                                                        <span className="font-semibold text-green-400">-PKR {creditAppliedPkr.toLocaleString()}</span>
+                                                        <span className="font-semibold tabular-nums text-green-400">-PKR {creditAppliedPkr.toLocaleString()}</span>
                                                     </div>
                                                 )}
-                                                <div className="flex justify-between items-center pt-2 border-t border-border">
+                                                <div className="flex justify-between items-center pt-3 mt-1 border-t border-dashed border-border">
                                                     <span className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Total Due</span>
-                                                    <span className="text-2xl font-extrabold text-foreground tracking-tight">
+                                                    <span className="text-2xl font-extrabold text-foreground tracking-tight tabular-nums">
                                                         PKR {transferDuePkr.toLocaleString()}
                                                     </span>
                                                 </div>
@@ -1064,9 +1066,9 @@ function CheckoutContent() {
                                                 </p>
                                             </div>
                                         ) : (
-                                            <div className="flex justify-between items-center mt-4 pt-4 border-t border-border">
+                                            <div className="flex justify-between items-center mt-4 pt-4 border-t border-dashed border-border">
                                                 <span className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Total Due</span>
-                                                <span className="text-2xl font-extrabold text-foreground tracking-tight">
+                                                <span className="text-2xl font-extrabold text-foreground tracking-tight tabular-nums">
                                                     {product?.currency} {parseFloat((product?.price || 0).toString()).toLocaleString()}
                                                 </span>
                                             </div>
@@ -1303,8 +1305,8 @@ function CheckoutContent() {
                                         Your data is securely stored and never shared.
                                     </p>
                                     <motion.div
-                                        animate={isReadyToSubmit && !isSubmitting ? {
-                                            boxShadow: ['0 0 0 0 hsl(var(--primary)/0)', '0 0 20px 4px hsl(var(--primary)/0.4)', '0 0 0 0 hsl(var(--primary)/0)']
+                                        animate={isReadyToSubmit && !isSubmitting && !reduceMotion ? {
+                                            boxShadow: ['0 0 0 0 rgba(251,191,36,0)', '0 0 20px 4px rgba(251,191,36,0.35)', '0 0 0 0 rgba(251,191,36,0)']
                                         } : {}}
                                         transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
                                         className="rounded-lg w-full sm:w-auto"
@@ -1315,7 +1317,7 @@ function CheckoutContent() {
                                             disabled={isSubmitting || !receipt || vendorPaymentBlocked}
                                             className={`w-full sm:w-auto min-w-[200px] font-bold h-12 transition-all duration-300
                                                 ${isReadyToSubmit && !isSubmitting
-                                                    ? 'bg-gradient-to-r from-primary to-violet-600 hover:from-primary/90 hover:to-violet-600/90 shadow-[0_0_24px_hsl(var(--primary)/0.35)]'
+                                                    ? 'bg-amber-400 hover:bg-amber-300 text-black shadow-[0_8px_30px_rgba(251,191,36,0.35)]'
                                                     : 'opacity-60 cursor-not-allowed'}`}
                                         >
                                             {isSubmitting ? (
@@ -1325,7 +1327,7 @@ function CheckoutContent() {
                                                 </span>
                                             ) : (
                                                 <span className="flex items-center gap-2">
-                                                    <Star className="h-4 w-4" />
+                                                    <ShieldCheck className="h-4 w-4" />
                                                     Complete Payment
                                                     <ArrowRight className="h-4 w-4" />
                                                 </span>

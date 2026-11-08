@@ -56,7 +56,8 @@ export default function Footer() {
                 alt="SEDS Pakistan Logo"
                 width={128}
                 height={72}
-                className="h-auto w-full object-contain"
+                className="object-contain"
+                style={{ width: '100%', height: 'auto' }}
               />
             </div>
             <p className="mt-3 text-sm text-muted-foreground">

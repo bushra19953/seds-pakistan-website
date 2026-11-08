@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, getAdditionalUserInfo, onAuthStateChanged } from 'firebase/auth';
 import { doc, getFirestore, serverTimestamp, getDoc, collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
 ;
+import { motion, useReducedMotion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2, AlertTriangle } from 'lucide-react';
@@ -29,6 +30,7 @@ function GoogleOnlyAuthFormContent() {
   const [inviteData, setInviteData] = useState<any>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
   const pendingCredentialRef = useRef<any>(null);
+  const shouldReduceMotion = useReducedMotion();
   const auth = getAuth();
   const processedRedirectRef = useRef(false);
 
@@ -688,22 +690,28 @@ function GoogleOnlyAuthFormContent() {
     <>
       {/* Full-screen loading overlay during mobile redirect */}
       {isRedirecting && (
-        <div className="fixed inset-0 z-50 bg-gradient-to-br from-gray-900 to-black flex flex-col items-center justify-center">
+        <div className="fixed inset-0 z-50 bg-gradient-to-br from-[#0a1120] via-slate-950 to-black flex flex-col items-center justify-center">
           <Image src="/assets/logo.png" alt="SEDS" width={80} height={80} className="animate-pulse" priority />
           <p className="text-foreground mt-4 text-lg font-medium">Signing you in...</p>
-          <Loader2 className="mt-4 h-8 w-8 text-primary animate-spin" />
+          <Loader2 className="mt-4 h-8 w-8 text-[#F5F0E4]/80 animate-spin" />
         </div>
       )}
       {/* Loading screen while checking if user is already authenticated */}
       {isCheckingAuth && !isRedirecting && (
-        <div className="fixed inset-0 z-50 bg-gradient-to-br from-gray-900 to-black flex flex-col items-center justify-center">
+        <div className="fixed inset-0 z-50 bg-gradient-to-br from-[#0a1120] via-slate-950 to-black flex flex-col items-center justify-center">
           <Image src="/assets/logo.png" alt="SEDS" width={80} height={80} className="animate-pulse" priority />
           <p className="text-foreground mt-4 text-lg font-medium">Loading...</p>
-          <Loader2 className="mt-4 h-8 w-8 text-primary animate-spin" />
+          <Loader2 className="mt-4 h-8 w-8 text-[#F5F0E4]/80 animate-spin" />
         </div>
       )}
-      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-gray-900 to-black p-4">
-        <Card className="w-full max-w-md mx-auto">
+      <div className="flex w-full items-center justify-center">
+        <motion.div
+          className="w-full max-w-md mx-auto"
+          initial={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.45, ease: "easeOut" }}
+        >
+        <Card className="w-full rounded-2xl border-white/10 bg-[#0d1526]/95 shadow-2xl backdrop-blur-md">
           <div className="flex justify-center mb-4">
             <Image
               src="/assets/logo.png"
@@ -788,10 +796,10 @@ function GoogleOnlyAuthFormContent() {
               </div>
 
               {/* Security Notice */}
-              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="p-3 bg-white/5 border border-white/10 rounded-lg">
                 <div className="flex items-start gap-2">
-                  <AlertTriangle className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
-                  <div className="text-sm text-blue-800">
+                  <AlertTriangle className="h-4 w-4 text-[#F5F0E4]/70 mt-0.5 flex-shrink-0" />
+                  <div className="text-sm text-[#F5F0E4]/80">
                     <p className="font-medium mb-1">Simplified Authentication</p>
                     <p>We use Google Sign-In exclusively for the best security and user experience.</p>
                   </div>
@@ -800,6 +808,7 @@ function GoogleOnlyAuthFormContent() {
             </div>
           </CardContent>
         </Card>
+        </motion.div>
       </div>
     </>
   );
@@ -811,7 +820,7 @@ import { setDoc } from '@/lib/client/firestore-wrapper';
 
 export default function GoogleOnlyAuthForm() {
   return (
-    <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-gray-900 to-black p-4">
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-[#0a1120] via-slate-950 to-black p-4">
       <div className="w-full max-w-md mx-auto text-center text-foreground">Loading...</div>
     </div>}>
       <GoogleOnlyAuthFormContent />

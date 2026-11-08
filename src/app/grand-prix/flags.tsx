@@ -7,11 +7,12 @@
  */
 
 export function PakistanFlag({ className }: { className?: string }) {
-  return <img src="/flags/pakistan.svg" alt="Flag of Pakistan" className={className} />;
+  // Hero-only artwork: ask the browser to fetch it ahead of below-fold media.
+  return <img src="/flags/pakistan.svg" alt="Flag of Pakistan" className={className} fetchPriority="high" decoding="async" />;
 }
 
 export function SriLankaFlag({ className }: { className?: string }) {
-  return <img src="/flags/sri-lanka.svg" alt="Flag of Sri Lanka" className={className} />;
+  return <img src="/flags/sri-lanka.svg" alt="Flag of Sri Lanka" className={className} fetchPriority="high" decoding="async" />;
 }
 
 /**

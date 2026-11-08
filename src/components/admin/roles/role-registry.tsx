@@ -565,8 +565,8 @@ export default function RoleRegistry() {
                         <div className="flex flex-col gap-1.5">
                           <div className="flex items-center gap-2">
                             <span className="font-mono text-xs font-bold uppercase text-foreground">{typeof rd.name === 'string' && rd.name ? rd.name : (rd.slug && isCatalogRoleKey(rd.slug) ? catalogTitle(rd.slug) : String(rd.slug ?? 'Unnamed role'))}</span>
-                            <Badge variant="outline" className={`flex h-4 items-center gap-1 border-0 px-1.5 text-[8px] ${isGlobal ? 'bg-indigo-500/10 text-indigo-400' : 'bg-slate-500/10 text-muted-foreground'}`}>
-                              {isGlobal ? <Globe className="h-2 w-2" /> : <Shield className="h-2 w-2" />}
+                            <Badge variant="outline" className={`flex h-5 items-center gap-1 border-0 px-2 text-[9px] ${isGlobal ? 'bg-indigo-500/10 text-indigo-400' : 'bg-slate-500/10 text-muted-foreground'}`}>
+                              {isGlobal ? <Globe className="h-2.5 w-2.5" /> : <Shield className="h-2.5 w-2.5" />}
                               {isGlobal ? 'NATIONAL' : 'LOCAL'}
                             </Badge>
                             {rd.customDef && <CustomRoleBadge />}
@@ -579,9 +579,9 @@ export default function RoleRegistry() {
                             </div>
                           )}
                           <div className="flex items-center gap-2">
-                            <span className="text-[8px] font-black uppercase tracking-[0.2em] text-muted-foreground">{typeof rd.category === 'string' ? rd.category : ''}</span>
-                            <Badge variant="outline" className={`h-3.5 rounded-full px-1.5 text-[7px] font-black uppercase tracking-widest ${getPowerBadgeColor(powerPercentage)}`}>
-                              <Zap className="mr-1 inline-block h-2 w-2" />
+                            <span className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground">{typeof rd.category === 'string' ? rd.category : ''}</span>
+                            <Badge variant="outline" className={`h-5 rounded-full px-2 text-[10px] font-black uppercase tracking-widest ${getPowerBadgeColor(powerPercentage)}`}>
+                              <Zap className="mr-1 inline-block h-2.5 w-2.5" />
                               LVL {assignedPerms}/{totalPerms}
                             </Badge>
                           </div>

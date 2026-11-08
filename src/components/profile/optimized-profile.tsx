@@ -237,6 +237,14 @@ export function OptimizedProfile({
   const searchParams = useSearchParams();
   const router = useRouter();
   const { user: currentUser, role: currentUserRole, isLoading: userLoading } = useUserContext();
+  // Depend on the uid primitive, not the User object, in the fetch effect
+  // (rerender-dependencies): UserProvider swaps the User object identity on
+  // every onIdTokenChanged event, which would otherwise re-fire the core +
+  // extended profile fetches. The ref keeps the latest object for
+  // getIdToken() inside the effect.
+  const currentUserUid = currentUser?.uid;
+  const currentUserRef = useRef(currentUser);
+  currentUserRef.current = currentUser;
   const { showErrorToast, showSuccessToast } = useEnhancedToast();
 
   const uid = propUid || searchParams.get('uid') || searchParams.get('id') || currentUser?.uid;
@@ -265,7 +273,7 @@ export function OptimizedProfile({
     if (isEditing) return;
     // If auth is still loading we'll re-run once userLoading flips to false.
     // But we start the fetch immediately if uid is already present from URL.
-    if (userLoading && !currentUser) return;
+    if (userLoading && !currentUserUid) return;
 
     const fetchProfileData = async () => {
       setLoading(true);
@@ -275,7 +283,7 @@ export function OptimizedProfile({
         // Get token only when user is already resolved — don't block if not.
         let idToken: string | null = null;
         try {
-          idToken = currentUser ? await currentUser.getIdToken(false) : null;
+          idToken = currentUserRef.current ? await currentUserRef.current.getIdToken(false) : null;
         } catch {
           // Token fetch error — continue without token (API will handle auth)
         }
@@ -328,7 +336,7 @@ export function OptimizedProfile({
     };
 
     fetchProfileData();
-  }, [uid, currentUser, userLoading, isEditing, isDevelopment]);
+  }, [uid, currentUserUid, userLoading, isEditing, isDevelopment]);
 
   // ---------------------------------------------------------------------------
   // Handlers

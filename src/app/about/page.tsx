@@ -185,10 +185,10 @@ const AboutPage = () => {
         <meta name="description" content={pageContent.meta_description} />
       )}
 
-      {/* In-Page Navigation */}
+      {/* In-Page Navigation: quiet contents list, not pill chips */}
       {toc.length > 0 && (
-        <nav aria-label="About page navigation" className="mb-6">
-          <div className="flex flex-wrap gap-2">
+        <nav aria-label="About page navigation" className="mb-8 border-l-2 border-border pl-4">
+          <div className="flex flex-col gap-1.5 sm:grid sm:grid-cols-2 sm:gap-x-8">
             {toc.map((item) => (
               <a
                 key={item.id}
@@ -200,7 +200,7 @@ const AboutPage = () => {
                     target.scrollIntoView({ behavior: 'smooth', block: 'start' });
                   }
                 }}
-                className={`px-3 py-1 rounded-full text-sm transition-colors hover:bg-muted hover:text-primary ${item.level === 2 ? 'bg-muted text-muted-foreground' : 'bg-muted/60 text-muted-foreground'
+                className={`text-sm transition-colors hover:text-primary ${item.level === 2 ? 'font-medium text-foreground/80' : 'pl-4 text-muted-foreground'
                   }`}
                 title={item.text}
               >

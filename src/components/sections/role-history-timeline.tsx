@@ -7,6 +7,7 @@ import { getRoleDisplayName } from '@/lib/roles';
 import { useCustomRoleDefinitions } from '@/components/roles/custom-role-registry';
 import { cn, formatDate } from '@/lib/utils';
 import { Users, Calendar, UserCheck, Clock } from 'lucide-react';
+import { motion, useReducedMotion } from 'framer-motion';
 
 interface Position {
   id: string;
@@ -36,6 +37,9 @@ export default function RoleHistoryTimelineSection() {
   // Custom-role registry: role labels resolve custom definition
   // titles (consumers Surface 5).
   useCustomRoleDefinitions();
+  // Scroll-reveal (21st.dev "Reveal" pattern): cards fade/rise once on
+  // first entry; reduced-motion users get the static layout instead.
+  const reduceMotion = useReducedMotion();
   const [positions, setPositions] = useState<Position[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
@@ -127,13 +131,9 @@ export default function RoleHistoryTimelineSection() {
   return (
     <section id="role-history-timeline" className="py-16">
       <div className="container mx-auto px-4 md:px-6">
-        <div className="text-center mb-10">
-          <div className="inline-flex items-center gap-2 bg-primary/10 text-primary px-4 py-2 rounded-full text-sm font-medium mb-4">
-            <Users className="h-4 w-4" />
-            Leadership Excellence
-          </div>
-          <h2 className="text-3xl md:text-4xl font-bold mb-4">Current Leadership</h2>
-          <p className="max-w-2xl mx-auto text-muted-foreground">
+        <div className="mb-10 max-w-2xl">
+          <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-4">Current Leadership</h2>
+          <p className="text-muted-foreground">
             Meet the dedicated individuals currently steering SEDS Pakistan toward aerospace excellence and student development.
           </p>
         </div>
@@ -184,12 +184,20 @@ export default function RoleHistoryTimelineSection() {
 
         {!loading && !error && positionGroups.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {positionGroups.map((group) => {
+            {positionGroups.map((group, index) => {
               const current = group.currentHolder;
               const hasHistory = group.positions.length > 1;
-              
+
               return (
-                <Card key={group.role} className="bg-card/80 border-border hover:shadow-md transition-shadow">
+                <motion.div
+                  key={group.role}
+                  className="h-full"
+                  initial={reduceMotion ? false : { opacity: 0, y: 16 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, margin: '-48px' }}
+                  transition={{ duration: 0.45, delay: Math.min(index * 0.06, 0.3), ease: 'easeOut' }}
+                >
+                <Card className="h-full bg-card/80 border-border">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <span>{group.displayName}</span>
@@ -279,19 +287,20 @@ export default function RoleHistoryTimelineSection() {
                     </CardContent>
                   )}
                 </Card>
+                </motion.div>
               );
             })}
           </div>
         )}
 
         {positionGroups.length > 0 && (
-          <div className="text-center mt-12">
+          <div className="mt-12">
             <p className="text-sm text-muted-foreground mb-4">
               Want to see the complete leadership history?
             </p>
-            <a 
-              href="/leadership-history" 
-              className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+            <a
+              href="/leadership-history"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-amber-400 text-zinc-950 font-medium rounded-lg hover:bg-amber-300 transition-colors"
             >
               <Clock className="h-4 w-4" />
               View Complete Timeline

@@ -209,7 +209,7 @@ export function ProfileHub({ uid }: { uid: string }) {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: 'easeOut' }}
       >
-      <Card className="relative border-border bg-background/70 backdrop-blur-md overflow-hidden">
+      <Card className="relative border-border bg-background/60 backdrop-blur-md overflow-hidden">
         {/* Soft internal glow, adapted from the 21st.dev Profile Card pattern */}
         <div aria-hidden className="pointer-events-none absolute -top-24 -right-24 h-48 w-48 rounded-full bg-primary/10 blur-[80px]" />
         <div aria-hidden className="pointer-events-none absolute -bottom-24 -left-24 h-48 w-48 rounded-full bg-primary/5 blur-[80px]" />

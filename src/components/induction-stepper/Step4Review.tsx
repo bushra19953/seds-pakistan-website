@@ -3,10 +3,32 @@
 import { useFormContext } from 'react-hook-form';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
-export default function Step4Review({ fields = [] }: { fields?: any[] }) {
+/**
+ * Review step. All steps stay mounted (hidden with CSS) for the whole
+ * session, so a plain watch() here would re-render this subtree on
+ * every keystroke typed into any earlier step. The page passes
+ * `active` (true only while this is the visible step): while hidden we
+ * render a one-off getValues() snapshot with no subscription, and the
+ * live watch() version mounts the moment the step becomes visible, so
+ * what the applicant sees on the review step is always current.
+ * `active` defaults to true so direct renders keep the live behavior.
+ */
+export default function Step4Review({ fields = [], active = true }: { fields?: any[]; active?: boolean }) {
+  return active ? <Step4ReviewLive fields={fields} /> : <Step4ReviewSnapshot fields={fields} />;
+}
+
+function Step4ReviewLive({ fields = [] }: { fields?: any[] }) {
   const { watch } = useFormContext();
   const formData = watch();
+  return <ReviewBody fields={fields} formData={formData} />;
+}
 
+function Step4ReviewSnapshot({ fields = [] }: { fields?: any[] }) {
+  const { getValues } = useFormContext();
+  return <ReviewBody fields={fields} formData={getValues()} />;
+}
+
+function ReviewBody({ fields = [], formData }: { fields?: any[]; formData: any }) {
   return (
     <div className="space-y-4">
       <Card>

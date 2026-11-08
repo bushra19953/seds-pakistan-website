@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, Suspense } from 'react';
+import { useState, useEffect, useRef, useMemo, memo, cloneElement, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { getFirebaseApp } from '@/firebase/provider';
 import { useUser } from '@/firebase';
@@ -9,7 +9,7 @@ import { isSuperAdmin } from '@/lib/roles';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { useForm, FormProvider } from 'react-hook-form';
+import { useForm, FormProvider, useFormContext } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useAutosave } from '@/hooks/use-autosave';
@@ -54,6 +54,13 @@ function fireWebhook(collection: string, docId: string, eventType: string, befor
     // Webhook dispatch must never affect the submit result.
   }
 }
+
+// The users/{uid} doc most recently read by InductionConfigLoader (in
+// parallel with the form config). InductionContentForm's draft-load
+// autofill reuses it instead of issuing a second read of the same doc;
+// keyed by uid and refreshed on every loader pass (including the
+// re-apply reload), with a direct-read fallback when it does not match.
+let loaderUserDataCache: { uid: string; data: any | null } | null = null;
 
 export default function InductionPage() {
   return (
@@ -110,6 +117,8 @@ function InductionConfigLoader() {
           setIsLoadingFields(false);
           return;
         }
+
+        loaderUserDataCache = { uid: user.uid, data: userSnap.exists() ? userSnap.data() : null };
 
         if (userSnap.exists() && userSnap.data().hasApplied) {
           setExistingApplication({ status: userSnap.data().applicationStatus || 'Received' });
@@ -391,7 +400,25 @@ function InductionConfigLoader() {
   return <InductionContentForm user={user} dynamicFields={dynamicFields} schema={dynamicSchema} />;
 }
 
-function InductionContentForm({ user, dynamicFields, schema }: { user: any, dynamicFields: any[], schema: any }) {
+// Autosave subscription, isolated in a null-rendering child so the
+// whole-form watch() below re-renders ONLY this component on each
+// keystroke. Previously the watch() lived in InductionContentForm
+// itself, so every field edit re-rendered the entire form page
+// (all mounted steps, banners and cards) and rebuilt the steps array.
+function FormAutosave({ uid }: { uid: string | undefined }) {
+  const { watch } = useFormContext();
+  const formState = watch();
+  useAutosave(formState, uid);
+  return null;
+}
+
+// Memoized: InductionConfigLoader re-renders every second on the
+// intake-window tick; with stable props (user, dynamicFields and
+// schema are all loader state) the form subtree now skips those
+// tick re-renders entirely.
+const InductionContentForm = memo(InductionContentFormInner);
+
+function InductionContentFormInner({ user, dynamicFields, schema }: { user: any, dynamicFields: any[], schema: any }) {
   const router = useRouter();
   const { toast } = useToast();
   const searchParams = useSearchParams();
@@ -432,8 +459,7 @@ function InductionContentForm({ user, dynamicFields, schema }: { user: any, dyna
     defaultValues,
   });
 
-  const { watch, getValues, reset } = methods;
-  const formState = watch();
+  const { getValues, reset } = methods;
 
   // Load draft
   useEffect(() => {
@@ -453,10 +479,19 @@ function InductionContentForm({ user, dynamicFields, schema }: { user: any, dyna
             const sanitizedPayload: any = { ...draftData };
             reset(sanitizedPayload);
           } else {
-            // Auto-fill from user profile if no draft exists
-            const userDoc = await getDoc(doc(db, 'users', user.uid));
-            if (userDoc.exists()) {
-              const profile = userDoc.data();
+            // Auto-fill from user profile if no draft exists. The loader
+            // already read users/{uid} in parallel with the form config;
+            // reuse that snapshot (loaderUserDataCache) instead of
+            // reading the same doc a second time. Fall back to a direct
+            // read only when the cache holds a different user's doc.
+            let profile: any = null;
+            if (loaderUserDataCache && loaderUserDataCache.uid === user.uid) {
+              profile = loaderUserDataCache.data;
+            } else {
+              const userDoc = await getDoc(doc(db, 'users', user.uid));
+              profile = userDoc.exists() ? userDoc.data() : null;
+            }
+            if (profile) {
               const currentVals = getValues();
               const autofill: any = {
                 fullName: profile.displayName || user.displayName || currentVals.fullName || '',
@@ -476,8 +511,8 @@ function InductionContentForm({ user, dynamicFields, schema }: { user: any, dyna
     }
   }, [user, reset]);
 
-  // Autosave
-  useAutosave(formState, user?.uid);
+  // Autosave lives in the FormAutosave child rendered below, so its
+  // whole-form subscription no longer re-renders this component.
 
   const onSubmit = async (formData: any) => {
     // Belt and braces: a form left open across the cutoff cannot submit
@@ -713,33 +748,43 @@ function InductionContentForm({ user, dynamicFields, schema }: { user: any, dyna
     2: "Assessments & Links",
   };
 
-  const steps: any[] = [];
+  // Built once per field-config change. Memoizing keeps the step
+  // elements (and each step's fields array) referentially stable across
+  // this component's re-renders, so React can bail out of re-rendering
+  // the mounted step subtrees when only the current step changes.
+  const steps: any[] = useMemo(() => {
+    const built: any[] = [];
 
-  // Sort fields by order globally once
-  const sortedFields = [...dynamicFields].sort((a, b) => (a.order || 0) - (b.order || 0));
+    // Sort fields by order globally once
+    const sortedFields = [...dynamicFields].sort((a, b) => (a.order || 0) - (b.order || 0));
 
-  // Dynamically determine the max step configured by the admin
-  const maxStep = sortedFields.length > 0 ? Math.max(...sortedFields.map(f => f.step || 0)) : 0;
+    // Dynamically determine the max step configured by the admin
+    const maxStep = sortedFields.length > 0 ? Math.max(...sortedFields.map(f => f.step || 0)) : 0;
 
-  for (let stepNum = 0; stepNum <= maxStep; stepNum++) {
-    const fieldsForStep = sortedFields.filter(f => (f.step || 0) === stepNum);
-    if (fieldsForStep.length > 0) {
-      // Step 1 (step 0) also carries the two static optional selects
-      // (Target Chapter, Preferred Track) appended after the dynamic fields.
-      const stepFields = stepNum === 0 ? [...fieldsForStep, ...STATIC_STEP1_FIELDS] : fieldsForStep;
-      steps.push({
-        id: `step_${stepNum}`,
-        title: stepNames[stepNum] || `Step ${stepNum + 1}`,
-        component: stepNum === 0 ?
-          <Step1Personal fields={stepFields} /> :
-          <Step2Skills fields={fieldsForStep} />,
-        fieldsToValidate: stepFields.map(f => f.name)
-      });
+    for (let stepNum = 0; stepNum <= maxStep; stepNum++) {
+      const fieldsForStep = sortedFields.filter(f => (f.step || 0) === stepNum);
+      if (fieldsForStep.length > 0) {
+        // Step 1 (step 0) also carries the two static optional selects
+        // (Target Chapter, Preferred Track) appended after the dynamic fields.
+        const stepFields = stepNum === 0 ? [...fieldsForStep, ...STATIC_STEP1_FIELDS] : fieldsForStep;
+        built.push({
+          id: `step_${stepNum}`,
+          title: stepNames[stepNum] || `Step ${stepNum + 1}`,
+          component: stepNum === 0 ?
+            <Step1Personal fields={stepFields} /> :
+            <Step2Skills fields={fieldsForStep} />,
+          fieldsToValidate: stepFields.map(f => f.name)
+        });
+      }
     }
-  }
 
-  steps.push({ id: 'portfolio', title: "Portfolio & Resume", component: <Step3Portfolio />, fieldsToValidate: ['resumeUpload', 'portfolioLink', 'githubLink'] });
-  steps.push({ id: 'review', title: "Review & Submit", component: <Step4Review fields={[...dynamicFields, ...STATIC_STEP1_FIELDS]} />, fieldsToValidate: [] });
+    built.push({ id: 'portfolio', title: "Portfolio & Resume", component: <Step3Portfolio />, fieldsToValidate: ['resumeUpload', 'portfolioLink', 'githubLink'] });
+    built.push({ id: 'review', title: "Review & Submit", component: <Step4Review fields={[...dynamicFields, ...STATIC_STEP1_FIELDS]} />, fieldsToValidate: [] });
+    return built;
+    // stepNames is a constant lookup defined above; dynamicFields is the
+    // only input that can change the built steps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dynamicFields]);
 
   const updateStepInUrl = (stepIndex: number) => {
     window.history.pushState(null, '', `/induction?step=${stepIndex + 1}`);
@@ -806,6 +851,7 @@ function InductionContentForm({ user, dynamicFields, schema }: { user: any, dyna
 
   return (
     <FormProvider {...methods}>
+      <FormAutosave uid={user?.uid} />
       <div className="relative min-h-screen flex flex-col items-center justify-center py-8">
         <StarryBackground />
         
@@ -847,7 +893,9 @@ function InductionContentForm({ user, dynamicFields, schema }: { user: any, dyna
             <form onSubmit={methods.handleSubmit(onSubmit, onError)}>
               {steps.map((step, index) => (
                 <div key={step.id} className={clampedStep === index ? 'block' : 'hidden'}>
-                  {step.component}
+                  {step.id === 'review'
+                    ? cloneElement(step.component, { active: clampedStep === index })
+                    : step.component}
                 </div>
               ))}
               <div className="flex justify-between mt-8">

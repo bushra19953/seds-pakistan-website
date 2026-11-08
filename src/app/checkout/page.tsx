@@ -1,7 +1,7 @@
 'use client';
 
 import Image from 'next/image';
-import { Suspense, useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useUser } from '@/firebase';
 import { firestore } from '@/firebase';
@@ -30,7 +30,7 @@ import {
 import { fetchOwnContact } from '@/lib/client/user-contact';
 import { Product } from '@/types/store';
 import { motion, AnimatePresence } from 'framer-motion';
-import confetti from 'canvas-confetti';
+import type Confetti from 'canvas-confetti';
 import ReceiptUploader from '@/components/checkout/receipt-uploader';
 import type { DriveUploadMeta } from '@/lib/uploads/client';
 
@@ -76,9 +76,12 @@ function playVictorySound() {
 }
 
 // ─── 🎉 Nuclear Confetti Cannon — 5-wave explosion ──────────────────────────
-function fireNuclearConfetti() {
+async function fireNuclearConfetti() {
+    // canvas-confetti is loaded on demand: it is only needed after a
+    // successful order, so it stays out of the initial checkout bundle.
+    const confetti = (await import('canvas-confetti')).default;
     const colors = ['#e8723a', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#ffffff'];
-    const shoot = (opts: confetti.Options) => confetti({ colors, ...opts });
+    const shoot = (opts: Confetti.Options) => confetti({ colors, ...opts });
 
     // Wave 1: Center mega burst
     shoot({ particleCount: 180, spread: 90, origin: { x: 0.5, y: 0.6 }, startVelocity: 50, scalar: 1.2 });
@@ -591,6 +594,11 @@ function CheckoutContent() {
     }
     const [receipt, setReceipt] = useState<DriveUploadMeta | null>(null);
     const [linkedForm, setLinkedForm] = useState<Form | null>(null);
+    // True while a product's linked form is still loading in the
+    // background (see the product effect): the page renders as soon as
+    // the product resolves, and submit stays guarded until the form
+    // arrives so its required fields can never be skipped.
+    const [linkedFormPending, setLinkedFormPending] = useState(false);
     const [formResponses, setFormResponses] = useState<Record<string, any>>({});
 
     // Success state — includes isEvent flag for the ticket preview popup
@@ -618,6 +626,23 @@ function CheckoutContent() {
         : null;
     const vendorPaymentBlocked = isVendorProduct && !loadingMethods && !shopMethodKey;
     const vendorOutOfStock = isVendorProduct && typeof product?.stock === 'number' && product.stock <= 0;
+
+    // Enabled payment methods for the instructions card. Memoized so
+    // the map/filter work does not repeat on every CheckoutContent
+    // re-render (each keystroke in the buyer form re-renders this
+    // component); it only depends on the settings doc and vendor state.
+    const enabledMethods = useMemo(() => {
+        if (!methodSettings || !Array.isArray(methodSettings.order)) return [] as Array<{ key: string } & PaymentMethod>;
+        let enabledMethods = methodSettings.order
+            .map(k => ({ key: k, ...methodSettings.methods?.[k] }))
+            .filter(m => m.enabled);
+        // GE: vendor products show ONLY the pointed shop method.
+        if (isVendorProduct) {
+            enabledMethods = enabledMethods.filter(m => m.key === methodSettings.shopMethodKey);
+        }
+        return enabledMethods;
+    }, [methodSettings, isVendorProduct]);
+    const selectedMethod = enabledMethods.find(m => m.key === selectedMethodKey) || enabledMethods[0];
 
     // Vendor products pay only through the pointed shop method.
     useEffect(() => {
@@ -740,11 +765,20 @@ function CheckoutContent() {
                         setProduct(resolvedProduct);
                         const formId = (resolvedProduct as any).formId;
                         if (formId) {
-                            try {
-                                const formRef = doc(firestore, 'forms', formId);
-                                const formSnap = await getDoc(formRef);
-                                if (formSnap.exists()) setLinkedForm({ id: formSnap.id, ...formSnap.data() } as Form);
-                            } catch (err) { console.error('Error fetching linked form:', err); }
+                            // The linked form only feeds the submit card,
+                            // so it no longer blocks the page skeleton:
+                            // fetch it in the background while the page
+                            // renders, and keep submit guarded (see
+                            // handleSubmit) until it has arrived.
+                            setLinkedFormPending(true);
+                            (async () => {
+                                try {
+                                    const formRef = doc(firestore, 'forms', formId);
+                                    const formSnap = await getDoc(formRef);
+                                    if (formSnap.exists()) setLinkedForm({ id: formSnap.id, ...formSnap.data() } as Form);
+                                } catch (err) { console.error('Error fetching linked form:', err); }
+                                finally { setLinkedFormPending(false); }
+                            })();
                         }
                     } else if (!eventIdParam) {
                         toast({ variant: 'destructive', title: 'Product Not Found', description: 'The item you are trying to pay for does not exist.' });
@@ -788,6 +822,14 @@ function CheckoutContent() {
         }
         if (vendorOutOfStock) {
             toast({ variant: 'destructive', title: 'Out of stock', description: 'This product is out of stock.' });
+            return;
+        }
+
+        // The linked form (when the product has one) must be loaded
+        // before its required fields can be validated; it loads in the
+        // background, so block submit until it has arrived.
+        if (linkedFormPending) {
+            toast({ title: 'Just a moment', description: 'The order form is still loading. Please try again in a second.' });
             return;
         }
 
@@ -1091,30 +1133,22 @@ function CheckoutContent() {
                                             <div key={i} className="h-24 rounded-xl bg-muted animate-pulse" />
                                         ))}
                                     </div>
-                                ) : methodSettings && Array.isArray(methodSettings.order) && methodSettings.order.length > 0 ? (() => {
-                                    let enabledMethods = methodSettings.order
-                                        .map(k => ({ key: k, ...methodSettings.methods?.[k] }))
-                                        .filter(m => m.enabled);
-                                    // GE: vendor products show ONLY the pointed shop method.
-                                    if (isVendorProduct) {
-                                        enabledMethods = enabledMethods.filter(m => m.key === methodSettings.shopMethodKey);
-                                        if (enabledMethods.length === 0) return (
+                                ) : methodSettings && Array.isArray(methodSettings.order) && methodSettings.order.length > 0 ? (
+                                    enabledMethods.length === 0 ? (
+                                        isVendorProduct ? (
                                             <Alert variant="destructive" className="rounded-xl">
                                                 <AlertTriangle className="h-4 w-4" />
                                                 <AlertTitle>Shop payments are not open yet</AlertTitle>
                                                 <AlertDescription>We cannot take shop orders right now because the shop payment account is not set up. Please try again later.</AlertDescription>
                                             </Alert>
-                                        );
-                                    }
-                                    if (enabledMethods.length === 0) return (
-                                        <Alert variant="destructive" className="rounded-xl">
-                                            <AlertTriangle className="h-4 w-4" />
-                                            <AlertTitle>No Payment Methods</AlertTitle>
-                                            <AlertDescription>No payment methods are currently configured.</AlertDescription>
-                                        </Alert>
-                                    );
-                                    const selectedMethod = enabledMethods.find(m => m.key === selectedMethodKey) || enabledMethods[0];
-                                    return (
+                                        ) : (
+                                            <Alert variant="destructive" className="rounded-xl">
+                                                <AlertTriangle className="h-4 w-4" />
+                                                <AlertTitle>No Payment Methods</AlertTitle>
+                                                <AlertDescription>No payment methods are currently configured.</AlertDescription>
+                                            </Alert>
+                                        )
+                                    ) : (
                                         <div className="space-y-3">
                                             {/* Method selector tabs — only shown when >1 method */}
                                             {enabledMethods.length > 1 && (
@@ -1157,8 +1191,8 @@ function CheckoutContent() {
                                                 </div>
                                             )}
                                         </div>
-                                    );
-                                })() : isVendorProduct ? (
+                                    )
+                                ) : isVendorProduct ? (
                                     <Alert variant="destructive" className="rounded-xl">
                                         <AlertTriangle className="h-4 w-4" />
                                         <AlertTitle>Shop payments are not open yet</AlertTitle>

@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -11,7 +12,7 @@ import ExternalAssessmentCard, { hasExternalAssessmentLink } from './ExternalAss
 // mirrored under the interestAreas field here as well.
 const SKILLS_OR_INTERESTS_ERROR_MESSAGE = 'Add at least one skill or interest area';
 
-export default function Step2Skills({ fields = [] }: { fields?: any[] }) {
+function Step2Skills({ fields = [] }: { fields?: any[] }) {
   const { register, formState: { errors } } = useFormContext();
 
   return (
@@ -74,3 +75,7 @@ export default function Step2Skills({ fields = [] }: { fields?: any[] }) {
     </div>
   );
 }
+
+// Memoized: re-renders only when its fields prop changes (the parent
+// memoizes the steps array), not on unrelated form-page re-renders.
+export default memo(Step2Skills);

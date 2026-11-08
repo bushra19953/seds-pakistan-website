@@ -79,14 +79,16 @@ export default async function ProductPage({
       </Link>
 
       <div className="mt-4 grid gap-8 md:grid-cols-2">
-        <div className="relative aspect-[4/3] bg-muted">
+        <div className="relative aspect-[4/3] overflow-hidden rounded-2xl bg-muted ring-1 ring-border">
           {product.imageUrl ? (
             <Image
               src={product.imageUrl}
               alt={product.name}
               fill
               sizes="(max-width: 768px) 100vw, 50vw"
-              className="object-cover"
+              className={
+                product.inStock ? 'object-cover' : 'object-cover opacity-80 grayscale-[0.35]'
+              }
             />
           ) : (
             <div className="flex h-full items-center justify-center" aria-hidden="true">

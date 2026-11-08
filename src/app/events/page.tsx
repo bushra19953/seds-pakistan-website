@@ -12,8 +12,9 @@ import { useCollection } from '@/firebase/firestore/use-collection';
 import { useFirestore } from '@/firebase/provider';
 import { collection, query, where, orderBy, limit } from 'firebase/firestore';
 import Link from 'next/link';
-import { formatEventInstantInPkt } from '@/lib/events/datetime';
-import { Calendar, MapPin, Users, Ticket, ArrowRight, Rocket } from 'lucide-react';
+import { formatEventInstantInPkt, eventInstantToMs, EVENT_TIMEZONE } from '@/lib/events/datetime';
+import { motion, useReducedMotion } from 'framer-motion';
+import { MapPin, Users, Ticket, ArrowRight, Rocket } from 'lucide-react';
 import { hasSufficientRole } from '@/lib/roles';
 import { useMemoFirebase } from '@/lib/use-memo-firebase';
 import { getPublicProducts } from '@/app/actions/store';
@@ -26,7 +27,7 @@ const EventCardImage = ({ src, alt }: { src?: string; alt: string }) => {
 
   if (!src || hasError) {
     return (
-      <div className="w-full h-48 bg-card/50 flex flex-col items-center justify-center border-y border-white/5">
+      <div className="w-full h-44 bg-card/50 flex flex-col items-center justify-center border-y border-white/5">
         <Rocket className="w-6 h-6 text-primary-text mb-2" />
         <span className="text-muted-foreground text-xs">Event Image</span>
       </div>
@@ -34,16 +35,63 @@ const EventCardImage = ({ src, alt }: { src?: string; alt: string }) => {
   }
 
   return (
-    <div className="w-full h-48 relative overflow-hidden border-y border-white/5">
+    <div className="w-full h-44 relative overflow-hidden border-y border-white/5">
       <Image
         src={src}
         alt={alt}
         fill
         sizes="(max-width: 768px) 100vw, 33vw"
-        className="object-cover transition-transform group-hover:scale-105"
+        className="object-cover motion-safe:transition-transform motion-safe:duration-500 group-hover:scale-105"
         onError={() => setHasError(true)}
         unoptimized={src.includes('drive.google.com')}
       />
+    </div>
+  );
+};
+
+// Date block adapted from the 21st.dev "Card" pattern by azabroflovski
+// (oyna-card: small label + one large display-type value on a dark glass
+// surface, footer split by a hairline). Here the display value is the
+// event's own date: the day numeral in the display face, month and
+// weekday quiet beside it, so the calendar fact carries the card the
+// way a callout number carries a technical diagram. Parts are taken in
+// Asia/Karachi from the stored instant, same zone the text date uses.
+const EventDateBlock = ({ value }: { value: unknown }) => {
+  const ms = eventInstantToMs(value);
+  if (ms == null) {
+    return (
+      <div className="flex w-14 shrink-0 items-start justify-center border-r border-white/5 pr-4 pt-1">
+        <span className="text-sm font-medium text-muted-foreground">
+          {formatEventInstantInPkt(value, 'date') ?? 'TBD'}
+        </span>
+      </div>
+    );
+  }
+  const parts: Record<string, string> = {};
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone: EVENT_TIMEZONE,
+    day: '2-digit',
+    month: 'short',
+    weekday: 'short',
+  });
+  for (const part of dtf.formatToParts(new Date(ms))) {
+    parts[part.type] = part.value;
+  }
+  return (
+    <div
+      className="flex w-14 shrink-0 flex-col items-center border-r border-white/5 pr-4 text-center"
+      role="img"
+      aria-label={formatEventInstantInPkt(value, 'date') ?? undefined}
+    >
+      <span aria-hidden="true" className="font-accent text-4xl font-bold leading-none text-foreground">
+        {parts.day}
+      </span>
+      <span aria-hidden="true" className="mt-1.5 text-xs font-semibold text-primary-text">
+        {parts.month}
+      </span>
+      <span aria-hidden="true" className="text-xs text-muted-foreground">
+        {parts.weekday}
+      </span>
     </div>
   );
 };
@@ -52,6 +100,7 @@ export default function EventsPage() {
   const { user, role } = useUser();
   const router = useRouter();
   const firestore = useFirestore();
+  const reduceMotion = useReducedMotion();
 
   // RBT2-A2: seam-first read shape. The Firestore useCollection used
   // to fire on EVERY public /events load (limit 12) in parallel with
@@ -228,7 +277,7 @@ export default function EventsPage() {
           </div>
         ) : visibleEvents && visibleEvents.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {visibleEvents.map((event) => {
+            {visibleEvents.map((event, index) => {
               const capacity = event.capacity || event.max_attendees;
               const registrations = (event.registered_attendees_uids?.length || 0);
 
@@ -240,13 +289,19 @@ export default function EventsPage() {
                 : (isPaid ? `${event.paymentDetails?.currency || 'PKR'} ${event.paymentDetails?.amount || 0}` : 'FREE');
 
               return (
-                <Card
+                <motion.div
                   key={event.id}
-                  className="hover:border-primary/50 transition-colors flex flex-col h-full"
+                  className="h-full"
+                  initial={reduceMotion ? false : { opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.35, delay: Math.min(index, 8) * 0.05, ease: 'easeOut' }}
                 >
-                  <CardHeader>
+                <Card
+                  className="group flex h-full flex-col border-white/10 bg-card/80 backdrop-blur-sm transition-colors hover:border-white/25"
+                >
+                  <CardHeader className="pb-3">
                     <div className="flex justify-between items-start mb-2">
-                      <div className="text-sm font-medium text-primary-text">
+                      <div className="text-sm text-muted-foreground">
                         {event.type.charAt(0).toUpperCase() + event.type.slice(1)}
                       </div>
                       <div className="flex items-center gap-2">
@@ -267,38 +322,39 @@ export default function EventsPage() {
                   <CardContent className="flex-1 flex flex-col p-0">
                     {/* Safe Image Rendering */}
                     <EventCardImage src={event.imageUrl || event.bannerImage} alt={event.title || 'Event image'} />
-                    <div className="p-6 space-y-4 flex-1">
-                      <div className="grid grid-cols-1 min-[400px]:grid-cols-2 gap-3 text-sm">
-                        <div className="flex items-center gap-2 text-muted-foreground p-2 bg-primary/5 rounded-md border border-primary/10">
-                          <Calendar className="h-4 w-4 text-primary" />
-                          <span className="truncate">
-                            {formatEventInstantInPkt(event.startAt || event.date, 'date') ?? 'TBD'}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2 text-muted-foreground p-2 bg-primary/5 rounded-md border border-primary/10">
-                          <MapPin className="h-4 w-4 mt-0.5 flex-shrink-0 text-primary" />
-                          <span className="truncate">{event.location || 'Location TBD'}</span>
-                        </div>
-                      </div>
-                      {capacity ? (
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Users className="w-4 h-4 text-primary" />
-                          <span>{registrations} / {capacity} Registered</span>
-                        </div>
-                      ) : null}
+                    <div className="flex flex-1 gap-4 px-6 pt-5">
+                      <EventDateBlock value={event.startAt || event.date} />
                       <div
-                        className="text-muted-foreground line-clamp-3 text-sm leading-relaxed"
+                        className="min-w-0 text-muted-foreground line-clamp-4 text-sm leading-relaxed"
                         dangerouslySetInnerHTML={{ __html: event.description?.replace(/<[^>]*>/g, '').substring(0, 120) + '...' }}
                       />
                     </div>
-                    <Button asChild className="w-full mt-6 group/btn">
-                      <Link href={`/events/${event.slug || event.id}`} className="flex items-center justify-center gap-2">
+                    <div className="mt-auto px-6 pt-4">
+                      <div className="flex items-center justify-between gap-3 border-t border-white/5 pt-3 text-sm text-muted-foreground">
+                        <span className="flex min-w-0 items-center gap-2">
+                          <MapPin className="h-4 w-4 flex-shrink-0 text-primary" />
+                          <span className="truncate">{event.location || 'Location TBD'}</span>
+                        </span>
+                        {capacity ? (
+                          <span className="flex flex-shrink-0 items-center gap-2">
+                            <Users className="w-4 h-4 text-primary" />
+                            <span>{registrations} / {capacity} Registered</span>
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="mt-4 border-t border-white/5">
+                      <Link
+                        href={`/events/${event.slug || event.id}`}
+                        className="flex items-center justify-between px-6 py-3.5 text-sm font-semibold text-amber-400 transition-colors hover:bg-amber-400/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60"
+                      >
                         View Details
-                        <ArrowRight className="w-4 h-4 group-hover/btn:translate-x-1 transition-transform" />
+                        <ArrowRight className="w-4 h-4 motion-safe:transition-transform motion-safe:duration-300 group-hover:translate-x-1" />
                       </Link>
-                    </Button>
+                    </div>
                   </CardContent>
                 </Card>
+                </motion.div>
               )
             })}
           </div>
@@ -322,8 +378,9 @@ export default function EventsPage() {
             </CardContent>
           </Card>
         ) : (
-          <Card className="bg-card/80 backdrop-blur-sm border-primary/20">
+          <Card className="bg-card/80 backdrop-blur-sm border-white/10">
             <CardContent className="py-12 text-center">
+              <Rocket className="mx-auto mb-3 h-6 w-6 text-primary-text" />
               <p className="text-muted-foreground">No events scheduled yet.</p>
               {canCreateEvent && (
                 <Button asChild className="mt-4">

@@ -258,6 +258,34 @@ const nextConfig = {
         ],
       },
       {
+        // PERF (2026-11-08): same asset class as above, two directories
+        // the 2026-10-30 rules predate or missed. /flags holds the
+        // Grand Prix hero flags (official Wikimedia art, added
+        // 2026-11-07); without a rule they fell under the catch-all
+        // max-age=0, so every Grand Prix visit revalidated both SVGs.
+        // /projects holds the public projects page cover art (12 JPGs,
+        // ~7 MB total, plus the 361 KB grand-prix-hero-logos.jpg);
+        // without a rule, repeat /projects visits revalidated all of
+        // it. Both change only on a deliberate asset swap, like the
+        // logo and badge art above.
+        source: '/flags/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=604800, stale-while-revalidate=86400',
+          },
+        ],
+      },
+      {
+        source: '/projects/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=604800, stale-while-revalidate=86400',
+          },
+        ],
+      },
+      {
         // API routes keep the full security header set. Cache-Control
         // is deliberately absent here: each route sets its own.
         source: '/api/(.*)',

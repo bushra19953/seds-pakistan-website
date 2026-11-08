@@ -3,8 +3,8 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import React, { useEffect, useRef, useState } from 'react';
-import { motion, useScroll, useMotionValueEvent } from 'framer-motion';
-import { Menu, X, Trophy, Home, Info, Briefcase, BookOpen, Calendar, Clock, Wrench, Image as ImageIcon, Mic, Mail, Shield, User, Heart, ShieldAlert, Cpu, Network, ShoppingBag } from 'lucide-react';
+import { motion, useScroll, useMotionValueEvent, useReducedMotion } from 'framer-motion';
+import { Menu, X, Trophy, Home, Info, Briefcase, BookOpen, Calendar, Clock, Wrench, Image as ImageIcon, Mic, Mail, Shield, User, Heart, ShieldAlert, Cpu, Network, ShoppingBag, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
@@ -53,8 +53,15 @@ const NotificationCenter = dynamic(
  * - Implements an auto-hiding behavior: header slides up when scrolling down,
  *   and reappears when scrolling up. Achieved via `framer-motion` and
  *   `useScroll` with a small threshold to avoid jitter.
- * - Logo size increased for better brand presence.
  * - Navigation remains icon + label without emojis for a more professional look.
+ *
+ * Design pass 2026-11-08 (21st.dev "Glass Nav" pattern, @ryanflash66,
+ * adapted natively): the bar is a slim glass strip (translucent background,
+ * backdrop blur, hairline border) that condenses from h-16/md:h-20 to
+ * h-14/md:h-16 once scrolled past 24px. The active route carries a sliding
+ * gold (#C9A45C) pill via a shared framer-motion layoutId; Sign Up is the
+ * one solid gold action and Login stays a quiet ghost. No rust/orange
+ * (the old `text-primary` active state) remains in this file.
  */
 export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -78,12 +85,19 @@ export default function Header() {
   const { scrollY } = useScroll();
   const lastY = useRef(0);
   const [hidden, setHidden] = useState(false);
+  // Glass Nav pattern (21st.dev, @ryanflash66): the bar condenses once the
+  // visitor is past the hero threshold, and the active route carries a
+  // sliding pill. `scrolled` drives the condensed height; the pill itself
+  // is a framer-motion layoutId element in the nav below.
+  const [scrolled, setScrolled] = useState(false);
+  const reduceMotion = useReducedMotion();
 
   // Listen to scroll changes and toggle header visibility based on direction
   useMotionValueEvent(scrollY, 'change', (latest) => {
     const current = latest ?? 0;
     const prev = lastY.current;
     const delta = current - prev;
+    setScrolled(current > 24);
     // Add small threshold to reduce jitter near top and small scrolls
     const threshold = 4;
     if (current <= 0) {
@@ -167,6 +181,12 @@ export default function Header() {
     hidden: { y: '-100%' },
   };
 
+  // Sliding active-route pill (Glass Nav pattern). Under reduced motion
+  // the pill snaps instead of gliding.
+  const pillTransition = reduceMotion
+    ? { duration: 0 }
+    : { type: 'spring' as const, stiffness: 480, damping: 38, mass: 0.7 };
+
   // Warm common routes after idle to speed up first navigation
   useEffect(() => {
     const routesToPrefetch = ['/projects', '/store', '/blog', '/events'];
@@ -189,12 +209,15 @@ export default function Header() {
       animate={hidden ? 'hidden' : 'visible'}
       variants={variants}
       transition={{ type: 'tween', ease: 'easeInOut', duration: 0.25 }}
-      className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 flex items-center justify-between"
+      className="sticky top-0 z-50 w-full border-b border-border/50 bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/65 flex items-center justify-between"
       style={{ willChange: 'transform', touchAction: 'manipulation' }}
     >
-      <div className="container flex h-20 md:h-24 items-center justify-between px-4">
-        {/* Group 1: Logo (Far Left) - Fixed width container */}
-        <div className="flex items-center justify-start w-[160px] md:w-[200px] shrink-0">
+      <div
+        className={`container flex items-center justify-between px-4 transition-[height] duration-300 motion-reduce:transition-none ${scrolled ? 'h-14 md:h-16' : 'h-16 md:h-20'
+          }`}
+      >
+        {/* Group 1: Logo (Far Left) */}
+        <div className="flex items-center justify-start shrink-0">
           <Link href="/" prefetch className="flex items-center">
             <OptimizedLogo
               src="/assets/logo.png"
@@ -204,8 +227,9 @@ export default function Header() {
               width={128}
               height={128}
               priority
-              sizes="(max-width: 768px) 80px, 112px"
-              className="h-20 w-20 md:h-28 md:w-28 object-contain"
+              sizes="(max-width: 768px) 44px, 56px"
+              className={`object-contain transition-all duration-300 motion-reduce:transition-none ${scrolled ? 'h-10 w-10 md:h-11 md:w-11' : 'h-11 w-11 md:h-14 md:w-14'
+                }`}
             />
           </Link>
         </div>
@@ -213,22 +237,32 @@ export default function Header() {
         {/* Group 2: Navigation + Actions (Right) */}
         <div className="flex items-center gap-4">
           {/* Primary Navigation */}
-          <nav className="hidden md:flex items-center px-4">
-            <div className="flex items-center gap-2">
+          <nav className="hidden md:flex items-center px-2">
+            <div className="flex items-center gap-1">
               {desktopNav.map((item) => {
                 // Plain link item
                 if ('path' in item) {
+                  const active = isActive(item.path);
                   return (
                     <Link
                       key={item.path}
                       href={item.path}
                       prefetch
-                      className={`flex items-center gap-1.5 px-2 lg:px-3 py-2 rounded-md text-sm font-medium transition-colors hover:bg-muted ${isActive(item.path) ? 'text-primary bg-muted' : 'text-muted-foreground'
+                      className={`relative flex items-center gap-1.5 px-2.5 lg:px-3 py-1.5 rounded-full text-[13px] font-medium tracking-[0.01em] transition-colors hover:text-foreground ${active ? 'text-[#C9A45C]' : 'text-muted-foreground'
                         }`}
                       title={item.name}
+                      aria-current={active ? 'page' : undefined}
                     >
-                      <item.icon className="h-4 w-4 shrink-0" />
-                      <span className="hidden lg:inline whitespace-nowrap">{item.name}</span>
+                      {active && (
+                        <motion.span
+                          layoutId="header-nav-pill"
+                          transition={pillTransition}
+                          className="absolute inset-0 rounded-full bg-[#C9A45C]/[0.13] ring-1 ring-inset ring-[#C9A45C]/25"
+                          aria-hidden="true"
+                        />
+                      )}
+                      <item.icon className="relative z-10 h-[15px] w-[15px] shrink-0" />
+                      <span className="relative z-10 hidden lg:inline whitespace-nowrap">{item.name}</span>
                     </Link>
                   );
                 }
@@ -240,19 +274,28 @@ export default function Header() {
                     <DropdownMenu.Trigger asChild>
                       <button
                         type="button"
-                        className={`flex items-center gap-1.5 px-2 lg:px-3 py-2 rounded-md text-sm font-medium transition-colors hover:bg-muted ${groupActive ? 'text-primary bg-muted' : 'text-muted-foreground'
+                        className={`relative flex items-center gap-1.5 px-2.5 lg:px-3 py-1.5 rounded-full text-[13px] font-medium tracking-[0.01em] transition-colors hover:text-foreground ${groupActive ? 'text-[#C9A45C]' : 'text-muted-foreground'
                           }`}
                         aria-haspopup="menu"
                         aria-expanded={false}
                         title={item.name}
                       >
-                        <item.icon className="h-4 w-4 shrink-0" />
-                        <span className="hidden lg:inline whitespace-nowrap">{item.name}</span>
+                        {groupActive && (
+                          <motion.span
+                            layoutId="header-nav-pill"
+                            transition={pillTransition}
+                            className="absolute inset-0 rounded-full bg-[#C9A45C]/[0.13] ring-1 ring-inset ring-[#C9A45C]/25"
+                            aria-hidden="true"
+                          />
+                        )}
+                        <item.icon className="relative z-10 h-[15px] w-[15px] shrink-0" />
+                        <span className="relative z-10 hidden lg:inline whitespace-nowrap">{item.name}</span>
+                        <ChevronDown className="relative z-10 hidden lg:block h-3 w-3 opacity-60" aria-hidden="true" />
                       </button>
                     </DropdownMenu.Trigger>
                     <DropdownMenu.Content
-                      className="min-w-[220px] p-1 bg-popover border rounded-md shadow-md"
-                      sideOffset={8}
+                      className="min-w-[220px] p-1.5 bg-popover/95 backdrop-blur-xl border border-border/60 rounded-xl shadow-xl shadow-black/20"
+                      sideOffset={10}
                       align="start"
                     >
                       {item.children.map((child) => (
@@ -260,7 +303,7 @@ export default function Header() {
                           <Link
                             href={child.path}
                             prefetch
-                            className={`flex items-center gap-2 px-2 py-1.5 rounded-sm text-sm transition-colors hover:bg-muted ${isActive(child.path) ? 'text-primary' : 'text-muted-foreground'
+                            className={`flex items-center gap-2 px-2.5 py-2 rounded-lg text-[13px] transition-colors hover:bg-foreground/5 hover:text-foreground ${isActive(child.path) ? 'text-[#C9A45C]' : 'text-muted-foreground'
                               }`}
                           >
                             <child.icon className="h-4 w-4 shrink-0" />
@@ -293,16 +336,16 @@ export default function Header() {
             {isLoading ? null : user ? (
               <>
                 {showAdmin && (
-                  <Button asChild variant="outline" size="sm">
+                  <Button asChild variant="outline" size="sm" className="rounded-full h-8 px-3.5 text-[13px]">
                     <Link href="/admin" prefetch className="flex items-center gap-2" title="Admin Panel">
-                      <Shield className="h-4 w-4" />
+                      <Shield className="h-[15px] w-[15px]" />
                       <span className="hidden lg:inline">Admin</span>
                     </Link>
                   </Button>
                 )}
-                <Button asChild variant="outline" size="sm">
+                <Button asChild variant="outline" size="sm" className="rounded-full h-8 px-3.5 text-[13px]">
                   <Link href="/profile" prefetch className="flex items-center gap-2" title="Profile">
-                    <User className="h-4 w-4" />
+                    <User className="h-[15px] w-[15px]" />
                     <span className="hidden lg:inline">Profile</span>
                   </Link>
                 </Button>
@@ -310,10 +353,10 @@ export default function Header() {
               </>
             ) : (
               <>
-                <Button asChild variant="outline" size="sm">
+                <Button asChild variant="ghost" size="sm" className="rounded-full h-8 px-3.5 text-[13px] text-muted-foreground hover:text-foreground">
                   <Link href={loginHref} prefetch>Login</Link>
                 </Button>
-                <Button asChild variant="outline" size="sm">
+                <Button asChild size="sm" className="rounded-full h-8 px-4 text-[13px] font-semibold bg-[#C9A45C] text-[#101623] hover:bg-[#D9B96F] shadow-[0_2px_14px_rgba(201,164,92,0.35)]">
                   <Link href="/auth" prefetch>Sign Up</Link>
                 </Button>
                 <ThemeToggleButton />
@@ -369,7 +412,7 @@ export default function Header() {
                         <Button
                           key={item.path}
                           asChild
-                          className="px-3 py-3 min-h-[44px] rounded-md text-sm font-medium bg-orange-500 hover:bg-orange-600 text-foreground transition-colors"
+                          className="px-3 py-3 min-h-[44px] rounded-md text-sm font-semibold bg-[#C9A45C] hover:bg-[#D9B96F] text-[#101623] transition-colors"
                         >
                           <Link href={item.path} onClick={() => setIsMenuOpen(false)} className="flex items-center gap-2">
                             <Mail className="h-4 w-4" />
@@ -382,7 +425,7 @@ export default function Header() {
                       <Link
                         key={item.path}
                         href={item.path}
-                        className={`px-3 py-3 min-h-[44px] rounded-md text-sm flex items-center gap-2 transition-colors hover:bg-muted ${isActive(item.path) ? 'text-primary bg-muted' : 'text-muted-foreground'
+                        className={`px-3 py-3 min-h-[44px] rounded-lg text-sm flex items-center gap-2 transition-colors hover:bg-foreground/5 hover:text-foreground ${isActive(item.path) ? 'text-[#C9A45C] bg-[#C9A45C]/10' : 'text-muted-foreground'
                           }`}
                         onClick={() => setIsMenuOpen(false)}
                       >
@@ -401,7 +444,7 @@ export default function Header() {
                         <Link
                           key={child.path}
                           href={child.path}
-                          className={`px-3 py-3 min-h-[44px] rounded-md text-sm flex items-center gap-2 transition-colors hover:bg-muted ${isActive(child.path) ? 'text-primary bg-muted' : 'text-muted-foreground'
+                          className={`px-3 py-3 min-h-[44px] rounded-lg text-sm flex items-center gap-2 transition-colors hover:bg-foreground/5 hover:text-foreground ${isActive(child.path) ? 'text-[#C9A45C] bg-[#C9A45C]/10' : 'text-muted-foreground'
                             }`}
                           onClick={() => setIsMenuOpen(false)}
                         >
@@ -435,10 +478,10 @@ export default function Header() {
                       </>
                     ) : (
                       <>
-                        <Button asChild variant="outline" size="sm" className="justify-start min-h-[44px]">
+                        <Button asChild variant="ghost" size="sm" className="justify-start min-h-[44px] text-muted-foreground">
                           <Link href={loginHref} onClick={() => setIsMenuOpen(false)}>Login</Link>
                         </Button>
-                        <Button asChild variant="outline" size="sm" className="justify-start min-h-[44px]">
+                        <Button asChild size="sm" className="justify-start min-h-[44px] font-semibold bg-[#C9A45C] hover:bg-[#D9B96F] text-[#101623]">
                           <Link href="/auth" onClick={() => setIsMenuOpen(false)}>Sign Up</Link>
                         </Button>
                       </>

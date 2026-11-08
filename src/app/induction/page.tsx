@@ -8,7 +8,7 @@ import { getAuth } from 'firebase/auth';
 import { isSuperAdmin } from '@/lib/roles';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
+import { motion, useReducedMotion } from 'framer-motion';
 import { useForm, FormProvider, useFormContext } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -23,6 +23,7 @@ import { assessmentResultKey, hasExternalAssessmentLink } from '@/components/ind
 import { makeReferenceId } from '@/lib/applicant-status';
 
 // Static load induction steps to prevent Suspense unmount state-loss
+import { StepProgress } from '@/components/induction-stepper/StepProgress';
 import Step1Personal from '@/components/induction-stepper/Step1Personal';
 import Step2Skills from '@/components/induction-stepper/Step2Skills';
 import Step3Portfolio from '@/components/induction-stepper/Step3Portfolio';
@@ -368,7 +369,7 @@ function InductionConfigLoader() {
             </Button>
             {isRejected ? (
               <>
-                <Button className="w-full mt-4" onClick={handleReapply} disabled={isReapplying}>
+                <Button className="w-full mt-4 bg-amber-400 font-semibold text-black hover:bg-amber-300" onClick={handleReapply} disabled={isReapplying}>
                   {isReapplying ? (
                     <span className="flex items-center justify-center gap-2">
                       <Loader2 className="h-4 w-4 animate-spin" /> Starting re-application...
@@ -429,6 +430,7 @@ function InductionContentFormInner({ user, dynamicFields, schema }: { user: any,
     return Number.isNaN(n) || n < 1 ? 0 : n - 1;
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const shouldReduceMotion = useReducedMotion();
   const { addUniversity } = useUniversities();
 
   const defaultValues: any = {
@@ -847,8 +849,6 @@ function InductionContentFormInner({ user, dynamicFields, schema }: { user: any,
     }
   };
 
-  const progress = steps.length > 0 ? ((clampedStep + 1) / steps.length) * 100 : 0;
-
   return (
     <FormProvider {...methods}>
       <FormAutosave uid={user?.uid} />
@@ -879,7 +879,9 @@ function InductionContentFormInner({ user, dynamicFields, schema }: { user: any,
               <CardTitle className="text-3xl font-heading font-bold text-center text-foreground tracking-wide">
                 Induction Application
               </CardTitle>
-              <Progress value={progress} className="w-full mt-6 h-2" />
+              <div className="mt-6">
+                <StepProgress steps={steps} currentStep={clampedStep} />
+              </div>
             </CardHeader>
             <CardContent className="pt-8">
             <h2
@@ -892,11 +894,21 @@ function InductionContentFormInner({ user, dynamicFields, schema }: { user: any,
             </h2>
             <form onSubmit={methods.handleSubmit(onSubmit, onError)}>
               {steps.map((step, index) => (
-                <div key={step.id} className={clampedStep === index ? 'block' : 'hidden'}>
+                <motion.div
+                  key={step.id}
+                  initial={false}
+                  animate={
+                    clampedStep === index
+                      ? { opacity: 1, x: 0 }
+                      : { opacity: 0, x: shouldReduceMotion ? 0 : 20 }
+                  }
+                  transition={{ duration: shouldReduceMotion ? 0 : 0.3, ease: 'easeOut' }}
+                  className={clampedStep === index ? 'block' : 'hidden'}
+                >
                   {step.id === 'review'
                     ? cloneElement(step.component, { active: clampedStep === index })
                     : step.component}
-                </div>
+                </motion.div>
               ))}
               <div className="flex justify-between mt-8">
                 <Button
@@ -913,13 +925,13 @@ function InductionContentFormInner({ user, dynamicFields, schema }: { user: any,
                   Previous
                 </Button>
                 {clampedStep === steps.length - 1 ? (
-                  <Button type="submit" disabled={!user || isSubmitting} className="min-w-[150px]">
+                  <Button type="submit" disabled={!user || isSubmitting} className="min-w-[150px] bg-amber-400 font-semibold text-black hover:bg-amber-300">
                     {isSubmitting ? (
                       <span className="flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin"/> Executing...</span>
                     ) : 'Submit Application'}
                   </Button>
                 ) : (
-                  <Button type="button" onClick={handleNextStep}>Next Step</Button>
+                  <Button type="button" onClick={handleNextStep} className="bg-amber-400 font-semibold text-black hover:bg-amber-300">Next Step</Button>
                 )}
               </div>
             </form>

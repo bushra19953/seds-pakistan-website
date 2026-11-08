@@ -23,10 +23,12 @@ import {
   type WindowState,
 } from '@/lib/grand-prix/registration';
 
+// PERF: no italic Fraunces is rendered anywhere on this route (no italic
+// class, font-style, or <em>/<i> in the route), so the italic face is not
+// loaded — it previously cost a preloaded ~45 KB variable font file.
 const display = Fraunces({
   subsets: ['latin'],
   weight: ['500', '600', '700'],
-  style: ['normal', 'italic'],
   variable: '--gp-display',
 });
 

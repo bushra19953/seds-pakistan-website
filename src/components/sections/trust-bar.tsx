@@ -52,7 +52,7 @@ export default function TrustBar() {
   return (
     <section
       className="py-12 bg-transparent border-y border-primary/20"
-      aria-label="Organization Statistics"
+      aria-label="Organisation Statistics"
     >
       <div className="container mx-auto px-4 md:px-6">
         <div className="text-center mb-8">

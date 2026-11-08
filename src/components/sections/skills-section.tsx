@@ -30,7 +30,7 @@ const skills = [
   {
     icon: Printer,
     title: "3D Printing",
-    description: "Utilize additive manufacturing for rapid prototyping and custom parts.",
+    description: "Use additive manufacturing for rapid prototyping and custom parts.",
   },
   {
     icon: Scan,
@@ -40,7 +40,7 @@ const skills = [
   {
     icon: Wind,
     title: "CFD",
-    description: "Simulate and analyze fluid dynamics for aerodynamics and propulsion systems.",
+    description: "Simulate and analyse fluid dynamics for aerodynamics and propulsion systems.",
   },
   {
     icon: Flame,

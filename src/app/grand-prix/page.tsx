@@ -163,10 +163,13 @@ export default function GrandPrixPage() {
             intensive virtual masterclasses connecting collegiate engineers with real-world astronautics,
             propulsion dynamics, and space mission design.
           </p>
+          {/* Hero flags sit in identical frames (same width, height and
+              styling for both); the official artwork is letterboxed with
+              object-contain so neither flag is ever cropped. */}
           <div className="mt-10 flex items-start justify-center gap-5 sm:gap-10">
             <figure className="text-center">
-              <span className="block overflow-hidden rounded-md shadow-[0_18px_44px_rgba(0,0,0,0.5)] ring-1 ring-[#C9A45C]/45">
-                <PakistanFlag className="block h-auto w-32 sm:w-44" />
+              <span className="flex aspect-[7/4] w-36 items-center justify-center overflow-hidden rounded-md shadow-[0_18px_44px_rgba(0,0,0,0.5)] ring-1 ring-[#C9A45C]/45 sm:w-60">
+                <PakistanFlag className="h-full w-full object-contain" />
               </span>
               <figcaption className="mt-3 text-[11px] font-extrabold uppercase tracking-[0.32em] text-[#CBBFA5]">
                 Pakistan
@@ -177,14 +180,14 @@ export default function GrandPrixPage() {
             </figure>
             <span
               aria-hidden="true"
-              className={`mt-6 flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#C9A45C]/50 bg-white/[0.04] text-xl sm:mt-9 ${displayFont}`}
+              className={`mt-[19px] flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#C9A45C]/50 bg-white/[0.04] text-xl sm:mt-[46px] ${displayFont}`}
               style={{ color: GOLD_LIGHT }}
             >
               &times;
             </span>
             <figure className="text-center">
-              <span className="block overflow-hidden rounded-md shadow-[0_18px_44px_rgba(0,0,0,0.5)] ring-1 ring-[#C9A45C]/45">
-                <SriLankaFlag className="block h-auto w-[10.5rem] sm:w-60" />
+              <span className="flex aspect-[7/4] w-36 items-center justify-center overflow-hidden rounded-md shadow-[0_18px_44px_rgba(0,0,0,0.5)] ring-1 ring-[#C9A45C]/45 sm:w-60">
+                <SriLankaFlag className="h-full w-full object-contain" />
               </span>
               <figcaption className="mt-3 text-[11px] font-extrabold uppercase tracking-[0.32em] text-[#CBBFA5]">
                 Sri Lanka

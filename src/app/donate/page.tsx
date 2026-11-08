@@ -110,7 +110,7 @@ const DonatePage = () => {
     const [pageContent, setPageContent] = useState<PageContent>({
         title: 'Donate to SEDS Pakistan',
         content: '',
-        meta_description: 'Support our mission to democratize space education in Pakistan.',
+        meta_description: 'Support our mission to democratise space education in Pakistan.',
     });
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string>('');

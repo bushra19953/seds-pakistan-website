@@ -66,7 +66,7 @@ function MarqueeSection({ title, organizations, sectionKey, description }: Marqu
           <p className="text-sm text-muted-foreground mb-2">{description}</p>
         )}
         <p className="text-xs text-muted-foreground">
-          {organizations.length} organization{organizations.length !== 1 ? 's' : ''}
+          {organizations.length} organisation{organizations.length !== 1 ? 's' : ''}
         </p>
       </div>
 
@@ -246,7 +246,7 @@ export default function CredibilityMarquee({ data: propData }: CredibilityMarque
         setError(null);
       } catch (err) {
         console.error('Error fetching organizations:', err);
-        setError(err instanceof Error ? err.message : 'Failed to load organizations');
+        setError(err instanceof Error ? err.message : 'Failed to load organisations');
       } finally {
         setLoading(false);
       }
@@ -281,7 +281,7 @@ export default function CredibilityMarquee({ data: propData }: CredibilityMarque
             </h2>
             <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4 max-w-md mx-auto">
               <p className="text-destructive text-sm">
-                Unable to load organizations. Please try again later.
+                Unable to load organisations. Please try again later.
               </p>
               {process.env.NODE_ENV === 'development' && (
                 <p className="text-xs mt-2 text-muted-foreground">
@@ -379,7 +379,7 @@ export default function CredibilityMarquee({ data: propData }: CredibilityMarque
               Our Partners & Chapters
             </h2>
             <p className="text-muted-foreground">
-              No organizations found. Please check back later.
+              No organisations found. Please check back later.
             </p>
           </div>
         </div>
@@ -390,7 +390,7 @@ export default function CredibilityMarquee({ data: propData }: CredibilityMarque
   return (
     <section
       className="py-12 bg-transparent border-y border-border/20"
-      aria-label="Organization Partners and Chapters"
+      aria-label="Organisation Partners and Chapters"
     >
       <div className="container mx-auto px-4 md:px-6">
         <div className="text-center mb-8">
@@ -398,7 +398,7 @@ export default function CredibilityMarquee({ data: propData }: CredibilityMarque
             Our Partners & Chapters
           </h2>
           <p className="text-muted-foreground max-w-2xl mx-auto">
-            Collaborating with leading organizations, universities, and space agencies worldwide
+            Collaborating with leading organisations, universities, and space agencies worldwide
           </p>
         </div>
 
@@ -410,7 +410,7 @@ export default function CredibilityMarquee({ data: propData }: CredibilityMarque
               className="inline-flex items-center gap-2 px-4 py-2 text-sm bg-primary/10 hover:bg-primary/20 border border-primary/30 rounded-lg text-primary transition-colors"
             >
               <Settings className="w-4 h-4" />
-              <span>Manage Organizations</span>
+              <span>Manage Organisations</span>
             </a>
           </div>
         )}
@@ -453,7 +453,7 @@ export default function CredibilityMarquee({ data: propData }: CredibilityMarque
           {data.localSupporters.length > 0 && (
             <MarqueeSection
               title="Our Local Supporters (SEDS Pakistan)"
-              description="Pakistani organizations supporting our mission"
+              description="Pakistani organisations supporting our mission"
               organizations={data.localSupporters}
               sectionKey="localSupporters"
             />

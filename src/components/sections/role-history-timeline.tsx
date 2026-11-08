@@ -177,7 +177,7 @@ export default function RoleHistoryTimelineSection() {
             <h3 className="text-xl font-semibold mb-2">Leadership Information Coming Soon</h3>
             <p className="text-muted-foreground max-w-md mx-auto">
               Current leadership positions will be displayed here once they are added by administrators. 
-              This ensures our organizational information stays accurate and up-to-date.
+              This ensures our organisational information stays accurate and up-to-date.
             </p>
           </div>
         )}

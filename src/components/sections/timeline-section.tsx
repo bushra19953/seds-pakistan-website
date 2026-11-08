@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Rocket, RadioTower, Code, Wrench, ChevronDown, ArrowRight } from 'lucide-react';
+import { motion, useReducedMotion, useScroll, useSpring } from 'framer-motion';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { cn, formatDate } from '@/lib/utils';
 import { collection, limit, orderBy, query, where, type CollectionReference, type FirestoreDataConverter, type Query } from 'firebase/firestore';
@@ -200,7 +201,23 @@ function useInView<T extends HTMLElement>(threshold = 0.15) {
   return { ref, inView };
 }
 
-function TimelineEventCard({ event, index }: { event: TimelineEvent; index: number }) {
+function TimelineEventCard({
+  event,
+  index,
+  polished = false,
+  reduceMotion = false,
+}: {
+  event: TimelineEvent;
+  index: number;
+  /**
+   * Full-page treatment (21st.dev "Modern Timeline" pattern): the card's
+   * entrance is a framer-motion reveal and the beacon lights gold once
+   * the entry has been reached by the scroll progress spine. Teaser
+   * surfaces keep the legacy treatment untouched.
+   */
+  polished?: boolean;
+  reduceMotion?: boolean;
+}) {
   const { ref, inView } = useInView<HTMLDivElement>();
   const isEven = index % 2 === 0;
   const Icon = iconMap[event.icon as keyof typeof iconMap] ?? Wrench;
@@ -208,34 +225,17 @@ function TimelineEventCard({ event, index }: { event: TimelineEvent; index: numb
   const displayYear = event.year ?? String(dateObj.getFullYear());
   const displayDate = formatDate(dateObj);
 
-  return (
-    <div
-      ref={ref}
-      data-testid="timeline-card"
-      className={cn(
-        "relative flex items-center w-full",
-        // For larger screens, justify start/end to alternate
-        isEven ? "md:justify-start" : "md:justify-end",
-        // On smaller screens, all items are on the right
-        "justify-end"
-      )}
-    >
-      <div
-        className={cn(
-          "w-full md:w-1/2",
-          isEven ? "md:pr-16" : "md:pl-16",
-          "pl-12"
-        )}
-      >
+  const card = (
         <Card className={cn(
           "group relative bg-card/60 backdrop-blur-2xl border-2 border-border overflow-hidden rounded-2xl transition-all duration-700 hover:shadow-[0_0_40px_rgba(59,130,246,0.15)] hover:border-primary/60 hover:-translate-y-2",
-          inView
-            ? cn(
-                "animate-in fade-in zoom-in-95",
-                isEven ? "slide-in-from-left-12" : "md:slide-in-from-right-12",
-                "slide-in-from-right-12"
-              )
-            : "opacity-0"
+          !polished &&
+            (inView
+              ? cn(
+                  "animate-in fade-in zoom-in-95",
+                  isEven ? "slide-in-from-left-12" : "md:slide-in-from-right-12",
+                  "slide-in-from-right-12"
+                )
+              : "opacity-0")
         )}>
           {/* Tactical Card Accents */}
           <div className={`absolute top-0 ${isEven ? 'right-0' : 'left-0'} w-1.5 h-full bg-gradient-to-b from-primary via-primary/50 to-transparent opacity-60 group-hover:opacity-100 transition-opacity duration-500`} />
@@ -274,6 +274,66 @@ function TimelineEventCard({ event, index }: { event: TimelineEvent; index: numb
             </div>
           </CardHeader>
         </Card>
+  );
+
+  const outerClassName = cn(
+    "relative flex items-center w-full",
+    // For larger screens, justify start/end to alternate
+    isEven ? "md:justify-start" : "md:justify-end",
+    // On smaller screens, all items are on the right
+    "justify-end"
+  );
+  const columnClassName = cn(
+    "w-full md:w-1/2",
+    isEven ? "md:pr-16" : "md:pl-16",
+    "pl-12"
+  );
+
+  if (polished) {
+    return (
+      <div ref={ref} data-testid="timeline-card" className={outerClassName}>
+        <div className={columnClassName}>
+          {reduceMotion ? (
+            card
+          ) : (
+            <motion.div
+              initial={{ opacity: 0, y: 28 }}
+              animate={inView ? { opacity: 1, y: 0 } : { opacity: 0, y: 28 }}
+              transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+            >
+              {card}
+            </motion.div>
+          )}
+        </div>
+
+        {/* Milestone beacon: quiet until the entry scrolls into view,
+            then it lights gold — the same gold as the progress spine.
+            No ambient ping/pulse; the state change is the signal. */}
+        <div className="absolute left-5 md:left-1/2 -translate-x-1/2 z-20">
+          <div
+            className={cn(
+              "h-6 w-6 rounded-full bg-card border-2 flex items-center justify-center transition-colors duration-500",
+              inView
+                ? "border-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.45)]"
+                : "border-primary/40"
+            )}
+          >
+            <div
+              className={cn(
+                "h-2 w-2 rounded-full transition-colors duration-500",
+                inView ? "bg-amber-400" : "bg-primary/40"
+              )}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div ref={ref} data-testid="timeline-card" className={outerClassName}>
+      <div className={columnClassName}>
+        {card}
       </div>
 
       {/* The Milestone Beacon (Upgraded Circular Node) */}
@@ -427,6 +487,24 @@ export default function TimelineSection({ variant = 'full' }: TimelineSectionPro
   const isMonthOpen = (key: string) =>
     monthOpenOverrides[key] ?? (key === mostRecentMonthKey);
 
+  // Scroll progress spine (full variant only, 21st.dev "Modern Timeline"
+  // pattern): a gold fill traces down the spine as the reader moves
+  // through the journey — progress reads off a fixed line at 65% of the
+  // viewport height. The spring smooths the trace; under
+  // prefers-reduced-motion the fill renders fully traced and static
+  // instead (see the spine markup below).
+  const reduceMotion = !!useReducedMotion();
+  const spineRef = useRef<HTMLDivElement | null>(null);
+  const { scrollYProgress } = useScroll({
+    target: spineRef,
+    offset: ['start 65%', 'end 65%'],
+  });
+  const spineFill = useSpring(scrollYProgress, {
+    stiffness: 120,
+    damping: 30,
+    restDelta: 0.001,
+  });
+
   let cardIndex = 0;
 
   return (
@@ -438,14 +516,34 @@ export default function TimelineSection({ variant = 'full' }: TimelineSectionPro
             A timeline of our key activities, milestones, and achievements.
           </p>
         </div>
-        <div className="relative">
-          {/* The Chronal Conduit (Upgraded Vertical Line). On mobile it hugs
-              the left gutter (left-5) so it runs through the beacons, not
-              through the middle of the right-pushed cards. */}
-          <div className="absolute left-5 md:left-1/2 h-full w-[2px] -translate-x-1/2 overflow-hidden" aria-hidden="true">
-            <div className="h-full w-full bg-gradient-to-b from-primary/50 via-emerald-500/50 to-primary/5 shadow-[0_0_15px_rgba(59,130,246,0.3)]" />
-            <div className="absolute top-0 left-0 w-full h-20 bg-white/40 blur-md animate-infinite-scroll" />
-          </div>
+        <div className="relative" ref={spineRef}>
+          {isTeaser ? (
+            /* The Chronal Conduit (Upgraded Vertical Line). On mobile it hugs
+               the left gutter (left-5) so it runs through the beacons, not
+               through the middle of the right-pushed cards. Teaser surfaces
+               keep this treatment; the full page uses the progress spine. */
+            <div className="absolute left-5 md:left-1/2 h-full w-[2px] -translate-x-1/2 overflow-hidden" aria-hidden="true">
+              <div className="h-full w-full bg-gradient-to-b from-primary/50 via-emerald-500/50 to-primary/5 shadow-[0_0_15px_rgba(59,130,246,0.3)]" />
+              <div className="absolute top-0 left-0 w-full h-20 bg-white/40 blur-md animate-infinite-scroll" />
+            </div>
+          ) : (
+            /* Progress spine: a quiet track with one gold fill whose height
+               is the reader's progress through the timeline. Gold is the
+               page's single accent and appears only here and on the
+               beacons it has reached. Under reduced motion the fill is
+               rendered fully traced, with no scroll coupling. */
+            <div className="absolute left-5 md:left-1/2 h-full w-[2px] -translate-x-1/2" aria-hidden="true">
+              <div className="h-full w-full bg-primary/15" />
+              {reduceMotion ? (
+                <div className="absolute inset-0 bg-gradient-to-b from-amber-300 via-amber-400 to-amber-500" />
+              ) : (
+                <motion.div
+                  className="absolute inset-0 origin-top bg-gradient-to-b from-amber-300 via-amber-400 to-amber-500 shadow-[0_0_12px_rgba(251,191,36,0.45)]"
+                  style={{ scaleY: spineFill }}
+                />
+              )}
+            </div>
+          )}
 
           <div className="relative flex flex-col gap-12">
             {loading && (
@@ -540,6 +638,8 @@ export default function TimelineSection({ variant = 'full' }: TimelineSectionPro
                               key={event.id ?? `${month.key}-${index}`}
                               event={event}
                               index={index}
+                              polished
+                              reduceMotion={reduceMotion}
                             />
                           );
                         })}

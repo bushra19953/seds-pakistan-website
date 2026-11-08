@@ -215,5 +215,20 @@ export const config = {
   // public routes to pause them. Static Next internals stay excluded.
   // The gate is now a synchronous env read, so widening the matcher no
   // longer multiplies Function Invocations.
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  //
+  // PERF (2026-11-08): the lookahead also excludes the paths this
+  // function provably never acts on in ANY gate mode, so they stop
+  // paying an Edge invocation per request:
+  // - site-paused, api/site-state, auth, icons, fonts are gate-exempt
+  //   prefixes (GATE_EXEMPT_PREFIXES above) AND cannot reach either
+  //   guard branch (only /api/admin/* and /admin* are guarded), so the
+  //   function is a guaranteed no-op for them. The in-function
+  //   exemption list stays as defence in depth.
+  // - /admin and /api/admin are gate-exempt too but MUST stay matched:
+  //   the session guards below live on those paths.
+  // Public pages and non-admin /api/* stay matched on purpose: the
+  // gate has to see them to pause the site.
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|site-paused|api/site-state|auth|icons|fonts).*)',
+  ],
 };

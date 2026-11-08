@@ -147,45 +147,73 @@ export async function GET(
     const uniqueAssigneeIds = Array.from(new Set(tasks.flatMap(t => stepAssigneeIds(t))));
     const assigneeInfo: Record<string, { name: string; chapterName?: string }> = {};
 
+    // Workflow-level chapter name (also resolved inside the assignee
+    // block below, from the same keyed chapter cache).
+    let chapterName: string | null = null;
+
     if (uniqueAssigneeIds.length > 0) {
       const userSnaps = await Promise.all(
         uniqueAssigneeIds.map(uid => userSnapVia(uid))
       );
-      const chapterCache: Record<string, string> = {};
+      // Chapter names resolve by chapter id (keyed, never positional)
+      // and every distinct chapter loads at most once per request, all
+      // in parallel. Previously each distinct chapter was awaited
+      // serially inside the assignee loop (one extra round trip per
+      // chapter on every mission view), and the workflow-level chapter
+      // below was then fetched a second time even when it was already
+      // in this cache. The workflow's own chapter (first task's
+      // chapterId) joins the same batch so it is covered too.
+      const chapterNameById: Record<string, string> = {};
+      const chapterIdByKey = new Map<string, string>();
+      for (const doc of userSnaps) {
+        if (!doc.exists) continue;
+        const cid = (doc.data() as any)?.chapterId;
+        if (cid) chapterIdByKey.set(String(cid), cid);
+      }
+      const workflowChapterId = tasks.find(t => !!t.chapterId)?.chapterId;
+      if (workflowChapterId && !chapterIdByKey.has(String(workflowChapterId))) {
+        chapterIdByKey.set(String(workflowChapterId), workflowChapterId);
+      }
+      await Promise.all(
+        Array.from(chapterIdByKey.entries()).map(async ([key, rawChapterId]) => {
+          try {
+            const chapSnap = await chapterSnapVia(rawChapterId);
+            if (chapSnap.exists) {
+              chapterNameById[key] = chapSnap.data()?.name || '';
+            }
+          } catch { /* ignore */ }
+        })
+      );
       for (const doc of userSnaps) {
         if (!doc.exists) {
           assigneeInfo[doc.id] = { name: 'SEDS Member' };
           continue;
         }
         const userData = doc.data() as any;
-        let chapterName: string | undefined;
         const userChapterId = userData?.chapterId;
-        if (userChapterId) {
-          if (!chapterCache[userChapterId]) {
-            try {
-              const chapSnap = await chapterSnapVia(userChapterId);
-              if (chapSnap.exists) {
-                chapterCache[userChapterId] = chapSnap.data()?.name || '';
-              }
-            } catch { /* ignore */ }
-          }
-          chapterName = chapterCache[userChapterId] || undefined;
-        }
         assigneeInfo[doc.id] = {
           name: userData?.displayName || 'SEDS Member',
-          chapterName,
+          chapterName: userChapterId
+            ? chapterNameById[String(userChapterId)] || undefined
+            : undefined,
         };
+      }
+      if (workflowChapterId) {
+        chapterName = chapterNameById[String(workflowChapterId)] || null;
       }
     }
 
-    // Workflow-level chapter name
-    let chapterName: string | null = null;
-    const firstTaskWithChapter = tasks.find(t => !!t.chapterId);
-    if (firstTaskWithChapter?.chapterId) {
-      try {
-        const chapSnap = await chapterSnapVia(firstTaskWithChapter.chapterId);
-        if (chapSnap.exists) chapterName = chapSnap.data()?.name || null;
-      } catch { /* ignore */ }
+    // Workflow-level chapter name for a workflow whose steps carry a
+    // chapterId but have no assignees at all: the assignee block above
+    // never ran, so resolve it here, exactly as before.
+    if (chapterName === null && uniqueAssigneeIds.length === 0) {
+      const firstTaskWithChapter = tasks.find(t => !!t.chapterId);
+      if (firstTaskWithChapter?.chapterId) {
+        try {
+          const chapSnap = await chapterSnapVia(firstTaskWithChapter.chapterId);
+          if (chapSnap.exists) chapterName = chapSnap.data()?.name || null;
+        } catch { /* ignore */ }
+      }
     }
 
     const firstTask = tasks[0] as any;

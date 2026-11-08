@@ -292,7 +292,11 @@ function WorkflowCard({
       let pdfAssigneeInfo: Record<string, { email?: string | null; whatsapp?: string | null }> = {};
 
       if (!stepsLoaded) {
-        await fetchSteps();
+        // Do not block the PDF on this load: the fresh fetch below always
+        // overwrites pdfSteps on success and leaves `steps` untouched on
+        // failure, exactly as the awaited call did. Fire it only so the
+        // card's own step list still populates for the UI.
+        void fetchSteps();
       }
 
       // Always fetch fresh data to get chapter info and full assignee details
@@ -309,19 +313,32 @@ function WorkflowCard({
         }
       }
 
-      // Pre-process assignee photos to Base64 (primary + co-assignees)
+      // Pre-process assignee photos to Base64 (primary + co-assignees).
+      // Per-run cache: the same person appears as a primary on one step
+      // and as a co-assignee on others, so the same photo URL was being
+      // fetched and converted once per appearance. Cache the in-flight
+      // promise per URL so each unique photo is fetched/converted once.
+      const photoCache = new Map<string, Promise<string | undefined>>();
+      const cachedUrlToBase64 = (url: string): Promise<string | undefined> => {
+        let pending = photoCache.get(url);
+        if (!pending) {
+          pending = urlToBase64(url);
+          photoCache.set(url, pending);
+        }
+        return pending;
+      };
       const processedSteps = await Promise.all(
         pdfSteps.map(async (s: WorkflowStep) => {
           let base64Photo = undefined;
           if (s.assigneePhoto) {
-            base64Photo = await urlToBase64(s.assigneePhoto);
+            base64Photo = await cachedUrlToBase64(s.assigneePhoto);
           }
           // Co-assignee photos are converted too so every fellow renders a
           // full personnel block (avatar, phone, email, their own QR).
           const processedAssignees = await Promise.all(
             (s.assignees || []).map(async (a) => ({
               ...a,
-              photoBase64: a.photoURL ? await urlToBase64(a.photoURL) : undefined,
+              photoBase64: a.photoURL ? await cachedUrlToBase64(a.photoURL) : undefined,
             }))
           );
           return {

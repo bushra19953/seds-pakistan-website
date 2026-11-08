@@ -363,13 +363,18 @@ export interface WorkflowDetailReads {
 }
 
 /**
- * Fetch the detail branch's ENTIRE read set through the adapter, in
- * the handler's own derivation order (tasks -> first chapter ->
- * users -> per-user chapters -> viewer role -> membership doc).
- * Returns null if ANY read is unavailable/throws, so step 17 falls
- * back to the whole Firestore chain rather than mixing stores
- * mid-response. Empty/missing docs surface as exists:false /
- * empty docs, never as null.
+ * Fetch the detail branch's ENTIRE read set through the adapter.
+ * The RESULTS are exactly the handler's own derivation (tasks ->
+ * first chapter -> users -> per-user chapters -> assignee roles ->
+ * viewer role -> membership doc); only the ISSUANCE is parallelized
+ * (perf: this function previously awaited every doc get in sequence,
+ * so a detail load cost one round trip per assignee twice over).
+ * getDocSnapshotViaSupa never throws (null on any adapter error),
+ * so Promise.all issuance cannot change failure semantics: any null
+ * in a group still returns null overall, and step 17 falls back to
+ * the whole Firestore chain rather than mixing stores mid-response.
+ * Empty/missing docs surface as exists:false / empty docs, never
+ * as null.
  */
 export async function fetchWorkflowDetailReadsViaSupa(
   workflowId: string,
@@ -378,67 +383,85 @@ export async function fetchWorkflowDetailReadsViaSupa(
   const adapter = await getWorkflowsSupaAdapter();
   if (!adapter) return null;
 
+  // The viewer's role doc (L569) and the membership gate doc
+  // (L576-578) depend only on (workflowId, viewerUid), not on the
+  // tasks fetch: start them now, await them at their check points
+  // below (the async-api-routes rule: start independent operations
+  // immediately). If an earlier check returns null first, these
+  // promises simply resolve unused — they cannot reject.
+  const roleSnapPromise = getDocSnapshotViaSupa(adapter, ROLES_COLLECTION, viewerUid);
+  const memberSnapPromise = getDocSnapshotViaSupa(
+    adapter,
+    WORKFLOW_MEMBERS_COLLECTION,
+    `${workflowId}_${viewerUid}`,
+  );
+
   const tasksSnap = await listWorkflowTasksViaSupa(workflowId);
   if (!tasksSnap) return null;
   const taskData = tasksSnap.docs.map((d) => d.data());
 
-  // L486-495: chapter of the first task carrying a chapterId.
-  let workflowChapterSnap: SupaDocSnapshotLike | null = null;
-  const firstChapterId = taskData.find((t) => !!t.chapterId)?.chapterId;
-  if (firstChapterId) {
-    workflowChapterSnap = await getDocSnapshotViaSupa(
-      adapter,
-      CHAPTERS_COLLECTION,
-      String(firstChapterId),
-    );
-    if (!workflowChapterSnap) return null;
-  }
-
-  // L481 + L500-503: unique assignees (both assignee forms), parallel gets.
+  // L481: unique assignees (both assignee forms).
   const uniqueAssigneeIds = Array.from(new Set(taskData.flatMap(detailTaskAssigneeIds)));
-  const userSnaps: SupaDocSnapshotLike[] = [];
-  for (const uid of uniqueAssigneeIds) {
-    const snap = await getDocSnapshotViaSupa(adapter, USERS_COLLECTION, uid);
-    if (!snap) return null;
-    userSnaps.push(snap);
-  }
+
+  // L486-495 + L500-503: the first task's chapter doc and the
+  // assignee user docs are independent of each other once the tasks
+  // are known — fetch both groups in one parallel wave. Result
+  // order matches uniqueAssigneeIds order (Promise.all preserves
+  // input order), exactly as the old sequential loop produced.
+  const firstChapterId = taskData.find((t) => !!t.chapterId)?.chapterId;
+  const [workflowChapterSnap, userSnapResults] = await Promise.all([
+    firstChapterId
+      ? getDocSnapshotViaSupa(adapter, CHAPTERS_COLLECTION, String(firstChapterId))
+      : Promise.resolve(null),
+    Promise.all(
+      uniqueAssigneeIds.map((uid) => getDocSnapshotViaSupa(adapter, USERS_COLLECTION, uid)),
+    ),
+  ]);
+  if (firstChapterId && !workflowChapterSnap) return null;
+  if (userSnapResults.some((s) => s === null)) return null;
+  const userSnaps = userSnapResults as SupaDocSnapshotLike[];
 
   // L509-524: per-user chapter lookups, only where the user doc has
-  // a chapterId and no chapterName of its own (handler's cache keys).
+  // a chapterId and no chapterName of its own (handler's cache
+  // keys). Distinct keys are collected in the handler's first-seen
+  // order, then fetched in parallel; any miss returns null.
   const userChapterSnaps: Record<string, SupaDocSnapshotLike> = {};
+  const chapterKeys: string[] = [];
   for (const snap of userSnaps) {
     if (!snap.exists) continue;
     const userData = snap.data() as Record<string, unknown>;
     const chapterId = userData?.chapterId;
     if (userData?.chapterName || !chapterId) continue;
     const key = String(chapterId);
-    if (userChapterSnaps[key]) continue;
-    const chapSnap = await getDocSnapshotViaSupa(adapter, CHAPTERS_COLLECTION, key);
-    if (!chapSnap) return null;
-    userChapterSnaps[key] = chapSnap;
+    if (chapterKeys.includes(key)) continue;
+    chapterKeys.push(key);
   }
+  const chapterSnapResults = await Promise.all(
+    chapterKeys.map((key) => getDocSnapshotViaSupa(adapter, CHAPTERS_COLLECTION, key)),
+  );
+  if (chapterSnapResults.some((s) => s === null)) return null;
+  chapterKeys.forEach((key, i) => {
+    userChapterSnaps[key] = chapterSnapResults[i] as SupaDocSnapshotLike;
+  });
 
   // MSG47: roles docs of the workflow's assignees, parallel to
   // uniqueAssigneeIds — the additionalRoles store for the display-role
   // resolution. Any miss returns null (whole-chain Firestore fallback),
-  // exactly like the users fetch above.
-  const assigneeRoleSnaps: SupaDocSnapshotLike[] = [];
-  for (const uid of uniqueAssigneeIds) {
-    const snap = await getDocSnapshotViaSupa(adapter, ROLES_COLLECTION, uid);
-    if (!snap) return null;
-    assigneeRoleSnaps.push(snap);
-  }
+  // exactly like the users fetch above. KEYED downstream by snap.id
+  // (resolveAssigneeDisplayRoles), never paired by position against
+  // a differently-ordered list.
+  const assigneeRoleResults = await Promise.all(
+    uniqueAssigneeIds.map((uid) => getDocSnapshotViaSupa(adapter, ROLES_COLLECTION, uid)),
+  );
+  if (assigneeRoleResults.some((s) => s === null)) return null;
+  const assigneeRoleSnaps = assigneeRoleResults as SupaDocSnapshotLike[];
 
-  // L569: viewer's live role doc.
-  const roleSnap = await getDocSnapshotViaSupa(adapter, ROLES_COLLECTION, viewerUid);
+  // L569: viewer's live role doc (started above).
+  const roleSnap = await roleSnapPromise;
   if (!roleSnap) return null;
 
-  // L576-578: membership gate doc.
-  const memberSnap = await getDocSnapshotViaSupa(
-    adapter,
-    WORKFLOW_MEMBERS_COLLECTION,
-    `${workflowId}_${viewerUid}`,
-  );
+  // L576-578: membership gate doc (started above).
+  const memberSnap = await memberSnapPromise;
   if (!memberSnap) return null;
 
   return {

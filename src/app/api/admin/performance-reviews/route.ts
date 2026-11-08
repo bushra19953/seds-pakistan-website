@@ -189,13 +189,15 @@ export async function GET(req: NextRequest) {
 
         let reviews = await listPerformanceReviews(db, term);
         if (ownChapterOnly) {
-            const filtered: PerformanceReview[] = [];
-            for (const review of reviews) {
-                const userSnap = await db.collection('users').doc(review.subjectUid).get();
-                const chapterId = userSnap.exists ? (userSnap.data() || {}).chapterId || null : null;
-                if (chapterId === ownChapterOnly) filtered.push(review);
-            }
-            reviews = filtered;
+            // Perf: resolve each distinct subject's chapter in one
+            // parallel wave instead of a sequential get per review.
+            // The filtered list and its order are unchanged.
+            const chapterByUid = new Map<string, string | null>();
+            await Promise.all([...new Set(reviews.map((r) => r.subjectUid))].map(async (uid) => {
+                const userSnap = await db.collection('users').doc(uid).get();
+                chapterByUid.set(uid, userSnap.exists ? (userSnap.data() || {}).chapterId || null : null);
+            }));
+            reviews = reviews.filter((review) => chapterByUid.get(review.subjectUid) === ownChapterOnly);
         }
         return NextResponse.json({ success: true, term, terms: recentQuarterKeys(4), reviews });
     } catch (err: any) {

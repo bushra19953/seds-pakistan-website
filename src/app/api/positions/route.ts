@@ -176,8 +176,11 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    const totalCountSnap = await db.collection('positions').get();
-    const totalCount = totalCountSnap.size;
+    // Perf: this total used to cost a full collection scan (one billed
+    // read per position doc) on every list call. The count aggregation
+    // returns the same whole-collection total — the filters above were
+    // never applied to it — at one read per 1,000 docs.
+    const totalCount = (await db.collection('positions').count().get()).data().count;
 
     const last = snap.docs[snap.docs.length - 1];
     const lastCreated = last ? (last.get('startDate') as FirebaseFirestore.Timestamp | undefined) : undefined;

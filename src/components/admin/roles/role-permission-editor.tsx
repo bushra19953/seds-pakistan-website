@@ -29,7 +29,8 @@ import { Switch } from '@/components/ui/switch';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { doc, getDoc, collection, getDocs, orderBy, query as firestoreQuery } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
+import { getChaptersCached } from '@/lib/chapters-client';
 import { getAuth } from 'firebase/auth';
 import { useFirestore, useUser } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
@@ -230,8 +231,16 @@ export function RolePermissionEditor({
     setLoadingChapters(true);
     const fetchChapters = async () => {
       try {
-        const snap = await getDocs(firestoreQuery(collection(firestore, 'chapters'), orderBy('name', 'asc')));
-        const list = snap.docs.map(d => ({ id: d.id, name: d.data().name || d.id }));
+        // Shared cached reader (src/lib/chapters-client.ts): one
+        // getDocs over `chapters` per 5-minute window, shared with
+        // UserTable and the Role Registry, instead of a fresh full
+        // collection read on every editor open. This site previously
+        // relied on the query's orderBy('name', 'asc'), so the name
+        // sort is applied client-side on a copy (the cached array is
+        // shared and must not be mutated).
+        const list = [...(await getChaptersCached(firestore))].sort((a, b) =>
+          a.name.localeCompare(b.name),
+        );
         setChapters(list);
       } catch (err) { console.error('Failed to fetch chapters:', err); }
       finally { setLoadingChapters(false); }

@@ -205,9 +205,9 @@ export default function UserTable() {
         return;
       }
       if (entry) searchMapRef.current.delete(cacheKey);
-      // Loop guard: fetchPage's identity churns whenever `rows`
-      // changes, so the fetch effect refires right after a fetch
-      // completes. For an EMPTY result - deliberately never cached -
+      // Loop guard: the fetch effect refires whenever fetchPage's
+      // identity changes (filter state), including right after a
+      // fetch completes. For an EMPTY result - deliberately never cached -
       // a same-key refire inside the TTL is asking for the result
       // already on screen; answering it from the network would spin
       // a fetch loop. Genuine new intent always changes the key,
@@ -318,7 +318,7 @@ export default function UserTable() {
       currentRequestRef.current = null;
       setLoading(false);
     }
-  }, [search, roleFilter, chapterFilter, chapters, firestore, toast, cancelCurrentRequest, rows]);
+  }, [search, roleFilter, chapterFilter, chapters, firestore, toast, cancelCurrentRequest]);
 
   // REQ 1: Retry from the LOAD-FAILED state - a forced network
   // refetch of the current key (cache and loop guard bypassed).
@@ -459,7 +459,11 @@ export default function UserTable() {
     await prev();
   };
 
-  const onChangeRole = async (uid: string, newRole: string, customTitle?: string, expiresAt?: string | null) => {
+  // Stable identities (useCallback): the `columns` memo below and
+  // the memoized VirtualizedUserTable both key off these handlers, so
+  // a fresh closure per render would rebuild every column definition
+  // and re-render the whole table on any state change.
+  const onChangeRole = useCallback(async (uid: string, newRole: string, customTitle?: string, expiresAt?: string | null) => {
     if (!user?.uid) return;
     if (!canManageRoles) {
       toast({ variant: "destructive", title: "Unauthorized", description: "You do not have permission to change roles." });
@@ -529,9 +533,9 @@ export default function UserTable() {
       console.error("assignRole error", e);
       toast({ variant: "destructive", title: "Error", description: "An error occurred while updating role." });
     }
-  };
+  }, [user, canManageRoles, firestore, toast]);
 
-  const onRestoreWorkload = async (uid: string) => {
+  const onRestoreWorkload = useCallback(async (uid: string) => {
     try {
       if (!confirm("Are you sure you want to restore redirected tasks back to this user? This will reassign all pending tasks currently held by their covering officer.")) {
         return;
@@ -555,9 +559,9 @@ export default function UserTable() {
       console.error("onRestoreWorkload error", error);
       toast({ variant: "destructive", title: "Restore Failed", description: error.message });
     }
-  };
+  }, [user, toast]);
 
-  const columns = useMemo(() => buildUserColumns(roleOptions, onChangeRole, onRestoreWorkload, customRoleOptionsByChapter), [roleOptions, onChangeRole, customRoleOptionsByChapter]);
+  const columns = useMemo(() => buildUserColumns(roleOptions, onChangeRole, onRestoreWorkload, customRoleOptionsByChapter), [roleOptions, onChangeRole, onRestoreWorkload, customRoleOptionsByChapter]);
 
   const table = useReactTable({
     data: rows,

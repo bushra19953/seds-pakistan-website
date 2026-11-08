@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo, ReactNode } from 'react';
 import { User, onIdTokenChanged } from 'firebase/auth';
 import { doc, getDoc, serverTimestamp, onSnapshot, setDoc } from 'firebase/firestore';
 import { auth, firestore } from './core';
@@ -101,14 +101,16 @@ export function UserProvider({ children }: { children: ReactNode }) {
     // Multi-tenant Chapter Context
     const [activeChapterContext, setActiveChapterContextState] = useState<string | null>(null);
 
-    // Persist and Apply Context
-    const setActiveChapterContext = (chapterId: string | null) => {
+    // Persist and Apply Context. Stable identity (useCallback): this
+    // setter is part of the memoised context value below, so a fresh
+    // closure per render would bust the memo on every provider render.
+    const setActiveChapterContext = useCallback((chapterId: string | null) => {
         setActiveChapterContextState(chapterId);
         if (typeof window !== 'undefined') {
             if (chapterId) localStorage.setItem('seds.activeChapter', chapterId);
             else localStorage.removeItem('seds.activeChapter');
         }
-    };
+    }, []);
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
@@ -433,7 +435,21 @@ export function UserProvider({ children }: { children: ReactNode }) {
                                         );
                                     }
 
-                                    await fetchAndInjectOverrides(newRole);
+                                    // skipIfUnchanged: on the login path the
+                                    // token-claims fast path above has usually
+                                    // just fetched and applied this same role's
+                                    // definition; on later roles-doc events the
+                                    // definition usually has not moved either.
+                                    // The fetch still runs, so a changed
+                                    // definition (fingerprint mismatch) or a
+                                    // changed role (slug mismatch) applies in
+                                    // full exactly as before — only the state
+                                    // writes for a provably identical
+                                    // definition are skipped, so an unchanged
+                                    // snapshot event no longer replaces the
+                                    // allowedPaths array and re-renders every
+                                    // context consumer.
+                                    await fetchAndInjectOverrides(newRole, { skipIfUnchanged: true });
 
                                     // Custom-role grants held via this same
                                     // roles doc: resolve the held slugs
@@ -558,18 +574,26 @@ export function UserProvider({ children }: { children: ReactNode }) {
         };
     }, []);
 
-    const value = {
-        user,
-        role,
-        roleLabel,
-        allowedPaths,
-        customRoles,
-        customAllowedPaths,
-        isLoading,
-        error,
-        activeChapterContext,
-        setActiveChapterContext
-    };
+    // Memoised context value: ~179 files consume this context, and an
+    // unmemoised object literal gave the value a new identity on EVERY
+    // provider render (including renders where only an unrelated field
+    // changed), re-rendering every consumer each time. The value now
+    // changes identity only when one of its fields actually changes.
+    const value = useMemo(
+        () => ({
+            user,
+            role,
+            roleLabel,
+            allowedPaths,
+            customRoles,
+            customAllowedPaths,
+            isLoading,
+            error,
+            activeChapterContext,
+            setActiveChapterContext
+        }),
+        [user, role, roleLabel, allowedPaths, customRoles, customAllowedPaths, isLoading, error, activeChapterContext, setActiveChapterContext]
+    );
 
     return <UserContext.Provider value={value}>{children}</UserContext.Provider>;
 }

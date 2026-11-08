@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation';
 import { OrbitingPartners, Partner } from '@/components/hero/orbiting-partners';
 import { AuthGuardedButton } from '@/components/auth/auth-guarded-button';
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion, type Variants } from 'framer-motion';
 import { fetchHomepageOrganizations } from '@/lib/homepage-organizations';
 
 import { useSiteSettings } from '@/hooks/use-site-settings';
@@ -17,6 +17,37 @@ import { formatIntakeCloseLine, formatIntakeScheduledLine } from '@/lib/intake-w
 /**
  * Hero Section — "Theater Mode" with Multi-Ring Solar System
  */
+
+// One orchestrated entrance, adapted from 21st.dev's "Animated Blur Text"
+// (BlurText) pattern: the headline resolves word by word out of a blur,
+// then the status line, subcopy and CTAs rise in sequence. Nothing else
+// on the hero animates on its own. Gold (#C9A45C, the Grand Prix accent)
+// is reserved for the single primary CTA; every other element stays in
+// quiet foreground tones.
+const heroSequence: Variants = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.14, delayChildren: 0.05 } },
+};
+
+const heroWord: Variants = {
+  hidden: { opacity: 0, y: 16, filter: 'blur(8px)' },
+  show: {
+    opacity: 1,
+    y: 0,
+    filter: 'blur(0px)',
+    transition: { duration: 0.55, ease: 'easeOut' },
+  },
+};
+
+const heroLine: Variants = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.09 } },
+};
+
+const heroRise: Variants = {
+  hidden: { opacity: 0, y: 18 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.6, ease: 'easeOut' } },
+};
 export default function InductionHeroSection() {
   const router = useRouter();
   const shouldReduceMotion = useReducedMotion();
@@ -171,28 +202,48 @@ export default function InductionHeroSection() {
         animate={{ opacity: isUIHidden ? 0 : 1, filter: isUIHidden ? 'blur(8px)' : 'blur(0px)' }}
         transition={{ duration: shouldReduceMotion ? 0 : 0.8, ease: "easeInOut" }}
       >
-        <div className="flex flex-col items-center gap-8 max-w-5xl mx-auto">
+        <motion.div
+          className="flex flex-col items-center gap-8 max-w-5xl mx-auto"
+          variants={heroSequence}
+          initial={shouldReduceMotion ? false : 'hidden'}
+          animate="show"
+        >
           <div className="space-y-4 text-center">
-            <h1
+            <motion.h1
               id="induction-hero-heading"
+              aria-label="JOIN SEDS PAKISTAN BUILD THE FUTURE"
               className="text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-accent font-black tracking-tighter 
-                         text-foreground animate-hero-fade-in-up relative drop-shadow-[0_0_30px_rgba(59,130,246,0.3)] leading-[0.95]"
+                         text-foreground relative drop-shadow-[0_2px_12px_rgba(0,0,0,0.45)] leading-[0.95]"
             >
-              <span className="block text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.45)]">JOIN SEDS PAKISTAN</span>
-              <span className="block mt-2 text-primary drop-shadow-[0_0_50px_rgba(59,130,246,0.5)]">BUILD THE FUTURE</span>
-            </h1>
-            <div className="flex items-center justify-center gap-4 text-[10px] md:text-xs font-black uppercase tracking-[0.5em] text-primary/60 animate-pulse">
-              <div className="h-px w-8 md:w-12 bg-primary/40" />
+              <motion.span variants={heroLine} className="block text-white" aria-hidden="true">
+                {['JOIN', 'SEDS', 'PAKISTAN'].map((word, i, arr) => (
+                  <motion.span key={word} variants={heroWord} className="inline-block will-change-transform">
+                    {word}
+                    {i < arr.length - 1 ? '\u00A0' : ''}
+                  </motion.span>
+                ))}
+              </motion.span>
+              <motion.span variants={heroLine} className="block mt-2 text-white" aria-hidden="true">
+                {['BUILD', 'THE', 'FUTURE'].map((word, i, arr) => (
+                  <motion.span key={word} variants={heroWord} className="inline-block will-change-transform">
+                    {word}
+                    {i < arr.length - 1 ? '\u00A0' : ''}
+                  </motion.span>
+                ))}
+              </motion.span>
+            </motion.h1>
+            <motion.div variants={heroRise} className="flex items-center justify-center gap-4 text-[10px] md:text-xs font-black uppercase tracking-[0.5em] text-muted-foreground">
+              <div className="h-px w-8 md:w-12 bg-white/20" />
               <span>Operational Readiness: Nominal</span>
-              <div className="h-px w-8 md:w-12 bg-primary/40" />
-            </div>
+              <div className="h-px w-8 md:w-12 bg-white/20" />
+            </motion.div>
           </div>
-          
-          <p className="max-w-3xl text-base md:text-2xl text-foreground/80 font-body animate-hero-fade-in-up-delay-1 leading-relaxed px-4">
-            Hands-on <span className="text-foreground font-black underline decoration-primary/50 underline-offset-4">CubeSat</span>, Rover, Rocketry, Mission Design workshops, and international collaborations.
-          </p>
 
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-6 mt-8 animate-hero-fade-in-up-delay-2 w-full max-w-2xl mx-auto">
+          <motion.p variants={heroRise} className="max-w-3xl text-base md:text-2xl text-foreground/80 font-body leading-relaxed px-4">
+            Hands-on <span className="text-foreground font-black underline decoration-white/40 underline-offset-4">CubeSat</span>, Rover, Rocketry, Mission Design workshops, and international collaborations.
+          </motion.p>
+
+          <motion.div variants={heroRise} className="flex flex-col sm:flex-row items-center justify-center gap-6 mt-8 w-full max-w-2xl mx-auto">
             {applicationsClosed ? (
               <Button
                 size="lg"
@@ -204,7 +255,7 @@ export default function InductionHeroSection() {
             ) : (
               <AuthGuardedButton
                 size="lg"
-                className="h-16 px-10 font-accent tracking-widest uppercase text-base bg-primary text-black font-black hover:bg-white hover:shadow-[0_0_40px_rgba(255,255,255,0.4)] transition-all duration-500 rounded-2xl group relative overflow-hidden flex-1 w-full sm:w-auto"
+                className="h-16 px-10 font-accent tracking-widest uppercase text-base bg-[#C9A45C] text-black font-black hover:bg-[#E8CF8F] hover:shadow-[0_0_40px_rgba(201,164,92,0.35)] transition-all duration-500 rounded-2xl group relative overflow-hidden flex-1 w-full sm:w-auto"
                 onAuthenticatedClick={() => router.push('/apply/step-1')}
                 redirectPath="/apply/step-1"
               >
@@ -223,7 +274,7 @@ export default function InductionHeroSection() {
                 </span>
               </Button>
             ) : (
-            <Button asChild size="lg" variant="outline" className="h-16 px-10 font-accent tracking-widest uppercase text-base border-2 border-primary/40 text-foreground hover:border-primary hover:bg-primary/10 bg-slate-950/40 backdrop-blur-2xl rounded-2xl transition-all duration-500 group flex-1 w-full sm:w-auto">
+            <Button asChild size="lg" variant="outline" className="h-16 px-10 font-accent tracking-widest uppercase text-base border-2 border-white/25 text-foreground hover:border-white/60 hover:bg-white/5 bg-slate-950/40 backdrop-blur-2xl rounded-2xl transition-all duration-500 group flex-1 w-full sm:w-auto">
               <Link href="/apply" className="flex items-center gap-3">
                 Join The Tribe <ChevronRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
               </Link>
@@ -235,37 +286,39 @@ export default function InductionHeroSection() {
               // Donate button popping in late and shifting the layout
               <div aria-hidden className="h-16 px-8 invisible rounded-2xl flex-1 w-full sm:w-auto" />
             ) : settings?.enableDonations ? (
-              <Button asChild size="lg" className="h-16 px-8 font-accent tracking-widest uppercase text-sm bg-orange-600/20 text-orange-500 border-2 border-orange-500/30 hover:bg-orange-500 hover:text-black transition-all duration-500 rounded-2xl shadow-xl group">
+              <Button asChild size="lg" className="h-16 px-8 font-accent tracking-widest uppercase text-sm bg-slate-950/40 text-foreground/80 border-2 border-white/20 hover:bg-white/10 hover:text-foreground backdrop-blur-2xl transition-all duration-500 rounded-2xl group">
                 <Link href="/donate" className="flex items-center gap-2">
                   Donate <Heart className="h-4 w-4 transition-transform group-hover:scale-125 fill-current" />
                 </Link>
               </Button>
             ) : null}
-          </div>
+          </motion.div>
 
           {settings?.enableChapterRegistration && (
-            <div className="mt-12 animate-hero-fade-in-up-delay-2 pointer-events-auto w-full max-w-lg">
+            <motion.div variants={heroRise} className="mt-12 pointer-events-auto w-full max-w-lg">
               <Link
                 href="/register-chapter"
-                className="group flex items-center justify-between p-4 rounded-2xl border border-border bg-card/40 hover:bg-card/60 hover:border-primary/50 transition-all duration-500 backdrop-blur-3xl shadow-2xl overflow-hidden relative"
+                className="group flex items-center justify-between p-4 rounded-2xl border border-border bg-card/40 hover:bg-card/60 hover:border-white/40 transition-all duration-500 backdrop-blur-3xl shadow-2xl overflow-hidden relative"
               >
                 <div className="flex flex-col items-start gap-1 relative z-10">
-                  <span className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground group-hover:text-primary transition-colors">Academic Network</span>
+                  <span className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground transition-colors">Academic Network</span>
                   <span className="text-sm font-medium text-foreground/90">University or School Representative?</span>
                 </div>
-                <div className="px-4 py-2 rounded-xl bg-primary/10 text-primary border border-primary/20 group-hover:bg-primary group-hover:text-black transition-all duration-500 font-accent font-black text-[10px] uppercase tracking-widest flex items-center gap-2">
+                <div className="px-4 py-2 rounded-xl bg-white/10 text-foreground border border-white/20 group-hover:bg-white/20 transition-all duration-500 font-accent font-black text-[10px] uppercase tracking-widest flex items-center gap-2">
                   Establish Chapter <ChevronRight className="w-4 h-4" />
                 </div>
                 {/* Visual scanline effect */}
-                <div className="absolute top-0 left-0 w-full h-[1px] bg-primary/20 -translate-y-full group-hover:animate-scan-slow" />
+                <div className="absolute top-0 left-0 w-full h-[1px] bg-white/20 -translate-y-full group-hover:animate-scan-slow" />
               </Link>
-            </div>
+            </motion.div>
           )}
 
           {/* Real-time application deadline countdown */}
-          <ApplicationCountdown />
+          <motion.div variants={heroRise}>
+            <ApplicationCountdown />
+          </motion.div>
 
-        </div>
+        </motion.div>
       </motion.div>
     </section>
   );
@@ -321,7 +374,7 @@ function ApplicationCountdown() {
   }
 
   return (
-    <div className="mt-6 text-center animate-hero-fade-in-up-delay-2">
+    <div className="mt-6 text-center">
       <p className="text-sm text-muted-foreground mb-2">Applications close in</p>
       <div className="flex items-center justify-center gap-3">
         {[
@@ -331,8 +384,8 @@ function ApplicationCountdown() {
           { label: 'Secs', value: timeLeft.seconds },
         ].map((unit) => (
           <div key={unit.label} className="flex flex-col items-center">
-            <div className="w-16 h-16 rounded-xl bg-primary/10 border border-primary/30 flex items-center justify-center">
-              <span className="text-2xl font-black text-primary">{String(unit.value).padStart(2, '0')}</span>
+            <div className="w-16 h-16 rounded-xl bg-white/5 border border-white/15 flex items-center justify-center">
+              <span className="text-2xl font-black text-foreground">{String(unit.value).padStart(2, '0')}</span>
             </div>
             <span className="text-xs text-muted-foreground mt-1">{unit.label}</span>
           </div>

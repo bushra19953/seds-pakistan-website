@@ -23,6 +23,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { isClientSupaSurfaceOn } from '@/lib/client-supa-flags';
+import { usePollingRefresh } from '@/hooks/use-polling-refresh';
 import type { PartnerRecord } from '@/lib/partners';
 
 export const CRM_CLIENT_SURFACE = 'crm';
@@ -159,6 +160,17 @@ export interface CrmPartnersPoll {
  * — the listeners program's ruling: no browser realtime, movers poll).
  * When `enabled` is false the hook stays inert and the caller uses its
  * Firestore listener exactly as before.
+ *
+ * Read-burn fix (perf/admin-realtime): the repeat ticks used to run on
+ * a private 30-second setInterval that ignored tab visibility — the
+ * last poller in the app outside the shared floor, re-fetching the full
+ * partner list (and re-rendering the whole CRM table) twice a minute
+ * per open tab, forever, hidden tabs included. Repeat ticks now go
+ * through usePollingRefresh like every other polling surface: the
+ * interval is clamped up to MIN_POLL_INTERVAL_MS, polling pauses while
+ * the tab is hidden, and returning to the tab fires one immediate
+ * refresh. The initial fetch on enable is unchanged, as is the
+ * returned state shape, so callers see exactly the same data.
  */
 export function useCrmPartnersPoll(enabled: boolean, intervalMs = 30_000): CrmPartnersPoll {
   const [state, setState] = useState<CrmPartnersPoll>({
@@ -170,30 +182,40 @@ export function useCrmPartnersPoll(enabled: boolean, intervalMs = 30_000): CrmPa
 
   useEffect(() => {
     aliveRef.current = true;
-    if (!enabled) {
-      setState({ data: null, loading: false, failed: false });
-      return () => {
-        aliveRef.current = false;
-      };
-    }
-    let timer: ReturnType<typeof setInterval> | undefined;
-    const run = async () => {
-      try {
-        const partners = await fetchPartnersViaApi();
-        if (!aliveRef.current) return;
-        setState({ data: partners, loading: false, failed: false });
-      } catch {
-        if (!aliveRef.current) return;
-        setState((s) => ({ data: s.data, loading: false, failed: true }));
-      }
-    };
-    void run();
-    timer = setInterval(() => void run(), intervalMs);
     return () => {
       aliveRef.current = false;
-      if (timer) clearInterval(timer);
     };
-  }, [enabled, intervalMs]);
+  }, []);
+
+  const runRef = useRef<() => Promise<void>>(async () => {});
+  runRef.current = async () => {
+    try {
+      const partners = await fetchPartnersViaApi();
+      if (!aliveRef.current) return;
+      setState({ data: partners, loading: false, failed: false });
+    } catch {
+      if (!aliveRef.current) return;
+      setState((s) => ({ data: s.data, loading: false, failed: true }));
+    }
+  };
+
+  // Initial fetch when the surface turns on (and reset when it turns
+  // off); the shared polling hook below drives only the repeats.
+  useEffect(() => {
+    if (!enabled) {
+      setState({ data: null, loading: false, failed: false });
+      return;
+    }
+    void runRef.current();
+  }, [enabled]);
+
+  usePollingRefresh(
+    () => {
+      void runRef.current();
+    },
+    intervalMs,
+    enabled,
+  );
 
   return state;
 }

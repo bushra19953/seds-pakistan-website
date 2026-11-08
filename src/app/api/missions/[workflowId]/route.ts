@@ -151,7 +151,27 @@ export async function GET(
       const userSnaps = await Promise.all(
         uniqueAssigneeIds.map(uid => userSnapVia(uid))
       );
+      // Perf: chapter lookups used to run one at a time inside the
+      // assignee loop below (a serial round trip per distinct chapter).
+      // Fetch every distinct chapter once, in parallel, up front. Cache
+      // semantics are unchanged: only chapters that exist are cached,
+      // and a miss or a failed read resolves to no chapter name.
       const chapterCache: Record<string, string> = {};
+      const distinctChapterIds = Array.from(new Set(
+        userSnaps
+          .filter(d => d.exists)
+          .map(d => (d.data() as any)?.chapterId)
+          .filter(Boolean)
+          .map(String)
+      ));
+      await Promise.all(distinctChapterIds.map(async (cid) => {
+        try {
+          const chapSnap = await chapterSnapVia(cid);
+          if (chapSnap.exists) {
+            chapterCache[cid] = chapSnap.data()?.name || '';
+          }
+        } catch { /* ignore */ }
+      }));
       for (const doc of userSnaps) {
         if (!doc.exists) {
           assigneeInfo[doc.id] = { name: 'SEDS Member' };
@@ -161,14 +181,6 @@ export async function GET(
         let chapterName: string | undefined;
         const userChapterId = userData?.chapterId;
         if (userChapterId) {
-          if (!chapterCache[userChapterId]) {
-            try {
-              const chapSnap = await chapterSnapVia(userChapterId);
-              if (chapSnap.exists) {
-                chapterCache[userChapterId] = chapSnap.data()?.name || '';
-              }
-            } catch { /* ignore */ }
-          }
           chapterName = chapterCache[userChapterId] || undefined;
         }
         assigneeInfo[doc.id] = {

@@ -86,11 +86,14 @@ export async function GET(req: NextRequest) {
         });
 
         if (ownChapterOnly) {
+            // Perf: the per-uid chapter lookups are independent — one
+            // parallel wave instead of N sequential round trips. The
+            // map contents (and the splice filter below) are identical.
             const chapterByUid = new Map<string, string | null>();
-            for (const uid of subjectUids) {
+            await Promise.all([...subjectUids].map(async (uid) => {
                 const userSnap = await db.collection('users').doc(uid).get();
                 chapterByUid.set(uid, userSnap.exists ? (userSnap.data() || {}).chapterId || null : null);
-            }
+            }));
             for (let i = records.length - 1; i >= 0; i--) {
                 if (chapterByUid.get(records[i].subjectUid) !== ownChapterOnly) records.splice(i, 1);
             }

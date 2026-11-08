@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import AuthorityInspector from "@/components/admin/roles/authority-inspector";
 import { GrantExpiryBadge, toGrantListItems } from "@/components/admin/roles/grant-expiry";
+import { StatusBadge } from "@/components/admin/roles/status-badge";
 import { getCustomRoleDefinitions } from "@/lib/role-definitions";
 import { useFirestore, useUser } from "@/firebase";
 import { toast } from "@/hooks/use-toast";
@@ -73,11 +74,11 @@ export type UserRow = {
 };
 
 // Smart hash logic for coloring string tags
-function getStringColor(str: string): { bg: string, text: string, border: string } {
+function getStringColor(str: string): { bg: string, text: string, border: string, dot: string } {
   const norm = str.toLowerCase().trim();
-  if (norm === 'admin' || norm === 'president_national') return { bg: 'bg-red-500/10', text: 'text-red-500', border: 'border-red-500/20' };
-  if (norm === 'member') return { bg: 'bg-blue-500/10', text: 'text-blue-500', border: 'border-blue-500/20' };
-  if (norm === 'guest') return { bg: 'bg-slate-500/10', text: 'text-muted-foreground', border: 'border-slate-500/20' };
+  if (norm === 'admin' || norm === 'president_national') return { bg: 'bg-red-500/10', text: 'text-red-500', border: 'border-red-500/20', dot: 'bg-red-500' };
+  if (norm === 'member') return { bg: 'bg-blue-500/10', text: 'text-blue-500', border: 'border-blue-500/20', dot: 'bg-blue-500' };
+  if (norm === 'guest') return { bg: 'bg-slate-500/10', text: 'text-muted-foreground', border: 'border-slate-500/20', dot: 'bg-slate-400' };
 
   let hash = 0;
   for (let i = 0; i < norm.length; i++) {
@@ -85,12 +86,12 @@ function getStringColor(str: string): { bg: string, text: string, border: string
   }
 
   const colors = [
-    { bg: 'bg-emerald-500/10', text: 'text-emerald-500', border: 'border-emerald-500/20' },
-    { bg: 'bg-violet-500/10', text: 'text-violet-500', border: 'border-violet-500/20' },
-    { bg: 'bg-amber-500/10', text: 'text-amber-500', border: 'border-amber-500/20' },
-    { bg: 'bg-pink-500/10', text: 'text-pink-500', border: 'border-pink-500/20' },
-    { bg: 'bg-cyan-500/10', text: 'text-cyan-500', border: 'border-cyan-500/20' },
-    { bg: 'bg-rose-500/10', text: 'text-rose-500', border: 'border-rose-500/20' },
+    { bg: 'bg-emerald-500/10', text: 'text-emerald-500', border: 'border-emerald-500/20', dot: 'bg-emerald-500' },
+    { bg: 'bg-violet-500/10', text: 'text-violet-500', border: 'border-violet-500/20', dot: 'bg-violet-500' },
+    { bg: 'bg-amber-500/10', text: 'text-amber-500', border: 'border-amber-500/20', dot: 'bg-amber-500' },
+    { bg: 'bg-pink-500/10', text: 'text-pink-500', border: 'border-pink-500/20', dot: 'bg-pink-500' },
+    { bg: 'bg-cyan-500/10', text: 'text-cyan-500', border: 'border-cyan-500/20', dot: 'bg-cyan-500' },
+    { bg: 'bg-rose-500/10', text: 'text-rose-500', border: 'border-rose-500/20', dot: 'bg-rose-500' },
   ];
 
   return colors[Math.abs(hash) % colors.length];
@@ -462,7 +463,7 @@ export function buildUserColumns(
               {name || "—"}
             </span>
             {isVacationing && (
-              <span className="rounded bg-slate-500/10 px-1.5 py-0.5 text-[10px] uppercase font-bold text-muted-foreground tracking-widest border border-slate-500/20" title="On Vacation">
+              <span className="rounded-full bg-slate-500/10 px-1.5 py-0.5 text-[10px] uppercase font-bold text-muted-foreground tracking-widest border border-slate-500/20" title="On Vacation">
                 Zzz
               </span>
             )}
@@ -497,7 +498,7 @@ export function buildUserColumns(
         const roleExpiresAt = (row.original as UserRow).roleExpiresAt;
         return (
           <div className="flex flex-col items-start gap-1">
-            <span className={`rounded px-2.5 py-0.5 text-xs font-medium border ${colors.bg} ${colors.text} ${colors.border}`}>{roleStr}</span>
+            <StatusBadge tone={colors}>{roleStr}</StatusBadge>
             {customTitle ? (
               <span className="text-[11px] leading-tight text-muted-foreground italic">{customTitle}</span>
             ) : null}
@@ -513,7 +514,7 @@ export function buildUserColumns(
         const chapterName = (row.original as any).chapterName || row.getValue<string | null>("chapterId");
         if (!chapterName) return <span className="text-muted-foreground text-xs">—</span>;
         const colors = getStringColor(String(chapterName));
-        return <span className={`rounded px-2.5 py-0.5 text-xs font-medium border ${colors.bg} ${colors.text} ${colors.border}`}>{String(chapterName)}</span>;
+        return <StatusBadge tone={colors}>{String(chapterName)}</StatusBadge>;
       },
     },
     {

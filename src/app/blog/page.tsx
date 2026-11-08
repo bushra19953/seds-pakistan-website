@@ -6,17 +6,136 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { AlertCircle, BookOpen } from 'lucide-react';
+import { AlertCircle, ArrowRight, BookOpen } from 'lucide-react';
 import { useBlogsInfinite } from '@/hooks/use-blogs-api';
 import { EmorationalBlogPost } from '@/lib/blog-types';
 import Link from 'next/link';
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
+import { motion, useReducedMotion } from 'framer-motion';
 
 const FiltersClient = dynamic(() => import('./FiltersClient'), { ssr: false });
 
 interface BlogsPageProps {
   className?: string;
+}
+
+/**
+ * Article card adapted from the 21st.dev "Link Card" pattern
+ * (https://preview.21st.dev/@lailai0916/components/card/link-card):
+ * the whole card is one link target via a stretched title link, with a
+ * pointer-driven hover lift (framer-motion) and cover zoom. The featured
+ * variant follows the 21st.dev blog-section convention of leading the grid
+ * with one wide cover story.
+ */
+function BlogPostCard({
+  blog,
+  index,
+  featured,
+  formatDate,
+  getStatusColor,
+}: {
+  blog: EmorationalBlogPost;
+  index: number;
+  featured?: boolean;
+  formatDate: (d: Date | string | null | undefined) => string;
+  getStatusColor: (s: string) => string;
+}) {
+  const reduceMotion = useReducedMotion();
+
+  return (
+    <motion.div
+      whileHover={reduceMotion ? undefined : { y: -4 }}
+      transition={{ type: 'spring', stiffness: 300, damping: 24 }}
+      className={featured ? 'md:col-span-2 h-full' : 'h-full'}
+    >
+      <Card
+        className={`group relative h-full overflow-hidden transition-shadow hover:shadow-lg focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 ${
+          featured ? 'md:grid md:grid-cols-5' : ''
+        }`}
+      >
+        {/* Thumbnail */}
+        <div className={`relative overflow-hidden ${featured ? 'h-56 md:h-full md:col-span-3' : 'h-48'}`}>
+          {blog.thumbnailUrl ? (
+            <Image
+              src={blog.thumbnailUrl}
+              alt={blog.title}
+              fill
+              className="object-cover transition-transform duration-500 motion-safe:group-hover:scale-[1.03]"
+              priority={index === 0}
+              sizes={
+                featured
+                  ? '(max-width: 768px) 100vw, 60vw'
+                  : '(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw'
+              }
+              // Drive thumbnails fail through the Next.js image optimizer
+              // (server-side fetch gets blocked, returns 502). Load them
+              // directly with a plain img tag instead.
+              unoptimized={blog.thumbnailUrl.includes('drive.google.com')}
+            />
+          ) : (
+            <div className="h-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
+              <BookOpen className="h-12 w-12 text-primary/40" />
+            </div>
+          )}
+          <Badge
+            className={`pointer-events-none absolute top-3 right-3 z-10 ${getStatusColor(blog.status)}`}
+          >
+            {blog.status}
+          </Badge>
+        </div>
+
+        <CardContent className={featured ? 'p-6 md:p-8 md:col-span-2 flex flex-col justify-center' : 'p-6'}>
+          {/* Title (stretched link: the whole card is the target) */}
+          <h3
+            className={`font-semibold mb-2 line-clamp-2 group-hover:text-primary transition-colors ${
+              featured ? 'text-2xl leading-snug' : 'text-lg'
+            }`}
+          >
+            <Link
+              href={`/blog/${blog.slug}`}
+              className="after:absolute after:inset-0 after:content-[''] focus:outline-none"
+            >
+              {blog.title}
+            </Link>
+          </h3>
+
+          {/* Summary */}
+          <p className={`text-sm text-muted-foreground mb-4 ${featured ? 'line-clamp-4' : 'line-clamp-3'}`}>
+            {blog.summary || blog.body.substring(0, 150) + '...'}
+          </p>
+
+          {/* Meta Information (lightweight) */}
+          <div className="text-xs text-muted-foreground mb-4">
+            <span>{blog.authorName}</span>
+            {blog.publishedAt ? ` • ${formatDate(blog.publishedAt)}` : ''}
+          </div>
+
+          {/* Tags */}
+          {blog.tags && blog.tags.length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-4">
+              {blog.tags.slice(0, 3).map((tag, tagIndex) => (
+                <Badge key={tagIndex} variant="secondary" className="text-xs">
+                  {tag}
+                </Badge>
+              ))}
+              {blog.tags.length > 3 && (
+                <Badge variant="secondary" className="text-xs">
+                  +{blog.tags.length - 3} more
+                </Badge>
+              )}
+            </div>
+          )}
+
+          {/* Read More affordance (the stretched title link covers the card) */}
+          <span className="mt-auto inline-flex items-center gap-1 text-sm font-medium text-primary">
+            Read More
+            <ArrowRight className="h-4 w-4 transition-transform motion-safe:group-hover:translate-x-0.5" />
+          </span>
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
 }
 
 function BlogsPageContent({ className }: BlogsPageProps) {
@@ -131,8 +250,8 @@ function BlogsPageContent({ className }: BlogsPageProps) {
               /* Empty State */
               <div className="text-center py-12">
                 <BookOpen className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-gray-900 mb-2">No blog posts found</h3>
-                <p className="text-gray-600 mb-6">
+                <h3 className="text-xl font-semibold text-foreground mb-2">No blog posts found</h3>
+                <p className="text-muted-foreground mb-6">
                   {searchTerm || selectedCategory !== 'all' || selectedAuthor
                     ? 'Try adjusting your search terms or filters'
                     : 'No blog posts have been published yet.'
@@ -160,78 +279,23 @@ function BlogsPageContent({ className }: BlogsPageProps) {
                   </div>
                 </div>
 
-                {/* Blog Posts Grid */}
+                {/* Blog Posts Grid: unfiltered first page leads with a wide
+                    featured cover story (21st.dev blog-section convention) */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {blogs.map((blog, index) => (
-                    <Card key={blog.id} className="overflow-hidden hover:shadow-lg transition-shadow">
-                      {/* Thumbnail */}
-                      <div className="relative h-48">
-                        {blog.thumbnailUrl ? (
-                          <Image
-                            src={blog.thumbnailUrl}
-                            alt={blog.title}
-                            fill
-                            className="object-cover"
-                            priority={index === 0}
-                            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-                            // Drive thumbnails fail through the Next.js image optimizer
-                            // (server-side fetch gets blocked, returns 502). Load them
-                            // directly with a plain img tag instead.
-                            unoptimized={blog.thumbnailUrl.includes('drive.google.com')}
-                          />
-                        ) : (
-                          <div className="h-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
-                            <BookOpen className="h-12 w-12 text-primary/40" />
-                          </div>
-                        )}
-                        <Badge 
-                          className={`absolute top-3 right-3 ${getStatusColor(blog.status)}`}
-                        >
-                          {blog.status}
-                        </Badge>
-                      </div>
-
-                      <CardContent className="p-6">
-                        {/* Title */}
-                        <h3 className="text-lg font-semibold mb-2 line-clamp-2 hover:text-primary transition-colors">
-                          <Link href={`/blog/${blog.slug}`}>
-                            {blog.title}
-                          </Link>
-                        </h3>
-
-                        {/* Summary */}
-                        <p className="text-sm text-muted-foreground mb-4 line-clamp-3">
-                          {blog.summary || blog.body.substring(0, 150) + '...'}
-                        </p>
-
-                        {/* Meta Information (lightweight) */}
-                        <div className="text-xs text-muted-foreground mb-4">
-                          <span>{blog.authorName}</span>
-                          {blog.publishedAt ? ` • ${formatDate(blog.publishedAt)}` : ''}
-                        </div>
-
-                        {/* Tags */}
-                        {blog.tags && blog.tags.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mb-4">
-                            {blog.tags.slice(0, 3).map((tag, index) => (
-                              <Badge key={index} variant="secondary" className="text-xs">
-                                {tag}
-                              </Badge>
-                            ))}
-                            {blog.tags.length > 3 && (
-                              <Badge variant="secondary" className="text-xs">
-                                +{blog.tags.length - 3} more
-                              </Badge>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Read More Button */}
-                        <Button asChild variant="ghost" size="sm" className="w-full">
-                          <Link href={`/blog/${blog.slug}`}>Read More</Link>
-                        </Button>
-                      </CardContent>
-                    </Card>
+                    <BlogPostCard
+                      key={blog.id}
+                      blog={blog}
+                      index={index}
+                      featured={
+                        index === 0 &&
+                        !searchTerm &&
+                        selectedCategory === 'all' &&
+                        selectedAuthor === 'all'
+                      }
+                      formatDate={formatDate}
+                      getStatusColor={getStatusColor}
+                    />
                   ))}
                 </div>
 

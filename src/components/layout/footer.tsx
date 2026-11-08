@@ -9,7 +9,7 @@ import LegalIdentityBlock from '@/components/layout/legal-identity-block';
  * Professional Footer Redesign
  *
  * - Multi-column layout with clear grouping for navigation and social links.
- * - Brand column featuring the primary heading "SETS" and the logo.
+ * - Brand column featuring the SEDS logo (the artwork carries the wordmark).
  * - Copyright placed in a dedicated bottom bar with smaller, muted typography.
  */
 export default function Footer() {
@@ -45,19 +45,19 @@ export default function Footer() {
       {/* Top: Multi-column layout */}
       <div className="container mx-auto py-12 px-4 md:px-6">
         <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-12 gap-8">
-          {/* Brand & Identity: spans 4 cols */}
-          <div className="xl:col-span-4">
+          {/* Brand & Identity: spans 4 cols. The logo artwork already carries
+              the SEDS wordmark, so no duplicate plain-text name beside it. */}
+          <div className="col-span-2 md:col-span-1 xl:col-span-4">
             <div className="flex items-center gap-3">
               <OptimizedLogo
                 src="/assets/logo.png"
                 webpSrc="/assets/logo.webp"
                 avifSrc="/assets/logo.avif"
                 alt="SEDS Pakistan Logo"
-                width={40}
-                height={40}
-                className="h-10 w-10 object-contain"
+                width={128}
+                height={72}
+                className="h-11 w-auto object-contain"
               />
-              <span className="text-2xl md:text-3xl font-bold tracking-wider">SEDS</span>
             </div>
             <p className="mt-3 text-sm text-muted-foreground">
               {LEGAL_NAME}

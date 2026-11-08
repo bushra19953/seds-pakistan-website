@@ -55,6 +55,19 @@ function updateTagsWithType(tags: string[] | undefined, type: string): string[] 
   return [...base, type];
 }
 
+// The cover preview renders at most 160px tall, but Drive-backed uploads
+// store a =w1600 URL, so the browser would download the full-width
+// original just to draw a small preview. Ask Google's image CDN for a
+// preview-sized variant instead. Only lh3 direct URLs are rewritten;
+// every other URL passes through untouched, and the stored media value
+// itself is never modified (the full URL still shows under the preview).
+function coverPreviewUrl(url: string): string {
+  return url.replace(
+    /^(https:\/\/lh3\.googleusercontent\.com\/d\/[\w-]+)=w\d+$/,
+    '$1=w480',
+  );
+}
+
 interface Project {
   id: string;
   title: string;
@@ -520,7 +533,7 @@ export default function AdminProjectsPage() {
               <div className="col-span-3 space-y-2">
                 {coverUrl ? (
                   <div className="space-y-1">
-                    <img src={coverUrl} alt="Current cover" className="max-h-40 rounded-md object-contain" />
+                    <img src={coverPreviewUrl(coverUrl)} alt="Current cover" className="max-h-40 rounded-md object-contain" decoding="async" />
                     <div className="text-xs text-muted-foreground break-all">{coverUrl}</div>
                   </div>
                 ) : null}

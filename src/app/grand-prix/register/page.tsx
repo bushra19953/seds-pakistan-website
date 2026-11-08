@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
+import { useReducedMotion } from 'framer-motion';
 import Image from 'next/image';
 import { Fraunces, Manrope } from 'next/font/google';
 import Link from 'next/link';
@@ -58,14 +59,62 @@ const GOLD = '#C9A45C';
 const GOLD_LIGHT = '#E8CF8F';
 
 const fieldClass =
-  'h-12 rounded-lg border-white/15 bg-white/[0.05] px-4 text-[15px] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] placeholder:text-[#8E887A] focus-visible:border-[#C9A45C]/70 focus-visible:ring-2 focus-visible:ring-[#C9A45C]/40';
+  'h-12 rounded-lg border-white/15 bg-white/[0.05] px-4 text-[15px] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition-colors placeholder:text-[#8E887A] focus-visible:border-[#C9A45C]/70 focus-visible:bg-white/[0.08] focus-visible:ring-2 focus-visible:ring-[#C9A45C]/40';
 const selectClass =
-  'flex h-12 w-full rounded-lg border border-white/15 bg-white/[0.05] px-4 py-2 text-[15px] focus:outline-none focus:ring-2 focus:ring-[#C9A45C]/40 [&>option]:bg-[#101623] [&>option]:text-[#F5F0E4]';
+  'flex h-12 w-full rounded-lg border border-white/15 bg-white/[0.05] px-4 py-2 text-[15px] transition-colors focus:bg-white/[0.08] focus:outline-none focus:ring-2 focus:ring-[#C9A45C]/40 [&>option]:bg-[#101623] [&>option]:text-[#F5F0E4]';
 const labelClass =
   'text-[11px] font-bold uppercase tracking-[0.18em] text-[#CBBFA5]';
 const cardClass =
   'rounded-2xl border-white/10 bg-white/[0.04] shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-md';
 const displayFont = '[font-family:var(--gp-display)]';
+
+/**
+ * Spotlight card treatment, adapted from the 21st.dev "Spotlight Card"
+ * community pattern: a soft radial glow that follows the visitor's pointer
+ * across the card surface. The glow is painted in the portal gold at low
+ * alpha (the same accent the page already reserves for its primary action),
+ * answers the visitor's own pointer movement only, and is removed entirely
+ * for visitors who prefer reduced motion. Purely visual: fields, validation
+ * and submit behaviour inside the card are untouched.
+ */
+function SpotlightCard({
+  className,
+  children,
+}: {
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const reduceMotion = useReducedMotion();
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const el = ref.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    el.style.setProperty('--spot-x', `${e.clientX - rect.left}px`);
+    el.style.setProperty('--spot-y', `${e.clientY - rect.top}px`);
+  };
+
+  return (
+    <Card
+      ref={ref}
+      onPointerMove={reduceMotion ? undefined : handlePointerMove}
+      className={`group/spot relative overflow-hidden ${className ?? ''}`}
+    >
+      {!reduceMotion && (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-500 group-hover/spot:opacity-100 group-focus-within/spot:opacity-100"
+          style={{
+            background:
+              'radial-gradient(520px circle at var(--spot-x, 50%) var(--spot-y, 0%), rgba(201,164,92,0.09), transparent 65%)',
+          }}
+        />
+      )}
+      {children}
+    </Card>
+  );
+}
 
 function statusLine(state: WindowState): string {
   if (state === 'open') return 'Registration open — initial window closes Nov 15, 2026, 23:59 PKT.';
@@ -276,16 +325,16 @@ export default function GrandPrixRegisterPage() {
 
           <RegistrationCountdown target={countdownTarget} label={countdownLabel} />
 
-          <Card className={`mt-10 ${cardClass}`}>
+          <SpotlightCard className={`mt-10 ${cardClass}`}>
             <CardContent className="py-5">
               <p className="text-center text-sm font-semibold leading-relaxed" style={{ color: GOLD_LIGHT }}>
                 {FEE_CALLOUT}
               </p>
             </CardContent>
-          </Card>
+          </SpotlightCard>
 
           {success ? (
-            <Card className={`mt-10 ${cardClass}`} >
+            <SpotlightCard className={`mt-10 ${cardClass}`}>
               <CardHeader className="border-b border-[#C9A45C]/25 pb-6 text-center">
                 <CardTitle className={`text-3xl font-semibold ${displayFont}`} style={{ color: GOLD_LIGHT }}>
                   Enrolment received
@@ -304,9 +353,9 @@ export default function GrandPrixRegisterPage() {
                   {fullName} ({NATION_LABELS[nation]} · {passType === 'student' ? 'Collegiate Student Pass' : 'Industry Professional Observer Pass'})
                 </p>
               </CardContent>
-            </Card>
+            </SpotlightCard>
           ) : closed ? (
-            <Card className={`mt-10 ${cardClass}`}>
+            <SpotlightCard className={`mt-10 ${cardClass}`}>
               <CardHeader className="text-center">
                 <CardTitle className={`text-3xl font-semibold ${displayFont}`} style={{ color: GOLD_LIGHT }}>
                   Registration is closed
@@ -315,12 +364,17 @@ export default function GrandPrixRegisterPage() {
                   {closedLine}
                 </CardDescription>
               </CardHeader>
-            </Card>
+            </SpotlightCard>
           ) : (
             <form onSubmit={handleSubmit} className="mt-10 space-y-8">
-              <Card className={cardClass}>
+              <SpotlightCard className={cardClass}>
                 <CardHeader className="pb-2">
-                  <CardTitle className={`text-2xl font-semibold ${displayFont}`}>Your enrolment</CardTitle>
+                  <div className="flex items-baseline gap-3">
+                    <span aria-hidden="true" className="text-sm font-semibold tabular-nums" style={{ color: GOLD }}>
+                      01
+                    </span>
+                    <CardTitle className={`text-2xl font-semibold ${displayFont}`}>Your enrolment</CardTitle>
+                  </div>
                   <CardDescription className="text-sm leading-relaxed text-[#A79E8B]">
                     One enrolment per email. Student IDs must be unique per institution.
                   </CardDescription>
@@ -371,11 +425,16 @@ export default function GrandPrixRegisterPage() {
                     <Input id="institutionId" className={fieldClass} placeholder="ID issued by your institution, e.g. IST-REG-2026" value={institutionId} onChange={(e) => setInstitutionId(e.target.value)} required />
                   </div>
                 </CardContent>
-              </Card>
+              </SpotlightCard>
 
-              <Card className={cardClass}>
+              <SpotlightCard className={cardClass}>
                 <CardHeader className="pb-2">
-                  <CardTitle className={`text-2xl font-semibold ${displayFont}`}>About you</CardTitle>
+                  <div className="flex items-baseline gap-3">
+                    <span aria-hidden="true" className="text-sm font-semibold tabular-nums" style={{ color: GOLD }}>
+                      02
+                    </span>
+                    <CardTitle className={`text-2xl font-semibold ${displayFont}`}>About you</CardTitle>
+                  </div>
                 </CardHeader>
                 <CardContent className="grid grid-cols-1 gap-5 pt-4 sm:grid-cols-2">
                   <div className="space-y-2.5">
@@ -399,7 +458,7 @@ export default function GrandPrixRegisterPage() {
                     <Input id="whatsapp" className={fieldClass} placeholder="+92 3XX XXXXXXX or +94 7X XXXXXXX" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} required />
                   </div>
                 </CardContent>
-              </Card>
+              </SpotlightCard>
 
               {errors.length > 0 && (
                 <Card className="rounded-2xl border-red-400/30 bg-red-500/[0.08] backdrop-blur-md">
@@ -417,7 +476,7 @@ export default function GrandPrixRegisterPage() {
               <Button
                 type="submit"
                 disabled={submitting}
-                className="h-[52px] w-full rounded-full bg-[linear-gradient(120deg,#E8CF8F,#C9A45C_45%,#A87F35)] text-sm font-extrabold uppercase tracking-[0.14em] text-[#171106] shadow-[0_16px_40px_rgba(201,164,92,0.35)] transition hover:brightness-110 disabled:opacity-60"
+                className="h-[52px] w-full rounded-full bg-[linear-gradient(120deg,#E8CF8F,#C9A45C_45%,#A87F35)] text-sm font-extrabold uppercase tracking-[0.14em] text-[#171106] shadow-[0_16px_40px_rgba(201,164,92,0.35)] transition hover:brightness-110 active:scale-[0.99] disabled:opacity-60"
               >
                 {submitting ? 'Submitting...' : 'Enrol now'}
               </Button>

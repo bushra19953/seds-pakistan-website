@@ -12,6 +12,7 @@ import {
   ClipboardList, Megaphone, FileClock, Globe, ListChecks
 } from "lucide-react";
 import { formatDistanceToNowStrict } from "date-fns";
+import { motion, MotionConfig, type Variants } from "framer-motion";
 import { ChapterSwitcher } from "@/components/admin/chapter-switcher";
 import LiveMissionsBoard from "@/components/admin/live-missions-board";
 import { getRoleScope } from "@/config/permission-registry";
@@ -25,28 +26,49 @@ import {
   LIVE_ADMIN_SURFACE,
 } from "@/lib/client-supa-flags";
 
-// The Overhaul Master Plan: MetricCard<T> Abstraction
+// One orchestrated page-load sequence: sections and stat cards rise in
+// a short stagger. The MotionConfig reducedMotion="user" wrapper on the
+// page turns these transforms off for prefers-reduced-motion.
+const staggerVariants: Variants = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.06 } },
+};
+const riseVariants: Variants = {
+  hidden: { opacity: 0, y: 10 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: "easeOut" } },
+};
+
+// Stat-card layout adapted from the 21st.dev "Stat" component pattern
+// (21st.dev/@redrob-labs/components/stat): label row with the icon in a
+// chip, the value as the large tabular hero, and the context line as a
+// muted line under the value. Same data as before, clearer hierarchy.
 function MetricCard({
   icon: Icon, title, subtitle, value, loading
 }: {
   icon: any; title: string; subtitle: string; value: number | string | null; loading: boolean;
 }) {
   return (
-    <div className="relative overflow-hidden rounded-xl border border-border bg-card/80 backdrop-blur-md p-6 pt-7 transition-all duration-300 hover:border-border hover:bg-card/90 group text-foreground">
-      <div className="flex flex-col gap-2 mb-4 leading-[1.4]">
-        <h3 className="flex items-center gap-2 font-semibold text-card-foreground uppercase tracking-wide">
-          <Icon className="h-5 w-5 text-primary" /> {title}
+    <motion.div
+      variants={riseVariants}
+      className="relative overflow-hidden rounded-xl border border-border bg-card/80 backdrop-blur-md p-6 text-foreground transition-colors duration-300 hover:border-primary/40"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <h3 className="pt-1 font-semibold text-card-foreground uppercase tracking-wide">
+          {title}
         </h3>
-        <p className="text-sm text-muted-foreground leading-[1.4]">{subtitle}</p>
+        <div className="shrink-0 rounded-md bg-primary/10 p-2 text-primary">
+          <Icon className="h-4 w-4" />
+        </div>
       </div>
-      <div className="text-4xl font-bold tracking-tight">
+      <div className="mt-5 text-4xl font-bold tracking-tight tabular-nums">
         {loading ? (
           <div className="h-10 w-24 animate-pulse rounded bg-muted" />
         ) : (
           value ?? 0
         )}
       </div>
-    </div>
+      <p className="mt-2 text-sm text-muted-foreground leading-[1.4]">{subtitle}</p>
+    </motion.div>
   );
 }
 
@@ -88,7 +110,7 @@ function ActionGrid() {
           key={action.id}
           href={action.href}
           onMouseEnter={() => router.prefetch(action.href)}
-          className="group relative flex items-center gap-3 rounded-lg border border-white/5 bg-background/50 px-4 py-3 transition-transform duration-200 hover:-translate-y-1 hover:border-primary/50 hover:bg-background/80 hover:shadow-[0_0_15px_rgba(255,255,255,0.1)] text-foreground"
+          className="group relative flex items-center gap-3 rounded-lg border border-white/5 bg-background/50 px-4 py-3 transition-transform duration-200 hover:-translate-y-1 hover:border-primary/50 hover:bg-background/80 hover:shadow-lg hover:shadow-primary/10 text-foreground"
         >
           <div className="rounded-md bg-primary/10 p-2 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
             <action.icon className="h-5 w-5" />
@@ -286,9 +308,10 @@ export default function AdminDashboardPage() {
 
   return (
     <AuthorizationGate permission="canAccessAdmin">
-      <div className="container mx-auto py-8">
+      <MotionConfig reducedMotion="user">
+      <motion.div className="container mx-auto py-8" variants={staggerVariants} initial="hidden" animate="show">
         {/* HEADER WITH CHAPTER SWITCHER */}
-        <div className="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <motion.div variants={riseVariants} className="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-border/60 pb-6">
           <div>
             <h1 className="mb-2 text-4xl font-extrabold tracking-tight text-foreground uppercase tracking-tighter">
               MISSION CONTROL
@@ -304,31 +327,33 @@ export default function AdminDashboardPage() {
               onChapterChange={setSelectedChapterId} 
             />
           )}
-        </div>
+        </motion.div>
 
         {/* 5 STAT CARDS (Grove Item 3: Personnel and Tasks carry paired counter-indicators) */}
-        <div className="mb-8 grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-5">
+        <motion.div variants={staggerVariants} className="mb-8 grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-5">
           <MetricCard icon={Users} title="Personnel" subtitle={indicators ? `Total registered · ${indicators.usersDeparted ?? 0} departed` : "Total registered"} value={counts?.users} loading={loading} />
           <MetricCard icon={FolderKanban} title="Initiatives" subtitle="Active projects" value={counts?.projects} loading={loading} />
           <MetricCard icon={Newspaper} title="Intelligence" subtitle="Blog articles" value={counts?.blogs} loading={loading} />
           <MetricCard icon={Calendar} title="Deployments" subtitle="Events scheduled" value={counts?.events} loading={loading} />
           <MetricCard icon={ListChecks} title="Tasks" subtitle={indicators ? `Completed · ${indicators.tasksOverdueRate ?? 0}% overdue rate` : "Completed"} value={indicators?.tasksCompleted} loading={loading} />
-        </div>
+        </motion.div>
 
         {/* 3 APPLICATION METRICS */}
         {canManageApplications && (
-          <div className="mb-8 grid grid-cols-1 gap-5 md:grid-cols-3">
+          <motion.div variants={staggerVariants} className="mb-8 grid grid-cols-1 gap-5 md:grid-cols-3">
             <MetricCard icon={ClipboardList} title="Recruitment" subtitle={indicators?.medianDaysWaiting != null ? `Pending · median ${indicators.medianDaysWaiting}d waiting` : "Pending"} value={counts?.applicationsPending} loading={loading} />
             <MetricCard icon={ClipboardList} title="Shortlisted" subtitle="Ready" value={counts?.applicationsShortlisted} loading={loading} />
             <MetricCard icon={ClipboardList} title="Rejected" subtitle="Archived" value={counts?.applicationsRejected} loading={loading} />
-          </div>
+          </motion.div>
         )}
 
         {/* LIVE MISSIONS (folded in from the retired /admin/mission-command page) */}
-        <LiveMissionsBoard />
+        <motion.div variants={riseVariants}>
+          <LiveMissionsBoard />
+        </motion.div>
 
         {/* QUICK ACTIONS */}
-        <div className="mb-8 rounded-xl border border-border bg-card/60 p-6 backdrop-blur-md">
+        <motion.div variants={riseVariants} className="mb-8 rounded-xl border border-border bg-card/60 p-6 backdrop-blur-md">
           <div className="mb-6 flex items-center gap-3">
             <div className="p-2 bg-primary/10 rounded-lg text-primary"><FileClock className="h-6 w-6" /></div>
             <div>
@@ -337,10 +362,10 @@ export default function AdminDashboardPage() {
             </div>
           </div>
           <ActionGrid />
-        </div>
+        </motion.div>
 
         {/* RECENT ACTIVITY LOGS */}
-        <div className="rounded-xl border border-border bg-card/60 p-6 backdrop-blur-md">
+        <motion.div variants={riseVariants} className="rounded-xl border border-border bg-card/60 p-6 backdrop-blur-md">
           <div className="mb-6">
             <h2 className="text-xl font-bold text-foreground uppercase tracking-tight">Mission Logs</h2>
             <p className="text-[10px] text-muted-foreground uppercase font-mono">Real-time system-wide activity stream</p>
@@ -368,7 +393,7 @@ export default function AdminDashboardPage() {
                           ? `${log.targetUidOrResource.substring(0, 8)}...${log.targetUidOrResource.slice(-4)}`
                           : log.targetUidOrResource}
                       </td>
-                      <td className="p-4 text-right text-[10px] text-slate-600 font-mono" title={new Date(log.timestamp).toLocaleString()}>
+                      <td className="p-4 text-right text-[10px] text-muted-foreground/70 font-mono" title={new Date(log.timestamp).toLocaleString()}>
                         {relativeTime(log.timestamp).toUpperCase()}
                       </td>
                     </tr>
@@ -377,8 +402,9 @@ export default function AdminDashboardPage() {
               </table>
             </div>
           )}
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
+      </MotionConfig>
     </AuthorizationGate>
   );
 }

@@ -48,7 +48,7 @@ export default function Footer() {
           {/* Brand & Identity: spans 4 cols. The logo artwork already carries
               the SEDS wordmark, so no duplicate plain-text name beside it. */}
           <div className="col-span-2 md:col-span-1 xl:col-span-4">
-            <div className="flex items-center gap-3">
+            <div className="w-32 md:w-36">
               <OptimizedLogo
                 src="/assets/logo.png"
                 webpSrc="/assets/logo.webp"
@@ -56,7 +56,7 @@ export default function Footer() {
                 alt="SEDS Pakistan Logo"
                 width={128}
                 height={72}
-                className="h-11 w-auto object-contain"
+                className="h-auto w-full object-contain"
               />
             </div>
             <p className="mt-3 text-sm text-muted-foreground">

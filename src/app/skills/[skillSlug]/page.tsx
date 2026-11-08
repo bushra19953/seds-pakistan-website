@@ -85,7 +85,7 @@ const slug = decodeURIComponent(skillSlug || '');
                     return (
                       <Card key={u.id} className="bg-card/80 backdrop-blur-sm border-primary/20">
                         <CardContent className="p-4 flex items-center gap-3">
-                          <Avatar className="h-10 w-10"><AvatarImage src={String(u.photoURL || '')} /><AvatarFallback>{initials}</AvatarFallback></Avatar>
+                          <Avatar className="h-10 w-10"><AvatarImage src={String(u.photoURL || '')} loading="lazy" decoding="async" /><AvatarFallback>{initials}</AvatarFallback></Avatar>
                           <div>
                             <div className="font-medium">{String(u.displayName || u.id)}</div>
                             <div className="text-sm text-muted-foreground">{String(u.role || '')}</div>

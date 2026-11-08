@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -7,7 +8,7 @@ import UniversityAutocomplete from './UniversityAutocomplete';
 import ExternalAssessmentCard, { hasExternalAssessmentLink } from './ExternalAssessmentCard';
 
 // Assume fields for step 0 (Personal) are passed in
-export default function Step1Personal({ fields = [] }: { fields?: any[] }) {
+function Step1Personal({ fields = [] }: { fields?: any[] }) {
   const { register, formState: { errors } } = useFormContext();
 
   return (
@@ -88,3 +89,7 @@ export default function Step1Personal({ fields = [] }: { fields?: any[] }) {
     </div>
   );
 }
+
+// Memoized: re-renders only when its fields prop changes (the parent
+// memoizes the steps array), not on unrelated form-page re-renders.
+export default memo(Step1Personal);

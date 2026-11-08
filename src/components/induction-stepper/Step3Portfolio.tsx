@@ -1,9 +1,10 @@
+import { memo } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
-export default function Step3Portfolio() {
+function Step3Portfolio() {
   const { register, formState: { errors } } = useFormContext();
   return (
     <div className="space-y-4">
@@ -44,3 +45,6 @@ export default function Step3Portfolio() {
     </div>
   );
 }
+
+// Memoized: no props, so it never re-renders after first mount.
+export default memo(Step3Portfolio);

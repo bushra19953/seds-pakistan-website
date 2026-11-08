@@ -48,6 +48,12 @@ const ROLE_DEFINITIONS_COLLECTION = 'roleDefinitions';
 
 type CacheEntry = { data: RoleDefinition[]; expiresAt: number } | null;
 let cache: CacheEntry = null;
+// In-flight dedupe (client-swr-dedup): concurrent cold-cache callers share
+// one load instead of each firing the full roleDefinitions read. Member
+// surfaces mount several consumers at once (profile hub, unified profile,
+// shell), so a cold cache previously cost one full collection read per
+// consumer.
+let inFlight: Promise<RoleDefinition[]> | null = null;
 
 /**
  * Get all role definitions with lightweight in-memory caching.
@@ -61,7 +67,22 @@ export async function getAllRoleDefinitionsCached(
   if (cache && cache.expiresAt > now) {
     return cache.data;
   }
+  if (inFlight) {
+    return inFlight;
+  }
+  inFlight = loadAllRoleDefinitions(firestore, ttlMs, now);
+  try {
+    return await inFlight;
+  } finally {
+    inFlight = null;
+  }
+}
 
+async function loadAllRoleDefinitions(
+  firestore: Firestore,
+  ttlMs: number,
+  now: number
+): Promise<RoleDefinition[]> {
   // Supa seam (file-group 3): behind the flag, the registry list comes
   // from the server route (/api/roles/reads, Supabase adapter or Admin
   // SDK server-side); a null return falls back to the direct Firestore

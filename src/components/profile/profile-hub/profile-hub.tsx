@@ -77,6 +77,14 @@ export function ProfileHub({ uid }: { uid: string }) {
   useCustomRoleDefinitions();
   const router = useRouter();
   const { user: currentUser, isLoading: userLoading } = useUserContext();
+  // Depend on the uid primitive, not the User object, in fetch effects
+  // (rerender-dependencies): UserProvider swaps the User object identity on
+  // every onIdTokenChanged event, which would otherwise re-fire the full
+  // profile + telemetry fetch. The ref keeps the latest object for
+  // getIdToken() inside the effect.
+  const currentUserUid = currentUser?.uid;
+  const currentUserRef = useRef(currentUser);
+  currentUserRef.current = currentUser;
   const [data, setData] = useState<HubData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -113,14 +121,14 @@ export function ProfileHub({ uid }: { uid: string }) {
   };
 
   useEffect(() => {
-    if (!uid || userLoading || !currentUser) return;
+    if (!uid || userLoading || !currentUserUid) return;
     let cancelled = false;
 
     (async () => {
       setLoading(true);
       setError(null);
       try {
-        const token = await currentUser.getIdToken(false).catch(() => null);
+        const token = await currentUserRef.current?.getIdToken(false).catch(() => null);
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
         if (token) headers.Authorization = `Bearer ${token}`;
 
@@ -153,7 +161,7 @@ export function ProfileHub({ uid }: { uid: string }) {
     return () => {
       cancelled = true;
     };
-  }, [uid, currentUser, userLoading]);
+  }, [uid, currentUserUid, userLoading]);
 
   if (loading || userLoading) {
     return (

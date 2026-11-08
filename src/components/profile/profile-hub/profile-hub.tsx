@@ -202,7 +202,7 @@ export function ProfileHub({ uid }: { uid: string }) {
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-7xl space-y-6">
-      <Card className="border-border bg-background/70 backdrop-blur-md overflow-hidden">
+      <Card className="border-border bg-background/60 backdrop-blur-md overflow-hidden">
         <CardContent className="pt-6">
           <div className="flex flex-col md:flex-row md:items-center gap-5">
             <Avatar className="h-20 w-20">

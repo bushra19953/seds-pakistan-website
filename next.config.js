@@ -202,14 +202,22 @@ const nextConfig = {
       // in array order and the last rule wins per key, so these
       // later rules replace ONLY the Cache-Control for exactly
       // these paths; the security set still arrives via the
-      // catch-all rule above. Short shared TTL plus a long
+      // catch-all rule above. /grand-prix joined the set on
+      // 2026-11-08 under the same verification: its page is a pure
+      // server component (no 'use client', no data fetch, content
+      // from static lib constants), it has no layout of its own so
+      // it uses the same verified root layout, and nothing in its
+      // tree (page, flags.tsx, StarryBackground, Footer) imports
+      // next/headers or reads cookies/searchParams. The register
+      // subtree is deliberately NOT included: it is a form surface
+      // and was not verified as a set. Short shared TTL plus a long
       // stale-while-revalidate window lets repeat document and RSC
       // fetches serve stale instead of queueing on the single
       // instance during a saturation window (the /timeline 502
       // incident class). Subtrees are deliberately NOT included:
       // /blog/new is an authoring surface, so the blog subtree was
       // not verified personalization-free as a set.
-      ...['/', '/timeline', '/events', '/blog', '/hierarchy'].map((source) => ({
+      ...['/', '/timeline', '/events', '/blog', '/hierarchy', '/grand-prix'].map((source) => ({
         source,
         headers: [
           {

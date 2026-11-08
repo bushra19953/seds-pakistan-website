@@ -81,6 +81,14 @@ export function ProfileHub({ uid }: { uid: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const editFormRef = useRef<(() => any) | null>(null);
+  // (profile uid, viewer uid) pair whose full load has already been
+  // started by the effect below. Auth-state identity changes re-run
+  // that effect (the sign-in flow's lastSeenAt write re-emits the user
+  // object), and without this guard every re-run refetched BOTH the
+  // profile and telemetry endpoints in full — the same duplicate-fetch
+  // pattern already fixed in OptimizedProfile. Keyed on the viewer uid
+  // as well, so an account switch still loads fresh.
+  const loadKeyRef = useRef<string | null>(null);
   const [savingDetails, setSavingDetails] = useState(false);
   const [detailsMessage, setDetailsMessage] = useState<string | null>(null);
   const [detailsError, setDetailsError] = useState<string | null>(null);
@@ -114,6 +122,13 @@ export function ProfileHub({ uid }: { uid: string }) {
 
   useEffect(() => {
     if (!uid || userLoading || !currentUser) return;
+    // Skip a duplicate full load for a (profile, viewer) pair already
+    // loaded by this mount; the guard resets in the catch below, so a
+    // failed load can still retry when auth settles and re-runs the
+    // effect, exactly as it would have before the guard.
+    const loadKey = `${uid}:${currentUser.uid}`;
+    if (loadKeyRef.current === loadKey) return;
+    loadKeyRef.current = loadKey;
     let cancelled = false;
 
     (async () => {
@@ -144,6 +159,8 @@ export function ProfileHub({ uid }: { uid: string }) {
           certificates: telemetryData?.certificates ?? [],
         });
       } catch (e) {
+        // Allow a later effect re-run (e.g. once auth settles) to retry.
+        loadKeyRef.current = null;
         if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load profile');
       } finally {
         if (!cancelled) setLoading(false);

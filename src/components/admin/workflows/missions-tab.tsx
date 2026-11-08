@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, type ReactNode } from 'react';
+import { motion, useReducedMotion } from 'framer-motion';
 import { useUser, useFirestore } from '@/firebase';
 import { getCustomRoleDefinitions } from '@/lib/role-definitions';
 import { isCustomRoleSlug } from '@/lib/custom-roles';
@@ -32,7 +33,9 @@ import {
   Rocket,
   FileDown,
   Loader2,
-  Star
+  Star,
+  Check,
+  FileCheck2
 } from 'lucide-react';
 import WorkflowDeleteButton from '@/components/admin/workflow-delete-button';
 import WorkflowDuplicateButton from '@/components/admin/workflow-duplicate-button';
@@ -146,40 +149,82 @@ function getStatusBadge(workflow: WorkflowSummary) {
   return <Badge className="bg-slate-500/20 text-muted-foreground border-slate-500/30">Pending</Badge>;
 }
 
-function getStepStatusColor(status: string) {
+// Stepper node treatment, adapted from the 21st.dev "Workflow Stepper"
+// pattern (BuildWithMe UI, https://docs.21st.dev/@purnavu-12/components/buildwithme-workflow-stepper):
+// a process timeline for pending, active and completed work. Each step
+// hangs off a vertical rail, the node carries the step's status, and the
+// rail segment below a completed step fills to show progress flowing
+// down the sequence. Status colours keep their existing meaning; the
+// icon is null for a pending step, whose node shows its sequence number.
+function getStepNode(status: string): { ring: string; icon: ReactNode } {
   switch (status?.toLowerCase()) {
-    case 'completed': return 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20';
-    case 'in-progress': return 'text-sky-400 bg-sky-500/10 border-sky-500/20';
-    case 'submitted-for-review': return 'text-violet-400 bg-violet-500/10 border-violet-500/20';
-    case 'overdue': return 'text-red-400 bg-red-500/10 border-red-500/20';
-    default: return 'text-muted-foreground bg-slate-500/10 border-slate-500/20';
-  }
-}
-
-function getStepIcon(status: string) {
-  switch (status?.toLowerCase()) {
-    case 'completed': return <CheckCircle className="h-4 w-4 text-emerald-400" />;
-    case 'in-progress': return <Loader2 className="h-4 w-4 text-sky-400 animate-spin" />;
-    case 'overdue': return <AlertTriangle className="h-4 w-4 text-red-400" />;
-    default: return <Clock className="h-4 w-4 text-muted-foreground" />;
+    case 'completed':
+      return { ring: 'border-emerald-500/60 bg-emerald-500/15 text-emerald-400', icon: <Check className="h-3.5 w-3.5" /> };
+    case 'in-progress':
+      return { ring: 'border-sky-500/60 bg-sky-500/10 text-sky-400', icon: <Loader2 className="h-3.5 w-3.5 animate-spin" /> };
+    case 'submitted-for-review':
+      return { ring: 'border-violet-500/60 bg-violet-500/10 text-violet-400', icon: <FileCheck2 className="h-3.5 w-3.5" /> };
+    case 'overdue':
+      return { ring: 'border-red-500/60 bg-red-500/10 text-red-400', icon: <AlertTriangle className="h-3.5 w-3.5" /> };
+    default:
+      return { ring: 'border-border bg-background text-muted-foreground', icon: null };
   }
 }
 
 // ─── Step Row ─────────────────────────────────────────────────────────────────
-function WorkflowStepRow({ step, index }: { step: WorkflowStep; index: number }) {
+// One node on the workflow's stepper rail (see getStepNode). The row's
+// content is unchanged; only the chrome changed: the status-tinted box
+// became a rail node, and the current step carries the surface's single
+// gold accent as a ring.
+function WorkflowStepRow({
+  step,
+  index,
+  position,
+  isLast,
+  isCurrent,
+}: {
+  step: WorkflowStep;
+  index: number;
+  position: number;
+  isLast: boolean;
+  isCurrent: boolean;
+}) {
+  const reduceMotion = useReducedMotion();
+  const node = getStepNode(step.status);
+  const completed = step.status?.toLowerCase() === 'completed';
   return (
-    <div className={`flex items-start gap-3 p-3 rounded-lg border transition-all ${getStepStatusColor(step.status)}`}>
-      {/* Index circle */}
-      <div className="flex-shrink-0 w-7 h-7 rounded-full bg-background/50 border border-current flex items-center justify-center text-xs font-bold">
-        {index + 1}
+    <motion.div
+      initial={reduceMotion ? false : { opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: reduceMotion ? 0 : Math.min(position * 0.04, 0.3), duration: 0.25 }}
+      className="relative flex items-start gap-3"
+    >
+      {/* Rail segment to the next step: fills emerald once this step is
+          completed, so progress reads down the sequence. */}
+      {!isLast && (
+        <span
+          aria-hidden="true"
+          className={`absolute left-[13px] top-7 bottom-0 w-0.5 ${completed ? 'bg-emerald-500/50' : 'bg-border/50'}`}
+        />
+      )}
+
+      {/* Node: status icon, or the sequence number while pending. The
+          status is colour-and-icon only, so name it for assistive tech. */}
+      <div
+        role="img"
+        aria-label={`Step ${index + 1} status: ${step.status || 'pending'}${isCurrent ? ' (current step)' : ''}`}
+        className={`relative z-10 flex-shrink-0 w-7 h-7 rounded-full border-2 flex items-center justify-center text-[11px] font-bold ${node.ring} ${
+          isCurrent ? 'ring-2 ring-amber-400/70 ring-offset-2 ring-offset-background' : ''
+        }`}
+      >
+        {node.icon ?? index + 1}
       </div>
 
-      <div className="flex-1 min-w-0">
+      <div className={`flex-1 min-w-0 ${isLast ? 'pb-1' : 'pb-5'}`}>
         <div className="flex items-center gap-2 flex-wrap">
-          {getStepIcon(step.status)}
           <span className="font-medium text-sm text-foreground truncate">{step.title}</span>
           {step.role && (
-            <Badge variant="outline" className="text-[10px] border-current opacity-70">{step.role}</Badge>
+            <Badge variant="outline" className="text-[10px] text-muted-foreground opacity-70">{step.role}</Badge>
           )}
           {step.dependencyFlag === 'AT_RISK_DEPENDENCY' && (
             <Badge className="text-[10px] bg-red-500/20 text-red-400 border-red-500/30">At-Risk Dependency</Badge>
@@ -227,7 +272,7 @@ function WorkflowStepRow({ step, index }: { step: WorkflowStep; index: number })
           </div>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -252,6 +297,15 @@ function WorkflowCard({
   const [exportingPdf, setExportingPdf] = useState(false);
   const { showToast: toast } = useEnhancedToast();
   const firestore = useFirestore();
+
+  // The step the workflow is currently on: the detail API stamps
+  // isCurrentStep when it can; otherwise the first step that is not
+  // completed is where work stands. -1 when every step is completed.
+  const currentStepIndex = useMemo(() => {
+    const flagged = steps.findIndex((s) => s.isCurrentStep);
+    if (flagged >= 0) return flagged;
+    return steps.findIndex((s) => s.status?.toLowerCase() !== 'completed');
+  }, [steps]);
 
   const fetchSteps = useCallback(async () => {
     if (stepsLoaded || !user) return;
@@ -576,7 +630,7 @@ function WorkflowCard({
 
       {/* ── Expanded Steps ───────────────────────────────────────────── */}
       {expanded && (
-        <div className="border-t border-border/30 p-4 bg-background/30 space-y-2">
+        <div className="border-t border-border/30 p-4 bg-background/30">
           {stepsLoading ? (
             <div className="space-y-2">
               {[...Array(3)].map((_, i) => (
@@ -589,7 +643,14 @@ function WorkflowCard({
             </p>
           ) : (
             steps.map((step, i) => (
-              <WorkflowStepRow key={step.id || i} step={step} index={step.sequenceIndex ?? i} />
+              <WorkflowStepRow
+                key={step.id || i}
+                step={step}
+                index={step.sequenceIndex ?? i}
+                position={i}
+                isLast={i === steps.length - 1}
+                isCurrent={i === currentStepIndex}
+              />
             ))
           )}
         </div>

@@ -1,4 +1,5 @@
 import { Fraunces, Manrope } from 'next/font/google';
+import Image from 'next/image';
 import Link from 'next/link';
 import StarryBackground from '@/components/starry-background';
 import Footer from '@/components/layout/footer';
@@ -133,15 +134,19 @@ export default function GrandPrixPage() {
       style={{ color: IVORY }}
     >
       <StarryBackground />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none fixed inset-0 opacity-55"
-        style={{
-          backgroundImage: 'url(/assets/grand-prix-nebula.jpg)',
-          backgroundSize: 'cover',
-          backgroundPosition: 'center top',
-        }}
-      />
+      <div aria-hidden="true" className="pointer-events-none fixed inset-0 opacity-55">
+        {/* next/image (priority + responsive variants) instead of a CSS
+            background: the raw backdrop is a 403 KB full-size JPG that every
+            visitor, phone included, used to download at full resolution. */}
+        <Image
+          src="/assets/grand-prix-nebula.jpg"
+          alt=""
+          fill
+          priority
+          sizes="100vw"
+          className="object-cover object-[center_top]"
+        />
+      </div>
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_55%_40%_at_50%_-5%,rgba(201,164,92,0.14),transparent),linear-gradient(180deg,rgba(6,9,16,0.35),rgba(6,9,16,0.78))]" />
       <main className="container relative z-10 mx-auto flex-1 px-4 py-16 sm:py-20">
         <div className="mx-auto max-w-3xl">

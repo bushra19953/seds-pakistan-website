@@ -1,12 +1,19 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import dynamic from 'next/dynamic';
+import Image from 'next/image';
 import { Fraunces, Manrope } from 'next/font/google';
 import Link from 'next/link';
 import StarryBackground from '@/components/starry-background';
 import Footer from '@/components/layout/footer';
 import SpaceScene from './space-scene';
-import CartoonPlanets from './cartoon-planets';
+
+// Decorative fixed-position SVG backdrop (22 KB of inline SVG): kept out of
+// the initial document and main bundle so the enrolment form paints and
+// hydrates first. It is purely decorative, so loading it after hydration
+// changes nothing the visitor can act on.
+const CartoonPlanets = dynamic(() => import('./cartoon-planets'), { ssr: false });
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -66,6 +73,59 @@ function statusLine(state: WindowState): string {
   return 'Registration closed — late admission opens Nov 21, 2026, 09:00 PKT and closes Nov 28, 2026, 23:59 PKT.';
 }
 
+/**
+ * The countdown owns its own one-second timer state so that each tick
+ * re-renders only these four boxes. Previously the tick state lived in the
+ * page root, which re-rendered the whole enrolment form (and every input in
+ * it) once per second.
+ */
+function RegistrationCountdown({ target, label }: { target: string | null; label: string }) {
+  const [remainMs, setRemainMs] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (target === null) {
+      setRemainMs(null);
+      return;
+    }
+    const targetMs = new Date(target).getTime();
+    const tick = () => setRemainMs(Math.max(0, targetMs - Date.now()));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [target]);
+
+  if (remainMs === null || remainMs <= 0) return null;
+
+  return (
+    <div className="mt-10">
+      <p className="flex items-center justify-center gap-2.5 text-center text-[11px] font-extrabold uppercase tracking-[0.34em]" style={{ color: GOLD_LIGHT }}>
+        <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full" style={{ backgroundColor: GOLD }} />
+        {label}
+      </p>
+      <div className="mx-auto mt-4 grid max-w-xl grid-cols-4 gap-2 sm:gap-3">
+        {[
+          { value: Math.floor(remainMs / 86400000), label: 'Days' },
+          { value: Math.floor(remainMs / 3600000) % 24, label: 'Hours' },
+          { value: Math.floor(remainMs / 60000) % 60, label: 'Minutes' },
+          { value: Math.floor(remainMs / 1000) % 60, label: 'Seconds' },
+        ].map((part) => (
+          <div
+            key={part.label}
+            className="min-w-0 rounded-xl border border-white/10 bg-white/[0.04] px-1 py-3 text-center shadow-[0_16px_40px_rgba(0,0,0,0.4)] backdrop-blur-md sm:py-3.5"
+          >
+            <p className={`text-2xl font-semibold tabular-nums sm:text-3xl ${displayFont}`} style={{ color: IVORY }}>
+              {String(part.value).padStart(2, '0')}
+            </p>
+            <p className="mt-1 text-[9px] font-bold uppercase tracking-[0.16em] text-[#CBBFA5] sm:text-[10px] sm:tracking-[0.24em]">
+              {part.label}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function GrandPrixRegisterPage() {
   const [fullName, setFullName] = useState('');
   const [studentId, setStudentId] = useState('');
@@ -78,7 +138,6 @@ export default function GrandPrixRegisterPage() {
   const [institutionId, setInstitutionId] = useState('');
   const [city, setCity] = useState('');
   const [status, setStatus] = useState<RegistrationStatus | null>(null);
-  const [remainMs, setRemainMs] = useState<number | null>(null);
 
   const countdownTarget =
     status === null
@@ -93,17 +152,6 @@ export default function GrandPrixRegisterPage() {
         ? 'Late admission closes in'
         : 'Late admission opens in';
 
-  useEffect(() => {
-    if (countdownTarget === null) {
-      setRemainMs(null);
-      return;
-    }
-    const target = new Date(countdownTarget).getTime();
-    const tick = () => setRemainMs(Math.max(0, target - Date.now()));
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, [countdownTarget]);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [success, setSuccess] = useState<{ registrationId: string } | null>(null);
@@ -175,15 +223,19 @@ export default function GrandPrixRegisterPage() {
       style={{ color: IVORY }}
     >
       <StarryBackground />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none fixed inset-0 opacity-55"
-        style={{
-          backgroundImage: 'url(/assets/grand-prix-nebula.jpg)',
-          backgroundSize: 'cover',
-          backgroundPosition: 'center top',
-        }}
-      />
+      <div aria-hidden="true" className="pointer-events-none fixed inset-0 opacity-55">
+        {/* next/image (priority + responsive variants) instead of a CSS
+            background: the raw backdrop is a 403 KB full-size JPG that every
+            visitor, phone included, used to download at full resolution. */}
+        <Image
+          src="/assets/grand-prix-nebula.jpg"
+          alt=""
+          fill
+          priority
+          sizes="100vw"
+          className="object-cover object-[center_top]"
+        />
+      </div>
       <SpaceScene />
       <CartoonPlanets />
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_55%_40%_at_50%_-5%,rgba(201,164,92,0.14),transparent),linear-gradient(180deg,rgba(6,9,16,0.35),rgba(6,9,16,0.78))]" />
@@ -222,34 +274,7 @@ export default function GrandPrixRegisterPage() {
             <span className="h-px w-24 bg-white/15" />
           </div>
 
-          {remainMs !== null && remainMs > 0 && (
-            <div className="mt-10">
-              <p className="flex items-center justify-center gap-2.5 text-center text-[11px] font-extrabold uppercase tracking-[0.34em]" style={{ color: GOLD_LIGHT }}>
-                <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full" style={{ backgroundColor: GOLD }} />
-                {countdownLabel}
-              </p>
-              <div className="mx-auto mt-4 grid max-w-xl grid-cols-4 gap-2 sm:gap-3">
-                {[
-                  { value: Math.floor(remainMs / 86400000), label: 'Days' },
-                  { value: Math.floor(remainMs / 3600000) % 24, label: 'Hours' },
-                  { value: Math.floor(remainMs / 60000) % 60, label: 'Minutes' },
-                  { value: Math.floor(remainMs / 1000) % 60, label: 'Seconds' },
-                ].map((part) => (
-                  <div
-                    key={part.label}
-                    className="min-w-0 rounded-xl border border-white/10 bg-white/[0.04] px-1 py-3 text-center shadow-[0_16px_40px_rgba(0,0,0,0.4)] backdrop-blur-md sm:py-3.5"
-                  >
-                    <p className={`text-2xl font-semibold tabular-nums sm:text-3xl ${displayFont}`} style={{ color: IVORY }}>
-                      {String(part.value).padStart(2, '0')}
-                    </p>
-                    <p className="mt-1 text-[9px] font-bold uppercase tracking-[0.16em] text-[#CBBFA5] sm:text-[10px] sm:tracking-[0.24em]">
-                      {part.label}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          <RegistrationCountdown target={countdownTarget} label={countdownLabel} />
 
           <Card className={`mt-10 ${cardClass}`}>
             <CardContent className="py-5">

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { CheckCircle2, Ticket, Printer, X, PartyPopper } from 'lucide-react';
+import { CheckCircle2, Ticket, Printer, X } from 'lucide-react';
 
 interface TicketCongratsModalProps {
     displayName: string;
@@ -10,12 +10,6 @@ interface TicketCongratsModalProps {
     ticketId?: string;
     onClose: () => void;
 }
-
-// ─── Confetti colors ──────────────────────────────────────────────────────────
-const CONFETTI_COLORS = [
-    '#6366f1', '#06b6d4', '#22c55e', '#f59e0b', '#ec4899',
-    '#8b5cf6', '#10b981', '#3b82f6', '#f97316', '#e11d48',
-];
 
 // ─── Web Audio victory fanfare ────────────────────────────────────────────────
 function playTicketFanfare() {
@@ -54,32 +48,52 @@ function playTicketFanfare() {
     } catch { /* silently ignore */ }
 }
 
-function ConfettiPiece({ index }: { index: number }) {
-    const color = CONFETTI_COLORS[index % CONFETTI_COLORS.length];
-    const duration = 1.4 + (index % 7) * 0.25;
-    const delay = (index % 13) * 0.06;
-    const left = 2 + (index * 1.57) % 96;
-    const shape = index % 3 === 0 ? '50%' : index % 3 === 1 ? '0' : '2px';
-    const width = 7 + (index % 5);
-    const height = width * (index % 4 === 0 ? 0.45 : 1);
-
-    return (
-        <div
-            style={{
-                position: 'absolute',
-                top: '-20px',
-                left: `${left}%`,
-                width: `${width}px`,
-                height: `${height}px`,
-                backgroundColor: color,
-                borderRadius: shape,
-                animation: `confettiFall-${index % 2 === 0 ? 'cw' : 'ccw'} ${duration}s ease-in ${delay}s forwards`,
-                opacity: 0,
-                zIndex: 0,
-            }}
-        />
-    );
+// ─── The modal's own star chart ───────────────────────────────────────────────
+// Same seeded construction as the site starfield: quiet printed-chart points
+// and one constellation chain behind the card content. Fixed seed — the
+// celebration sky does not change between renders.
+function mulberry32(seed: number) {
+    let a = seed >>> 0;
+    return () => {
+        a |= 0;
+        a = (a + 0x6d2b79f5) | 0;
+        let t = Math.imul(a ^ (a >>> 15), 1 | a);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
 }
+
+const MODAL_CHART = (() => {
+    const rnd = mulberry32(20261109);
+    const W = 440, H = 520;
+    const stars = Array.from({ length: 44 }, () => {
+        const band = rnd();
+        return {
+            x: Math.round(rnd() * W * 10) / 10,
+            y: Math.round(rnd() * H * 10) / 10,
+            r: band < 0.75 ? 0.7 + rnd() * 0.4 : 1.1 + rnd() * 0.4,
+            o: band < 0.75 ? 0.14 + rnd() * 0.16 : 0.3 + rnd() * 0.18,
+        };
+    });
+    const bright = [...stars].sort((a, b) => b.o - a.o).slice(0, 8);
+    const chain: string[] = [];
+    let current = bright[0];
+    const pool = new Set(bright.slice(1));
+    for (let link = 0; link < 4 && current; link++) {
+        chain.push(`${current.x},${current.y}`);
+        let best: typeof current | undefined; let bestD = Infinity;
+        pool.forEach((s) => { const d = Math.hypot(s.x - current.x, s.y - current.y); if (d < bestD) { bestD = d; best = s; } });
+        if (!best) break;
+        pool.delete(best); current = best;
+    }
+    return { stars, chain, W, H };
+})();
+
+const FONT_DISPLAY = "'Bebas Neue', 'Noto Sans', sans-serif";
+const FONT_LABEL = "'Orbitron', 'Noto Sans', sans-serif";
+const FONT_BODY = "'Courier Prime', 'Noto Sans', monospace";
+const CORAL = 'hsl(15 72% 63%)';
+const HAIRLINE = 'hsl(210 40% 96% / 0.14)';
 
 export default function TicketCongratsModal({
     displayName,
@@ -97,14 +111,6 @@ export default function TicketCongratsModal({
     return (
         <>
             <style>{`
-        @keyframes confettiFall-cw {
-          0%   { transform: translateY(0) rotate(0deg); opacity: 1; }
-          100% { transform: translateY(440px) rotate(540deg); opacity: 0; }
-        }
-        @keyframes confettiFall-ccw {
-          0%   { transform: translateY(0) rotate(0deg); opacity: 1; }
-          100% { transform: translateY(440px) rotate(-540deg); opacity: 0; }
-        }
         @keyframes modalPop {
           0%   { transform: scale(0.92) translateY(16px); opacity: 0; }
           100% { transform: scale(1) translateY(0); opacity: 1; }
@@ -113,17 +119,9 @@ export default function TicketCongratsModal({
           0%, 100% { transform: translateY(0); }
           50%       { transform: translateY(-6px); }
         }
-        @keyframes shimmer {
-          0%, 100% { opacity: 0.7; }
-          50%       { opacity: 1; }
-        }
         @keyframes pulseRing {
-          0%   { box-shadow: 0 0 0 0 rgba(99,102,241,0.5); }
-          100% { box-shadow: 0 0 0 18px rgba(99,102,241,0); }
-        }
-        @keyframes starFloat {
-          0%, 100% { transform: translateY(0) scale(1); opacity: 0.6; }
-          50%       { transform: translateY(-8px) scale(1.15); opacity: 1; }
+          0%   { box-shadow: 0 0 0 0 hsl(15 72% 63% / 0.45); }
+          100% { box-shadow: 0 0 0 18px hsl(15 72% 63% / 0); }
         }
       `}</style>
 
@@ -144,27 +142,43 @@ export default function TicketCongratsModal({
                     onClick={(e) => e.stopPropagation()}
                     style={{
                         position: 'relative',
-                        background: 'linear-gradient(145deg, #0a0f1e, #141c2f)',
-                        border: '1px solid rgba(99,102,241,0.45)',
-                        borderRadius: 28,
+                        background: '#0f172a',
+                        border: `1px solid ${HAIRLINE}`,
+                        borderRadius: 16,
                         padding: '44px 36px 36px',
                         maxWidth: 440,
                         width: '100%',
                         textAlign: 'center',
                         animation: 'modalPop 0.55s cubic-bezier(0.16,1,0.3,1) forwards',
-                        boxShadow: '0 30px 100px rgba(99,102,241,0.3), 0 0 0 1px rgba(99,102,241,0.12)',
+                        boxShadow: '0 30px 100px rgba(0,0,0,0.55)',
                         overflow: 'hidden',
                         zIndex: 9999,
+                        fontFamily: FONT_BODY,
                     }}
                 >
-                    {/* 60 confetti pieces for maximum explosion */}
-                    {[...Array(60)].map((_, i) => <ConfettiPiece key={i} index={i} />)}
+                    {/* Star chart field */}
+                    <svg
+                        viewBox={`0 0 ${MODAL_CHART.W} ${MODAL_CHART.H}`}
+                        preserveAspectRatio="xMidYMid slice"
+                        aria-hidden="true"
+                        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}
+                    >
+                        {MODAL_CHART.chain.length > 1 && (
+                            <polyline points={MODAL_CHART.chain.join(' ')} fill="none" stroke="hsl(210 40% 96% / 0.28)" strokeWidth="1" />
+                        )}
+                        {MODAL_CHART.stars.map((s, i) => (
+                            <circle key={i} cx={s.x} cy={s.y} r={s.r} fill="hsl(210 40% 96%)" fillOpacity={s.o} />
+                        ))}
+                    </svg>
+
+                    {/* The one coral rule */}
+                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: CORAL }} />
 
                     {/* Close button */}
                     <button
                         onClick={onClose}
                         style={{
-                            position: 'absolute', top: 16, right: 16,
+                            position: 'absolute', top: 16, right: 16, zIndex: 2,
                             background: 'rgba(255,255,255,0.07)',
                             border: '1px solid rgba(255,255,255,0.12)',
                             borderRadius: '50%', width: 32, height: 32,
@@ -176,70 +190,54 @@ export default function TicketCongratsModal({
                         <X size={14} />
                     </button>
 
-                    {/* Floating star accents */}
-                    {['✦', '★', '✦', '★'].map((s, i) => (
-                        <div
-                            key={i}
-                            style={{
-                                position: 'absolute',
-                                top: `${20 + i * 22}%`,
-                                left: i % 2 === 0 ? '6%' : '88%',
-                                fontSize: 16,
-                                color: i % 2 === 0 ? '#f59e0b' : '#8b5cf6',
-                                animation: `starFloat ${2 + i * 0.4}s ease-in-out ${i * 0.3}s infinite`,
-                                opacity: 0.5,
-                                pointerEvents: 'none',
-                                zIndex: 1,
-                            }}
-                        >
-                            {s}
-                        </div>
-                    ))}
-
-                    {/* Animated ticket icon with pulse ring */}
+                    {/* Ticket medallion with coral pulse */}
                     <div
                         style={{
                             width: 80, height: 80, borderRadius: '50%',
-                            background: 'linear-gradient(135deg, #4f46e5, #06b6d4)',
+                            background: 'hsl(222 40% 14%)',
+                            border: `1px solid ${HAIRLINE}`,
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                             margin: '0 auto 22px',
                             animation: 'ticketFloat 2.4s ease-in-out infinite, pulseRing 1.8s ease-out infinite',
-                            boxShadow: '0 0 40px rgba(99,102,241,0.45)',
                             position: 'relative', zIndex: 2,
                         }}
                     >
-                        <Ticket size={36} color="white" />
+                        <Ticket size={34} color="hsl(210 40% 96%)" />
                     </div>
 
-                    {/* 🎉 Congrats header */}
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 6 }}>
-                        <PartyPopper size={18} color="#f59e0b" />
-                        <h2 style={{
-                            fontSize: 28, fontWeight: 900, color: '#fff',
-                            margin: 0, letterSpacing: '-0.5px', lineHeight: 1.1,
-                        }}>
-                            You&apos;re In, {displayName}!
-                        </h2>
-                        <PartyPopper size={18} color="#f59e0b" />
-                    </div>
+                    {/* Header */}
+                    <p style={{
+                        fontFamily: FONT_LABEL, fontSize: 10, letterSpacing: '0.3em',
+                        color: 'hsl(210 40% 96% / 0.55)', margin: '0 0 8px', position: 'relative', zIndex: 2,
+                    }}>
+                        TICKET ISSUED
+                    </p>
+                    <h2 style={{
+                        fontFamily: FONT_DISPLAY, fontSize: 36, fontWeight: 400, color: '#fff',
+                        margin: '0 0 8px', letterSpacing: '0.02em', lineHeight: 1.05,
+                        textTransform: 'uppercase', position: 'relative', zIndex: 2,
+                    }}>
+                        You&apos;re In, {displayName}!
+                    </h2>
 
-                    <p style={{ fontSize: 14, color: '#94a3b8', margin: '0 0 22px', lineHeight: 1.6 }}>
-                        Your ticket for <strong style={{ color: '#e2e8f0' }}>{eventTitle}</strong> has been officially issued. 🚀
+                    <p style={{ fontSize: 14, color: '#a7b3c7', margin: '0 0 22px', lineHeight: 1.6, position: 'relative', zIndex: 2 }}>
+                        Your ticket for <strong style={{ color: '#e2e8f0' }}>{eventTitle}</strong> has been officially issued.
                     </p>
 
-                    {/* Giant ticket number */}
+                    {/* Ticket number readout */}
                     <div style={{
                         display: 'inline-flex', flexDirection: 'column', alignItems: 'center',
-                        background: 'rgba(99,102,241,0.12)',
-                        border: '1px solid rgba(99,102,241,0.35)',
-                        borderRadius: 18, padding: '14px 36px', marginBottom: 22,
+                        background: 'hsl(222 40% 14%)',
+                        border: `1px solid ${HAIRLINE}`,
+                        borderRadius: 12, padding: '14px 36px 10px', marginBottom: 22,
+                        position: 'relative', zIndex: 2,
                     }}>
-                        <span style={{ fontSize: 11, color: '#6366f1', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 4 }}>
+                        <span style={{ fontFamily: FONT_LABEL, fontSize: 10, color: 'hsl(210 40% 96% / 0.5)', textTransform: 'uppercase', letterSpacing: '0.28em', marginBottom: 4 }}>
                             Ticket Number
                         </span>
                         <span style={{
-                            fontSize: 48, fontWeight: 900, color: '#818cf8', lineHeight: 1,
-                            animation: 'shimmer 2s ease-in-out infinite',
+                            fontFamily: FONT_DISPLAY,
+                            fontSize: 56, color: CORAL, lineHeight: 1,
                             fontVariantNumeric: 'tabular-nums',
                         }}>
                             #{ticketNumber.toString().padStart(3, '0')}
@@ -247,22 +245,21 @@ export default function TicketCongratsModal({
                     </div>
 
                     {/* Valid checkmark */}
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 24 }}>
-                        <CheckCircle2 size={16} color="#22c55e" />
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 24, position: 'relative', zIndex: 2 }}>
+                        <CheckCircle2 size={16} color="#4ade80" />
                         <span style={{ fontSize: 13, color: '#86efac', fontWeight: 600 }}>Ticket is valid &amp; ready to use</span>
                     </div>
 
                     {/* CTA buttons */}
-                    <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap', position: 'relative', zIndex: 2 }}>
                         {ticketId && (
                             <a
                                 href={`/events/ticket/${ticketId}`}
                                 style={{
                                     display: 'flex', alignItems: 'center', gap: 6,
-                                    background: 'linear-gradient(135deg, #4f46e5, #7c3aed)',
-                                    color: '#fff', borderRadius: 12, padding: '11px 22px',
+                                    background: CORAL,
+                                    color: '#000', borderRadius: 8, padding: '11px 22px',
                                     fontSize: 14, fontWeight: 700, textDecoration: 'none',
-                                    boxShadow: '0 0 20px rgba(99,102,241,0.35)',
                                     transition: 'transform 0.15s',
                                 }}
                             >
@@ -277,7 +274,7 @@ export default function TicketCongratsModal({
                                     display: 'flex', alignItems: 'center', gap: 6,
                                     background: 'rgba(255,255,255,0.07)',
                                     border: '1px solid rgba(255,255,255,0.14)',
-                                    color: '#cbd5e1', borderRadius: 12, padding: '11px 22px',
+                                    color: '#cbd5e1', borderRadius: 8, padding: '11px 22px',
                                     fontSize: 14, fontWeight: 600, textDecoration: 'none',
                                 }}
                             >
@@ -287,7 +284,7 @@ export default function TicketCongratsModal({
                     </div>
 
                     {/* Auto-dismiss footer */}
-                    <p style={{ fontSize: 11, color: '#1e293b', marginTop: 22 }}>
+                    <p style={{ fontSize: 11, color: '#64748b', marginTop: 22, position: 'relative', zIndex: 2 }}>
                         Closes automatically in a few seconds…
                     </p>
                 </div>

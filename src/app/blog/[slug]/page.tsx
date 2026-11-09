@@ -95,15 +95,20 @@ export default async function BlogSlugPage({
 
   // Format the publish date on the server in UTC so the readout is part
   // of the first paint and cannot hydration-mismatch.
-  const publishedSource = blog.publishedAt || blog.createdAt;
-  const publishedLabel = publishedSource
-    ? new Intl.DateTimeFormat('en-GB', {
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric',
-        timeZone: 'UTC',
-      }).format(new Date(publishedSource as unknown as string))
-    : '';
+  const gbDate = (value: unknown): string => {
+    if (!value) return '';
+    const d = new Date(value as string);
+    if (Number.isNaN(d.getTime())) return '';
+    return new Intl.DateTimeFormat('en-GB', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      timeZone: 'UTC',
+    }).format(d);
+  };
+  const publishedLabel = gbDate(blog.publishedAt || blog.createdAt);
+  const updatedLabel =
+    blog.updatedAt && blog.updatedAt !== blog.createdAt ? gbDate(blog.updatedAt) : '';
 
   return (
     <Suspense fallback={
@@ -121,6 +126,7 @@ export default async function BlogSlugPage({
         bodyRestHtml={bodyRender.restHtml}
         readingMinutes={bodyRender.readingMinutes}
         publishedLabel={publishedLabel}
+        updatedLabel={updatedLabel}
       />
     </Suspense>
   );

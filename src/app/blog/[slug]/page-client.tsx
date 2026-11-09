@@ -42,6 +42,8 @@ interface BlogSlugPageClientProps {
   readingMinutes?: number;
   /** Publish date formatted on the server (UTC) for the readout row. */
   publishedLabel?: string;
+  /** Update date formatted on the server (UTC), when it differs. */
+  updatedLabel?: string;
 }
 
 // Robust Error Boundary specifically for JSON-driven components
@@ -125,12 +127,12 @@ function FallbackCoverArt({ seedKey, className = '' }: { seedKey: string; classN
   );
 }
 
-/** Humanise a slug-like category id ("space-news" -> "Space News").
- *  Opaque ids (Firestore doc ids) return null: no label is shown rather
- *  than a meaningless one. */
+/** Humanise a slug-like category id ("space-news" -> "Space News",
+ *  "news" -> "News"). Opaque ids (Firestore doc ids are mixed-case)
+ *  return null: no label is shown rather than a meaningless one. */
 function categoryLabel(categoryId?: string): string | null {
   if (!categoryId) return null;
-  if (!/[-_\s]/.test(categoryId)) return null;
+  if (!/^[a-z0-9]+(?:[-_\s][a-z0-9]+)*$/.test(categoryId)) return null;
   const words = categoryId.replace(/[-_]+/g, ' ').trim();
   if (!words) return null;
   return words.replace(/\b\w/g, (c) => c.toUpperCase());
@@ -184,6 +186,7 @@ export default function BlogSlugPageClient({
   bodyRestHtml = null,
   readingMinutes = 0,
   publishedLabel = '',
+  updatedLabel = '',
 }: BlogSlugPageClientProps) {
   const { user, role } = useUser();
   const { toast } = useToast();
@@ -503,9 +506,7 @@ export default function BlogSlugPageClient({
           <div className="pt-8 mt-4 border-t border-border flex flex-col sm:flex-row justify-between items-center gap-4">
             <div className="font-accent text-[11px] uppercase tracking-[0.2em] text-muted-foreground space-y-1">
               <p>Published // {publishedLabel || formatDate(blog.publishedAt || blog.createdAt)}</p>
-              {blog.updatedAt && blog.updatedAt !== blog.createdAt && (
-                <p>Updated // {formatDate(blog.updatedAt)}</p>
-              )}
+              {updatedLabel && <p>Updated // {updatedLabel}</p>}
             </div>
             <div className="flex gap-2">
               <Button onClick={handleShare} variant="outline" size="sm">

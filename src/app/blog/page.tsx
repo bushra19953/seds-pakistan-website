@@ -48,7 +48,7 @@ function hashSeed(text: string): number {
 }
 
 function coverLabel(blog: EmorationalBlogPost): string {
-  if (blog.categoryId && /[-_\s]/.test(blog.categoryId)) {
+  if (blog.categoryId && /^[a-z0-9]+(?:[-_\s][a-z0-9]+)*$/.test(blog.categoryId)) {
     const words = blog.categoryId.replace(/[-_]+/g, ' ').trim();
     if (words) return words.replace(/\b\w/g, (c) => c.toUpperCase());
   }
@@ -247,8 +247,8 @@ function BlogPostCard({
           )}
 
           {/* Footer row */}
-          <div className="mt-auto pt-5 flex items-center justify-between gap-3">
-            <span className="font-body text-xs text-muted-foreground truncate">{blog.authorName}</span>
+          <div className="mt-auto pt-5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+            <span className="font-body text-xs text-muted-foreground">{blog.authorName}</span>
             <span className="inline-flex shrink-0 items-center gap-1 font-accent text-[11px] uppercase tracking-[0.2em] text-primary-text">
               Read transmission
               <ArrowRight className="h-3.5 w-3.5 transition-transform motion-safe:group-hover:translate-x-0.5" />

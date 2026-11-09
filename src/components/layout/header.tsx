@@ -414,13 +414,11 @@ export default function Header() {
               )}
             </div>
 
-            {/* Mobile theme toggle in main header (visible below xl,
-                where the hamburger sheet carries navigation) */}
-            {/**
-             * Change 3: Theme toggle moved into main header; removed from mobile menu
-             * - Ensures the light/dark mode toggle is always accessible on mobile and desktop.
-             */}
-            <div className="xl:hidden flex items-center gap-1">
+            {/* Mobile theme toggle in main header (visible below md only).
+                From md up, the User Actions row above carries the toggle;
+                showing this one there too rendered two toggles side by side
+                across the whole md-to-xl band (founder report 2026-11-09). */}
+            <div className="md:hidden flex items-center gap-1">
               <ThemeToggleButton aria-label="Toggle theme" />
             </div>
 

@@ -396,7 +396,7 @@ export default function GrandPrixRegisterPage() {
                   </div>
                   <div className="space-y-2.5">
                     <Label htmlFor="institutionId" className={labelClass}>Institution verification ID</Label>
-                    <Input id="institutionId" className={fieldClass} placeholder="ID issued by your institution, e.g. IST-REG-2026" value={institutionId} onChange={(e) => setInstitutionId(e.target.value)} required />
+                    <Input id="institutionId" className={fieldClass} placeholder="e.g. IST-REG-2026" value={institutionId} onChange={(e) => setInstitutionId(e.target.value)} required />
                   </div>
                 </CardContent>
               </SpotlightCard>
@@ -425,7 +425,7 @@ export default function GrandPrixRegisterPage() {
                   </div>
                   <div className="space-y-2.5">
                     <Label htmlFor="discipline" className={labelClass}>Discipline or field</Label>
-                    <Input id="discipline" className={fieldClass} placeholder="e.g. Avionics, Structures, Software, Propulsion" value={discipline} onChange={(e) => setDiscipline(e.target.value)} required />
+                    <Input id="discipline" className={fieldClass} placeholder="e.g. Avionics, Structures, Software" value={discipline} onChange={(e) => setDiscipline(e.target.value)} required />
                   </div>
                   <div className="space-y-2.5">
                     <Label htmlFor="whatsapp" className={labelClass}>WhatsApp number</Label>

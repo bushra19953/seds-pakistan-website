@@ -35,17 +35,17 @@ export default function ProjectsSection() {
             {[...Array(3)].map((_, index) => (
               <Card key={index} className="animate-pulse">
                 <CardHeader>
-                  <div className="h-6 bg-gray-200 rounded w-3/4 mb-2"></div>
-                  <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+                  <div className="h-6 bg-muted rounded w-3/4 mb-2"></div>
+                  <div className="h-4 bg-muted rounded w-1/2"></div>
                 </CardHeader>
                 <CardContent>
-                  <div className="h-40 bg-gray-200 rounded mb-4"></div>
-                  <div className="h-4 bg-gray-200 rounded mb-2"></div>
-                  <div className="h-4 bg-gray-200 rounded w-5/6"></div>
+                  <div className="h-40 bg-muted rounded mb-4"></div>
+                  <div className="h-4 bg-muted rounded mb-2"></div>
+                  <div className="h-4 bg-muted rounded w-5/6"></div>
                 </CardContent>
                 <CardFooter className="flex justify-end space-x-2">
-                  <div className="h-8 w-8 bg-gray-200 rounded-full"></div>
-                  <div className="h-8 w-8 bg-gray-200 rounded-full"></div>
+                  <div className="h-8 w-8 bg-muted rounded-full"></div>
+                  <div className="h-8 w-8 bg-muted rounded-full"></div>
                 </CardFooter>
               </Card>
             ))}

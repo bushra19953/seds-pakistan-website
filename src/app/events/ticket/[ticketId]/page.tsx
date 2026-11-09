@@ -290,23 +290,23 @@ export default function TicketPage() {
             )}
 
             {/* Screen chrome — hidden during print */}
-            <div className="print:hidden bg-card">
+            <div className="print:hidden bg-slate-100 dark:bg-card border-b border-slate-900/10 dark:border-transparent">
                 <div className="max-w-3xl mx-auto px-4 py-8">
                     <div className="flex items-center justify-between gap-3 mb-6">
-                        <Button variant="outline" size="sm" onClick={() => router.back()} className="border-border text-muted-foreground hover:text-foreground shrink-0">
+                        <Button variant="outline" size="sm" onClick={() => router.back()} className="border-slate-900/25 text-slate-900/75 hover:text-slate-950 hover:bg-slate-900/5 dark:border-border dark:text-muted-foreground dark:hover:text-foreground dark:hover:bg-accent shrink-0">
                             <ArrowLeft className="w-4 h-4 mr-2" /> Back
                         </Button>
                         {/* Slim ticket header strip: id readout + status chip */}
                         <div className="hidden md:flex flex-col items-center text-center min-w-0">
-                            <span className="font-accent text-[9px] uppercase text-muted-foreground" style={{ letterSpacing: '0.3em' }}>Ticket</span>
+                            <span className="font-accent text-[9px] uppercase text-slate-900/60 dark:text-muted-foreground" style={{ letterSpacing: '0.3em' }}>Ticket</span>
                             <span className="font-code text-sm text-foreground truncate">{ticket.ticketId}</span>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
-                            <span className={`hidden sm:inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-accent text-[10px] font-semibold ${ticket.status === 'valid' ? 'border-green-500/40 bg-green-500/10 text-green-600 dark:text-green-400' : 'border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-400'}`} style={{ letterSpacing: '0.18em' }}>
+                            <span className={`hidden sm:inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-accent text-[10px] font-semibold ${ticket.status === 'valid' ? 'border-green-600/60 bg-green-600/10 text-green-700 dark:border-green-500/40 dark:bg-green-500/10 dark:text-green-400' : 'border-red-600/60 bg-red-600/10 text-red-700 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-400'}`} style={{ letterSpacing: '0.18em' }}>
                                 {ticket.status === 'valid' ? <CheckCircle2 className="w-3 h-3" /> : <AlertTriangle className="w-3 h-3" />}
                                 {ticket.status === 'valid' ? 'VALID' : 'REVOKED'}
                             </span>
-                            <Button variant="outline" size="sm" onClick={() => window.print()} className="border-border text-muted-foreground hover:text-foreground">
+                            <Button variant="outline" size="sm" onClick={() => window.print()} className="border-slate-900/25 text-slate-900/75 hover:text-slate-950 hover:bg-slate-900/5 dark:border-border dark:text-muted-foreground dark:hover:text-foreground dark:hover:bg-accent">
                                 <Printer className="w-4 h-4 mr-2" /> Print / Save PDF
                             </Button>
                             {ticket.uniqueTicketUrl && (
@@ -326,7 +326,7 @@ export default function TicketPage() {
                         </div>
                     )}
 
-                    <p className="text-muted-foreground text-sm text-center mb-8 font-body">
+                    <p className="text-slate-900/70 dark:text-muted-foreground text-sm text-center mb-8 font-body">
                         Preview below. Click <strong className="text-foreground">Print / Save PDF</strong> to get your physical copy.
                     </p>
                 </div>
@@ -335,7 +335,7 @@ export default function TicketPage() {
             {/* Premium commemorative ticket image (screen only) */}
             {ticket.uniqueTicketUrl && (
                 <div className="print:hidden w-full max-w-[750px] mx-auto px-4 mb-8">
-                    <div className="relative aspect-[1.618/1] w-full rounded-2xl overflow-hidden shadow-2xl border border-white/5 group bg-card">
+                    <div className="relative aspect-[1.618/1] w-full rounded-2xl overflow-hidden shadow-2xl border border-slate-900/10 dark:border-white/5 group bg-white dark:bg-card">
                         <Image
                             src={ticket.uniqueTicketUrl}
                             alt="Unique SEDS Ticket"
@@ -352,11 +352,11 @@ export default function TicketPage() {
                             </a>
                         </div>
                     </div>
-                    <p className="font-accent text-[10px] uppercase text-muted-foreground text-center mt-3" style={{ letterSpacing: '0.3em' }}>Premium Commemorative Ticket</p>
+                    <p className="font-accent text-[10px] uppercase text-slate-900/60 dark:text-muted-foreground text-center mt-3" style={{ letterSpacing: '0.3em' }}>Premium Commemorative Ticket</p>
                     <div className="mt-8 mb-4 flex items-center gap-4">
-                        <div className="flex-1 h-px bg-muted/50" />
-                        <span className="font-accent text-[10px] uppercase text-muted-foreground" style={{ letterSpacing: '0.3em' }}>Standard Printable Ticket</span>
-                        <div className="flex-1 h-px bg-muted/50" />
+                        <div className="flex-1 h-px bg-slate-900/15 dark:bg-muted/50" />
+                        <span className="font-accent text-[10px] uppercase text-slate-900/60 dark:text-muted-foreground" style={{ letterSpacing: '0.3em' }}>Standard Printable Ticket</span>
+                        <div className="flex-1 h-px bg-slate-900/15 dark:bg-muted/50" />
                     </div>
                 </div>
             )}
@@ -364,10 +364,10 @@ export default function TicketPage() {
             {/* ════════════════════════════════════════════════════════════════ */}
             {/*            UNIFIED PRINT TICKET — NO FRAGMENTATION              */}
             {/* ════════════════════════════════════════════════════════════════ */}
-            <div className="print:block flex justify-center items-start pb-16 bg-card min-h-screen print:min-h-0 print:pb-0 print:m-0 print:bg-white">
+            <div className="print:block flex justify-center items-start pb-16 bg-slate-100 dark:bg-card min-h-screen print:min-h-0 print:pb-0 print:m-0 print:bg-white">
                 <div
                     ref={containerRef}
-                    className="ticket-wrapper w-full max-w-[750px] mx-auto shadow-2xl print:shadow-none print:max-w-none"
+                    className="ticket-wrapper w-full max-w-[750px] mx-auto shadow-[0_28px_70px_-20px_rgba(15,23,42,0.45)] dark:shadow-2xl print:shadow-none print:max-w-none"
                     style={{ fontFamily: "'Segoe UI', Arial, sans-serif", '--scale-factor': renderScale } as any}
                 >
                     {/* ── FRONT ─────────────────────────────────────────────────── */}

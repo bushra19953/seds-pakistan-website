@@ -12,7 +12,7 @@ import { useRef, type ReactNode, type MouseEvent } from 'react';
  *     (SpotlightCard, adapted from the Spotlight Card pattern on 21st.dev:
  *     https://21st.dev/@jahed/components/spotlight-card — a radial glow that
  *     tracks the pointer via CSS custom properties, re-hued here to the
- *     portal's muted gold at low alpha).
+ *     site's coral signal colour at low alpha).
  *
  * Everything honours prefers-reduced-motion: entrances collapse to a plain
  * fade and the spotlight never arms.
@@ -68,7 +68,7 @@ export function OrbitRings() {
         cy="22"
         rx="330"
         ry="17"
-        stroke="#C9A45C"
+        stroke="hsl(15, 72%, 63%)"
         strokeOpacity="0.35"
         strokeWidth="1"
         {...draw}
@@ -79,7 +79,7 @@ export function OrbitRings() {
         cy="22"
         rx="238"
         ry="11"
-        stroke="#E8CF8F"
+        stroke="hsl(15, 85%, 76%)"
         strokeOpacity="0.22"
         strokeWidth="1"
         {...draw}
@@ -90,16 +90,16 @@ export function OrbitRings() {
         animate={{ opacity: 1 }}
         transition={{ duration: 0.8, delay: reduce ? 0 : 1.7 }}
       >
-        <circle cx="52" cy="13" r="3" fill="#E8CF8F" fillOpacity="0.75" />
-        <circle cx="664" cy="30" r="2.2" fill="#C9A45C" fillOpacity="0.7" />
-        <circle cx="472" cy="7" r="1.6" fill="#F5F0E4" fillOpacity="0.65" />
+        <circle cx="52" cy="13" r="3" fill="hsl(15, 85%, 76%)" fillOpacity="0.75" />
+        <circle cx="664" cy="30" r="2.2" fill="hsl(15, 72%, 63%)" fillOpacity="0.7" />
+        <circle cx="472" cy="7" r="1.6" fill="hsl(15, 72%, 45%)" fillOpacity="0.65" />
       </motion.g>
     </svg>
   );
 }
 
 /**
- * Card with a muted-gold spotlight that follows the pointer (21st.dev
+ * Card with a coral spotlight that follows the pointer (21st.dev
  * Spotlight Card pattern, adapted). The glow is painted with CSS custom
  * properties set directly on the node, so pointer movement never
  * re-renders. Touch devices and reduced-motion users get the plain card.
@@ -134,7 +134,7 @@ export function SpotlightCard({
         className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-500 group-hover:opacity-100"
         style={{
           background:
-            'radial-gradient(260px circle at var(--spot-x, 50%) var(--spot-y, 50%), rgba(201,164,92,0.13), transparent 65%)',
+            'radial-gradient(260px circle at var(--spot-x, 50%) var(--spot-y, 50%), rgba(233,113,76,0.12), transparent 65%)',
         }}
       />
       <div className="relative">{children}</div>

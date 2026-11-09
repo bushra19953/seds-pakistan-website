@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useReducedMotion } from 'framer-motion';
 import Image from 'next/image';
-import { Fraunces, Manrope } from 'next/font/google';
 import Link from 'next/link';
 import StarryBackground from '@/components/starry-background';
 import Footer from '@/components/layout/footer';
@@ -31,21 +30,6 @@ import {
   type WindowState,
 } from '@/lib/grand-prix/registration';
 
-// PERF: no italic Fraunces is rendered anywhere on this route (no italic
-// class, font-style, or <em>/<i> in the route), so the italic face is not
-// loaded — it previously cost a preloaded ~45 KB variable font file.
-const display = Fraunces({
-  subsets: ['latin'],
-  weight: ['500', '600', '700'],
-  variable: '--gp-display',
-});
-
-const body = Manrope({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700', '800'],
-  variable: '--gp-body',
-});
-
 interface RegistrationStatus {
   open: boolean;
   state: WindowState;
@@ -54,28 +38,28 @@ interface RegistrationStatus {
   totalRegistered: number;
 }
 
-const IVORY = '#F5F0E4';
-const GOLD = '#C9A45C';
-const GOLD_LIGHT = '#E8CF8F';
-
+// Same world as the rest of the site: Bebas display, Orbitron labels,
+// Courier Prime body (inherited), coral the only signal colour, hairline
+// cards at the shared 0.5rem radius, and a full light-mode treatment —
+// the old page-local Fraunces / Manrope / gold sub-brand is gone.
 const fieldClass =
-  'h-12 rounded-lg border-white/15 bg-white/[0.05] px-4 text-[15px] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition-colors placeholder:text-[#8E887A] focus-visible:border-[#C9A45C]/70 focus-visible:bg-white/[0.08] focus-visible:ring-2 focus-visible:ring-[#C9A45C]/40';
+  'h-12 rounded-lg border border-[#1A1610]/15 bg-white px-4 text-[15px] transition-colors placeholder:text-[#7A7260] focus-visible:border-primary/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 dark:border-white/15 dark:bg-white/[0.05] dark:placeholder:text-[#8E887A] dark:focus-visible:bg-white/[0.08]';
 const selectClass =
-  'flex h-12 w-full rounded-lg border border-white/15 bg-white/[0.05] px-4 py-2 text-[15px] transition-colors focus:bg-white/[0.08] focus:outline-none focus:ring-2 focus:ring-[#C9A45C]/40 [&>option]:bg-[#101623] [&>option]:text-[#F5F0E4]';
+  'flex h-12 w-full rounded-lg border border-[#1A1610]/15 bg-white px-4 py-2 text-[15px] transition-colors focus:bg-primary/[0.04] focus:outline-none focus:ring-2 focus:ring-primary/40 dark:border-white/15 dark:bg-white/[0.05] dark:focus:bg-white/[0.08] [&>option]:bg-white [&>option]:text-[#1A1610] dark:[&>option]:bg-[#101623] dark:[&>option]:text-[#F5F0E4]';
 const labelClass =
-  'text-[11px] font-bold uppercase tracking-[0.18em] text-[#CBBFA5]';
+  'font-accent text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6B5E3F] dark:text-[#CBBFA5]';
 const cardClass =
-  'rounded-2xl border-white/10 bg-white/[0.04] shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-md';
-const displayFont = '[font-family:var(--gp-display)]';
+  'rounded-lg border-[#1A1610]/10 bg-white dark:border-white/10 dark:bg-white/[0.04] dark:backdrop-blur-md';
+const displayFont = 'font-headline';
 
 /**
  * Spotlight card treatment, adapted from the 21st.dev "Spotlight Card"
  * community pattern: a soft radial glow that follows the visitor's pointer
- * across the card surface. The glow is painted in the portal gold at low
- * alpha (the same accent the page already reserves for its primary action),
- * answers the visitor's own pointer movement only, and is removed entirely
- * for visitors who prefer reduced motion. Purely visual: fields, validation
- * and submit behaviour inside the card are untouched.
+ * across the card surface. The glow is painted in the site's coral signal
+ * colour at low alpha (the same accent the page reserves for its primary
+ * action), answers the visitor's own pointer movement only, and is removed
+ * entirely for visitors who prefer reduced motion. Purely visual: fields,
+ * validation and submit behaviour inside the card are untouched.
  */
 function SpotlightCard({
   className,
@@ -107,7 +91,7 @@ function SpotlightCard({
           className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-500 group-hover/spot:opacity-100 group-focus-within/spot:opacity-100"
           style={{
             background:
-              'radial-gradient(520px circle at var(--spot-x, 50%) var(--spot-y, 0%), rgba(201,164,92,0.09), transparent 65%)',
+              'radial-gradient(520px circle at var(--spot-x, 50%) var(--spot-y, 0%), rgba(233,113,76,0.09), transparent 65%)',
           }}
         />
       )}
@@ -147,8 +131,8 @@ function RegistrationCountdown({ target, label }: { target: string | null; label
 
   return (
     <div className="mt-10">
-      <p className="flex items-center justify-center gap-2.5 text-center text-[11px] font-extrabold uppercase tracking-[0.34em]" style={{ color: GOLD_LIGHT }}>
-        <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full" style={{ backgroundColor: GOLD }} />
+      <p className="flex items-center justify-center gap-2.5 text-center font-accent text-[11px] font-semibold uppercase tracking-[0.3em] text-primary-text">
+        <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
         {label}
       </p>
       <div className="mx-auto mt-4 grid max-w-xl grid-cols-4 gap-2 sm:gap-3">
@@ -160,12 +144,12 @@ function RegistrationCountdown({ target, label }: { target: string | null; label
         ].map((part) => (
           <div
             key={part.label}
-            className="min-w-0 rounded-xl border border-white/10 bg-white/[0.04] px-1 py-3 text-center shadow-[0_16px_40px_rgba(0,0,0,0.4)] backdrop-blur-md sm:py-3.5"
+            className="min-w-0 rounded-lg border border-[#1A1610]/10 bg-white px-1 py-3 text-center dark:border-white/10 dark:bg-white/[0.04] dark:backdrop-blur-md sm:py-3.5"
           >
-            <p className={`text-2xl font-semibold tabular-nums sm:text-3xl ${displayFont}`} style={{ color: IVORY }}>
+            <p className={`text-3xl tabular-nums sm:text-4xl ${displayFont}`}>
               {String(part.value).padStart(2, '0')}
             </p>
-            <p className="mt-1 text-[9px] font-bold uppercase tracking-[0.16em] text-[#CBBFA5] sm:text-[10px] sm:tracking-[0.24em]">
+            <p className="mt-1 font-accent text-[9px] font-semibold uppercase tracking-[0.16em] text-[#6B5E3F] dark:text-[#CBBFA5] sm:text-[10px] sm:tracking-[0.24em]">
               {part.label}
             </p>
           </div>
@@ -267,12 +251,9 @@ export default function GrandPrixRegisterPage() {
         : 'Registration open — initial window closes Nov 15, 2026, 23:59 PKT.';
 
   return (
-    <div
-      className={`relative flex min-h-screen flex-col ${display.variable} ${body.variable} [font-family:var(--gp-body)]`}
-      style={{ color: IVORY }}
-    >
+    <div className="relative flex min-h-screen flex-col text-foreground">
       <StarryBackground />
-      <div aria-hidden="true" className="pointer-events-none fixed inset-0 opacity-55">
+      <div aria-hidden="true" className="pointer-events-none fixed inset-0 hidden opacity-55 dark:block">
         {/* next/image (priority + responsive variants) instead of a CSS
             background: the raw backdrop is a 403 KB full-size JPG that every
             visitor, phone included, used to download at full resolution. */}
@@ -287,47 +268,45 @@ export default function GrandPrixRegisterPage() {
       </div>
       <SpaceScene />
       <CartoonPlanets />
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_55%_40%_at_50%_-5%,rgba(201,164,92,0.14),transparent),linear-gradient(180deg,rgba(6,9,16,0.35),rgba(6,9,16,0.78))]" />
+      {/* Dark-only deep-space film, matching the series page; light mode
+          drops the film, the nebula and the space scenes so the form sits
+          on the site's light ground. */}
+      <div className="pointer-events-none fixed inset-0 hidden bg-[radial-gradient(ellipse_55%_40%_at_50%_-5%,rgba(233,113,76,0.08),transparent),linear-gradient(180deg,rgba(6,9,16,0.22),rgba(6,9,16,0.52))] dark:block" />
       <main className="container relative z-10 mx-auto flex-1 px-4 py-16 sm:py-20">
         <div className="mx-auto max-w-3xl">
           <div className="flex items-center justify-center gap-4">
-            <span className="h-px w-12 bg-gradient-to-r from-transparent to-[#C9A45C]/80" />
-            <p
-              className="text-center text-[11px] font-extrabold uppercase tracking-[0.3em] sm:tracking-[0.42em]"
-              style={{ color: GOLD_LIGHT }}
-            >
+            <span className="h-px w-12 bg-gradient-to-r from-transparent to-primary/70" />
+            <p className="text-center font-accent text-[11px] font-semibold uppercase tracking-[0.28em] text-primary-text sm:tracking-[0.32em]">
               SEDS Pakistan and SEDS Sri Lanka
             </p>
-            <span className="h-px w-12 bg-gradient-to-l from-transparent to-[#C9A45C]/80" />
+            <span className="h-px w-12 bg-gradient-to-l from-transparent to-primary/70" />
           </div>
-          <h1
-            className={`mt-6 bg-gradient-to-r from-[#E8CF8F] via-[#C9A45C] to-[#E8CF8F] bg-clip-text text-center text-4xl font-semibold leading-[1.08] text-transparent sm:text-[3.4rem] ${displayFont}`}
-          >
+          <h1 className={`mt-6 text-center text-5xl leading-[0.98] tracking-[0.02em] sm:text-7xl ${displayFont}`}>
             {SERIES_NAME}
           </h1>
-          <p className="mx-auto mt-5 max-w-2xl text-center text-[15px] leading-relaxed text-[#CFC8B8]">
+          <p className="mx-auto mt-5 max-w-2xl text-center text-[15px] leading-relaxed text-[#57503E] dark:text-[#CFC8B8]">
             Individual enrolment for the six-module masterclass series. Choose your country and pass below.
             See the six modules on the{' '}
-            <Link href="/grand-prix" className="font-semibold underline underline-offset-4" style={{ color: GOLD_LIGHT }}>
+            <Link href="/grand-prix" className="font-semibold text-primary-text underline underline-offset-4">
               series page
             </Link>
             .
           </p>
-          <p className="mx-auto mt-4 flex items-center justify-center gap-2.5 text-center text-[13px] font-semibold text-[#CFC8B8]">
-            <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full" style={{ backgroundColor: GOLD }} />
+          <p className="mx-auto mt-4 flex items-center justify-center gap-2.5 text-center text-[13px] font-semibold text-[#57503E] dark:text-[#CFC8B8]">
+            <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
             {closedLine}
           </p>
           <div className="mt-8 flex items-center justify-center gap-3" aria-hidden="true">
-            <span className="h-px w-24 bg-white/15" />
-            <span className="block h-1.5 w-1.5 rotate-45" style={{ backgroundColor: GOLD }} />
-            <span className="h-px w-24 bg-white/15" />
+            <span className="h-px w-24 bg-[#1A1610]/15 dark:bg-white/15" />
+            <span className="block h-1.5 w-1.5 rotate-45 bg-primary" />
+            <span className="h-px w-24 bg-[#1A1610]/15 dark:bg-white/15" />
           </div>
 
           <RegistrationCountdown target={countdownTarget} label={countdownLabel} />
 
           <SpotlightCard className={`mt-10 ${cardClass}`}>
             <CardContent className="py-5">
-              <p className="text-center text-sm font-semibold leading-relaxed" style={{ color: GOLD_LIGHT }}>
+              <p className="text-center text-sm font-semibold leading-relaxed text-primary-text">
                 {FEE_CALLOUT}
               </p>
             </CardContent>
@@ -335,21 +314,19 @@ export default function GrandPrixRegisterPage() {
 
           {success ? (
             <SpotlightCard className={`mt-10 ${cardClass}`}>
-              <CardHeader className="border-b border-[#C9A45C]/25 pb-6 text-center">
-                <CardTitle className={`text-3xl font-semibold ${displayFont}`} style={{ color: GOLD_LIGHT }}>
-                  Enrolment received
-                </CardTitle>
-                <CardDescription className="mx-auto max-w-md text-[15px] leading-relaxed text-[#CFC8B8]">
+              <CardHeader className="border-b border-primary/25 pb-6 text-center">
+                <CardTitle className={`text-4xl ${displayFont}`}>Enrolment received</CardTitle>
+                <CardDescription className="mx-auto max-w-md text-[15px] leading-relaxed text-[#57503E] dark:text-[#CFC8B8]">
                   Your place is held while the enrolment is verified. Keep this registration ID for all
                   correspondence about the masterclass series.
                 </CardDescription>
               </CardHeader>
               <CardContent className="pt-6 text-center">
-                <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-[#CBBFA5]">Registration ID</p>
-                <p className="mt-2 break-all font-mono text-xl" style={{ color: GOLD_LIGHT }}>
-                  {success.registrationId}
+                <p className="font-accent text-[11px] font-semibold uppercase tracking-[0.22em] text-[#6B5E3F] dark:text-[#CBBFA5]">
+                  Registration ID
                 </p>
-                <p className="mt-5 text-sm text-[#CFC8B8]">
+                <p className="mt-2 break-all font-mono text-xl text-primary-text">{success.registrationId}</p>
+                <p className="mt-5 text-sm text-[#57503E] dark:text-[#CFC8B8]">
                   {fullName} ({NATION_LABELS[nation]} · {passType === 'student' ? 'Collegiate Student Pass' : 'Industry Professional Observer Pass'})
                 </p>
               </CardContent>
@@ -357,10 +334,8 @@ export default function GrandPrixRegisterPage() {
           ) : closed ? (
             <SpotlightCard className={`mt-10 ${cardClass}`}>
               <CardHeader className="text-center">
-                <CardTitle className={`text-3xl font-semibold ${displayFont}`} style={{ color: GOLD_LIGHT }}>
-                  Registration is closed
-                </CardTitle>
-                <CardDescription className="mx-auto max-w-md text-[15px] leading-relaxed text-[#CFC8B8]">
+                <CardTitle className={`text-4xl ${displayFont}`}>Registration is closed</CardTitle>
+                <CardDescription className="mx-auto max-w-md text-[15px] leading-relaxed text-[#57503E] dark:text-[#CFC8B8]">
                   {closedLine}
                 </CardDescription>
               </CardHeader>
@@ -370,12 +345,12 @@ export default function GrandPrixRegisterPage() {
               <SpotlightCard className={cardClass}>
                 <CardHeader className="pb-2">
                   <div className="flex items-baseline gap-3">
-                    <span aria-hidden="true" className="text-sm font-semibold tabular-nums" style={{ color: GOLD }}>
+                    <span aria-hidden="true" className="font-accent text-sm font-semibold tabular-nums text-primary-text">
                       01
                     </span>
-                    <CardTitle className={`text-2xl font-semibold ${displayFont}`}>Your enrolment</CardTitle>
+                    <CardTitle className={`text-3xl ${displayFont}`}>Your enrolment</CardTitle>
                   </div>
-                  <CardDescription className="text-sm leading-relaxed text-[#A79E8B]">
+                  <CardDescription className="text-sm leading-relaxed text-[#7A7260] dark:text-[#A79E8B]">
                     One enrolment per email. Student IDs must be unique per institution.
                   </CardDescription>
                 </CardHeader>
@@ -406,10 +381,9 @@ export default function GrandPrixRegisterPage() {
                           onClick={() => setPassType(p)}
                           className={`rounded-lg border px-4 py-3 text-left text-sm leading-relaxed transition ${
                             passType === p
-                              ? 'border-[#C9A45C]/80 bg-[#C9A45C]/10 shadow-[0_10px_30px_rgba(201,164,92,0.22)]'
-                              : 'border-white/15 bg-white/[0.05] hover:border-white/35'
+                              ? 'border-primary/80 bg-primary/10'
+                              : 'border-[#1A1610]/15 bg-white hover:border-[#1A1610]/35 dark:border-white/15 dark:bg-white/[0.05] dark:hover:border-white/35'
                           }`}
-                          style={{ color: IVORY }}
                         >
                           {PASS_LABELS[p]}
                         </button>
@@ -430,10 +404,10 @@ export default function GrandPrixRegisterPage() {
               <SpotlightCard className={cardClass}>
                 <CardHeader className="pb-2">
                   <div className="flex items-baseline gap-3">
-                    <span aria-hidden="true" className="text-sm font-semibold tabular-nums" style={{ color: GOLD }}>
+                    <span aria-hidden="true" className="font-accent text-sm font-semibold tabular-nums text-primary-text">
                       02
                     </span>
-                    <CardTitle className={`text-2xl font-semibold ${displayFont}`}>About you</CardTitle>
+                    <CardTitle className={`text-3xl ${displayFont}`}>About you</CardTitle>
                   </div>
                 </CardHeader>
                 <CardContent className="grid grid-cols-1 gap-5 pt-4 sm:grid-cols-2">
@@ -461,10 +435,10 @@ export default function GrandPrixRegisterPage() {
               </SpotlightCard>
 
               {errors.length > 0 && (
-                <Card className="rounded-2xl border-red-400/30 bg-red-500/[0.08] backdrop-blur-md">
+                <Card className="rounded-lg border-red-700/30 bg-red-500/[0.05] dark:border-red-400/30 dark:bg-red-500/[0.08] dark:backdrop-blur-md">
                   <CardContent className="py-5">
-                    <p className="text-sm font-bold text-red-200">Please fix the following:</p>
-                    <ul className="mt-2 list-inside list-disc text-sm text-red-200/85">
+                    <p className="text-sm font-bold text-red-800 dark:text-red-200">Please fix the following:</p>
+                    <ul className="mt-2 list-inside list-disc text-sm text-red-800/80 dark:text-red-200/85">
                       {errors.map((err) => (
                         <li key={err}>{err}</li>
                       ))}
@@ -476,11 +450,11 @@ export default function GrandPrixRegisterPage() {
               <Button
                 type="submit"
                 disabled={submitting}
-                className="h-[52px] w-full rounded-full bg-[linear-gradient(120deg,#E8CF8F,#C9A45C_45%,#A87F35)] text-sm font-extrabold uppercase tracking-[0.14em] text-[#171106] shadow-[0_16px_40px_rgba(201,164,92,0.35)] transition hover:brightness-110 active:scale-[0.99] disabled:opacity-60"
+                className="h-[52px] w-full rounded-full bg-primary font-accent text-sm font-semibold uppercase tracking-[0.14em] text-primary-foreground transition hover:bg-primary/90 active:scale-[0.99] disabled:opacity-60"
               >
                 {submitting ? 'Submitting...' : 'Enrol now'}
               </Button>
-              <p className="text-center text-xs text-[#8E887A]">
+              <p className="text-center text-xs text-[#7A7260] dark:text-[#8E887A]">
                 Student IDs are collected for institutional verification only and are never shown publicly.
               </p>
             </form>

@@ -99,7 +99,7 @@ export default function SpaceScene() {
     <div
       ref={hostRef}
       aria-hidden="true"
-      className="pointer-events-none fixed inset-0 opacity-90"
+      className="pointer-events-none fixed inset-0 hidden opacity-90 dark:block"
     />
   );
 }

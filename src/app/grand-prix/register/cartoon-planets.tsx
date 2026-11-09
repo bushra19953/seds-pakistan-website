@@ -51,7 +51,7 @@ export default function CartoonPlanets() {
   ];
 
   return (
-    <div aria-hidden="true" className="pointer-events-none fixed inset-0 overflow-hidden">
+    <div aria-hidden="true" className="pointer-events-none fixed inset-0 hidden overflow-hidden dark:block">
       <style>{`
         @keyframes gpFloatA { from { transform: translateY(-8px); } to { transform: translateY(10px); } }
         @keyframes gpFloatB { from { transform: translateY(9px); } to { transform: translateY(-9px); } }

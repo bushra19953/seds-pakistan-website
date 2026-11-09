@@ -264,10 +264,36 @@ export function OrbitingPartners({ partners, className }: OrbitingPartnersProps)
         return groups;
     }, [partners]);
 
-    // Determine active rings (only categories that have data)
-    const activeRings = useMemo(() => {
-        return CATEGORY_ORDER.filter(cat => groupedPartners[cat] && groupedPartners[cat].length > 0);
-    }, [groupedPartners]);
+    // Balanced track deal (founder order 2026-11-09: "2nd and 4th orbit
+    // mein sirf aik hai... is tarah set karein ke filled lagain aur
+    // cluttered bhi na hoon"). One ring per category dealt the live
+    // shape [4,1,21,1]: two rings carried a single planet while the
+    // chapter ring carried 21. The planets are now dealt across the
+    // tracks in category order (neighbours stay related), ~7 per
+    // track, the innermost track taking the fewest because its chord
+    // is the tightest. Ring membership is presentation only; each
+    // partner's own category still drives its name and readout.
+    const trackAssignments = useMemo(() => {
+        const ordered: Partner[] = [];
+        CATEGORY_ORDER.forEach(cat => {
+            if (groupedPartners[cat]) ordered.push(...groupedPartners[cat]);
+        });
+        partners.forEach(p => {
+            if (!CATEGORY_ORDER.includes(p.type)) ordered.push(p);
+        });
+        if (ordered.length === 0) return [];
+        const trackCount = Math.max(1, Math.min(6, Math.ceil(ordered.length / 7)));
+        const base = Math.floor(ordered.length / trackCount);
+        const remainder = ordered.length - base * trackCount;
+        const tracksOut: Partner[][] = [];
+        let cursor = 0;
+        for (let k = 0; k < trackCount; k++) {
+            const count = base + (k >= trackCount - remainder ? 1 : 0);
+            tracksOut.push(ordered.slice(cursor, cursor + count));
+            cursor += count;
+        }
+        return tracksOut;
+    }, [groupedPartners, partners]);
 
     useEffect(() => {
         const handleResize = () => {
@@ -289,12 +315,12 @@ export function OrbitingPartners({ partners, className }: OrbitingPartnersProps)
     // they can never drift apart. A final fit factor shrinks the whole
     // system if a future data state adds tracks beyond the stage.
     const tracks = useMemo<TrackGeometry[]>(() => {
-        const raw = activeRings.map((category, k) => ({
+        const raw = trackAssignments.map((items, k) => ({
             rx: (TRACK_RX_BASE + k * TRACK_RX_STEP) * orbitScale,
             ry: (TRACK_RY_BASE + k * TRACK_RY_STEP) * orbitScale,
             period: TRACK_PERIOD_BASE + k * TRACK_PERIOD_STEP,
             phase: k * TRACK_PHASE_STEP,
-            count: groupedPartners[category].length,
+            count: items.length,
         }));
         if (raw.length === 0) return [];
         const outer = raw[raw.length - 1];
@@ -320,7 +346,7 @@ export function OrbitingPartners({ partners, className }: OrbitingPartnersProps)
             // keeps the rendered size positive.
             return { rx, ry, period: t.period, phase: t.phase, diameter: Math.max(1, diameter) };
         });
-    }, [activeRings, groupedPartners, orbitScale, rxBoost]);
+    }, [trackAssignments, orbitScale, rxBoost]);
 
     // Pause the orbit engine while the hero is off-screen. Every
     // OrbitingObject runs a useAnimationFrame callback; without this
@@ -399,11 +425,11 @@ export function OrbitingPartners({ partners, className }: OrbitingPartnersProps)
 
             {/* ORBIT TRACKS: fine hairline ellipses, plotted not glowing */}
             <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible">
-                {activeRings.map((category, index) => {
-                    const { rx, ry } = tracks[index];
+                {tracks.map((trackGeom, index) => {
+                    const { rx, ry } = trackGeom;
                     return (
                         <ellipse
-                            key={category}
+                            key={index}
                             cx="50%" cy="50%"
                             rx={rx} ry={ry}
                             fill="none" stroke="white" strokeWidth="1" strokeDasharray="2 5"
@@ -417,8 +443,7 @@ export function OrbitingPartners({ partners, className }: OrbitingPartnersProps)
             <Sun />
 
             {/* PLANETS */}
-            {activeRings.map((category, index) => {
-                const items = groupedPartners[category];
+            {trackAssignments.map((items, index) => {
                 const track = tracks[index];
 
                 return items.map((p, i) => (

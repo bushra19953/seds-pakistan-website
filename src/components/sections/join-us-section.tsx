@@ -161,15 +161,15 @@ export default function JoinUsSection() {
             <h3 className="text-lg font-semibold text-center mb-4">3-Stage National Competition Pipeline</h3>
             <div className="space-y-3 text-sm">
               <div className="flex gap-3">
-                <span className="font-bold text-primary shrink-0">Stage 1</span>
+                <span className="font-bold text-primary-text shrink-0">Stage 1</span>
                 <span className="text-muted-foreground">Late-Nov 2026: SEDS Lunar Micro-Rover and ERC Digital-Twin Challenge</span>
               </div>
               <div className="flex gap-3">
-                <span className="font-bold text-primary shrink-0">Stage 2</span>
+                <span className="font-bold text-primary-text shrink-0">Stage 2</span>
                 <span className="text-muted-foreground">Late-Dec 2026: Room 131 Inert Avionics and Ejection Olympics</span>
               </div>
               <div className="flex gap-3">
-                <span className="font-bold text-primary shrink-0">Stage 3</span>
+                <span className="font-bold text-primary-text shrink-0">Stage 3</span>
                 <span className="text-muted-foreground">Jan 2027: SEDS x APRO National Rocketry and CanSat Championship</span>
               </div>
             </div>
@@ -179,7 +179,7 @@ export default function JoinUsSection() {
           </div>
           {success ? (
             <Card
-              className="border-primary/20 shadow-xl shadow-primary/5 text-center p-8"
+              className="border-primary/20 text-center p-8"
               aria-live="polite"
             >
               <PartyPopper className="h-16 w-16 mx-auto text-primary mb-4" aria-hidden="true" />
@@ -190,7 +190,7 @@ export default function JoinUsSection() {
             </Card>
           ) : (
             <Card
-              className="border-primary/20 shadow-xl shadow-primary/5 bg-card/80 backdrop-blur-sm"
+              className="border-primary/20 bg-card"
               aria-labelledby="join-heading"
             >
               <CardHeader className="text-center">

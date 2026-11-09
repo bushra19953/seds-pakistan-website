@@ -92,10 +92,10 @@ export default function TrustBar() {
                     </div>
 
                     <div className="space-y-1">
-                      <h3 className="text-2xl md:text-3xl font-bold text-foreground">
+                      <h3 className="text-2xl md:text-3xl font-accent font-bold text-foreground">
                         {metric.value.toLocaleString()}{metric.suffix || ''}
                       </h3>
-                      <p className="text-sm font-medium text-primary">
+                      <p className="text-sm font-medium text-primary-text">
                         {metric.label}
                       </p>
                       <p className="text-xs text-muted-foreground">

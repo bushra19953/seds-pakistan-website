@@ -75,27 +75,27 @@ export default function ShowcaseGallery() {
     }, [activeCategory, items]);
 
     return (
-        <section className="py-4 md:py-8 relative z-20 bg-transparent" id="showcase">
+        <section className="py-20 md:py-32 relative z-20 bg-transparent" id="showcase">
             <div className="relative z-10 container mx-auto px-0 md:px-6">
                 <div className="flex flex-col items-center justify-center text-center mb-16 space-y-6">
                     <div className="space-y-2">
-                        <div className="flex items-center justify-center gap-3 text-xs font-black uppercase tracking-[0.4em] text-primary/60 mb-2">
+                        <div className="flex items-center justify-center gap-3 text-xs font-black uppercase tracking-[0.4em] text-primary-text mb-2">
                             <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
                             Live Operational Telemetry
                             <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
                         </div>
-                        <h2 className="text-5xl md:text-6xl lg:text-7xl font-accent font-black uppercase tracking-tighter text-foreground drop-shadow-[0_0_30px_rgba(59,130,246,0.3)]">
+                        <h2 className="text-4xl md:text-5xl font-bold text-foreground text-glow">
                             Our Impact in Action
                         </h2>
                     </div>
-                    <p className="max-w-2xl text-muted-foreground font-mono text-xs md:text-sm tracking-[0.3em] uppercase leading-loose border-y border-white/5 py-4">
+                    <p className="max-w-2xl text-muted-foreground font-mono text-xs md:text-sm tracking-[0.3em] uppercase leading-loose border-y border-border/40 py-4">
                         From national projects to community outreach — <span className="text-foreground">monitoring the growth</span> of SEDS Pakistan in real-time.
                     </p>
                 </div>
 
                 {/* ELITE PORTFOLIO SYSTEM UPGRADE: R3F Portal System */}
                 {/* Visual Tweak: Removed black bg, added fade mask at edges */}
-                <div className="w-full -mx-4 md:mx-0 border-y border-white/5 bg-transparent overflow-hidden relative group">
+                <div className="w-full -mx-4 md:mx-0 border-y border-border/40 bg-transparent overflow-hidden relative group">
                     <div className="absolute left-0 top-0 bottom-0 w-12 md:w-32 bg-gradient-to-r from-background to-transparent z-10 pointer-events-none" />
                     <div className="absolute right-0 top-0 bottom-0 w-12 md:w-32 bg-gradient-to-l from-background to-transparent z-10 pointer-events-none" />
 
@@ -110,13 +110,13 @@ export default function ShowcaseGallery() {
                         <button
                             key={cat.id}
                             onClick={() => setActiveCategory(cat.id)}
-                            className={`group px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-500 border backdrop-blur-2xl relative overflow-hidden ${activeCategory === cat.id
-                                ? "bg-primary text-black border-primary shadow-[0_0_30px_rgba(59,130,246,0.3)]"
-                                : "bg-card/40 text-muted-foreground border-white/5 hover:border-primary/50 hover:text-foreground"
+                            className={`group px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-500 border relative overflow-hidden ${activeCategory === cat.id
+                                ? "bg-primary text-primary-foreground border-primary"
+                                : "bg-card/60 text-muted-foreground border-border/60 hover:border-primary/50 hover:text-foreground"
                                 }`}
                         >
                             <span className="relative z-10 flex items-center gap-2">
-                                {cat.icon && <cat.icon className={`w-3.5 h-3.5 ${activeCategory === cat.id ? 'text-black' : 'text-primary/60 group-hover:text-primary'}`} />}
+                                {cat.icon && <cat.icon className={`w-3.5 h-3.5 ${activeCategory === cat.id ? 'text-primary-foreground' : 'text-primary-text/70 group-hover:text-primary-text'}`} />}
                                 {cat.label}
                             </span>
                             {activeCategory === cat.id && (
@@ -127,7 +127,7 @@ export default function ShowcaseGallery() {
                 </div>
 
                 <div className="flex justify-center mt-16">
-                    <Button asChild size="lg" className="h-14 px-10 rounded-2xl bg-slate-950/60 text-foreground border-2 border-primary/30 font-accent font-black tracking-[0.2em] uppercase hover:bg-primary hover:text-black hover:border-primary transition-all duration-500 group shadow-2xl relative overflow-hidden backdrop-blur-3xl">
+                    <Button asChild size="lg" className="h-14 px-10 rounded-lg bg-card text-foreground border border-primary/30 font-accent font-black tracking-[0.2em] uppercase hover:bg-primary hover:text-primary-foreground hover:border-primary transition-all duration-500 group relative overflow-hidden">
                         <Link href="/projects" className="relative z-10 flex items-center gap-3">
                             Explore Full Command Centre
                             <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />

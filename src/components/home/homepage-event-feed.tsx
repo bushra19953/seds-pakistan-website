@@ -120,8 +120,8 @@ export default function HomepageEventFeed() {
 
     if (loading) {
         return (
-            <section className="py-24 bg-muted/50 relative overflow-hidden border-y border-border min-h-[400px] flex items-center justify-center">
-                <Loader2 className="h-8 w-8 text-blue-500 animate-spin" />
+            <section className="py-20 md:py-32 bg-muted/20 relative overflow-hidden border-y border-border min-h-[400px] flex items-center justify-center">
+                <Loader2 className="h-8 w-8 text-primary animate-spin" />
             </section>
         );
     }
@@ -130,14 +130,12 @@ export default function HomepageEventFeed() {
     // if (!events || events.length === 0) return null;
 
     return (
-        <section className="py-24 bg-muted/50 relative overflow-hidden border-y border-border">
-            {/* Background glow effects */}
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-4xl h-96 bg-blue-600/5 blur-[120px] rounded-full pointer-events-none" />
+        <section className="py-20 md:py-32 bg-muted/20 relative overflow-hidden border-y border-border">
 
             <div className="container mx-auto px-4 md:px-6 relative z-10">
                 <div className="flex flex-col md:flex-row justify-between items-end mb-12">
                     <div className="max-w-2xl slide-in-left">
-                        <h2 className="text-4xl md:text-5xl font-black mb-4 text-foreground tracking-tight">
+                        <h2 className="text-4xl md:text-5xl font-bold mb-4 text-foreground text-glow">
                             UPCOMING FLAGSHIP EVENTS
                         </h2>
                         <p className="text-muted-foreground text-lg">
@@ -166,7 +164,7 @@ export default function HomepageEventFeed() {
                         <button
                             type="button"
                             onClick={() => window.location.reload()}
-                            className="mt-4 rounded-full border border-primary/40 bg-primary/10 px-5 py-2 text-xs font-black uppercase tracking-widest text-primary transition-colors hover:bg-primary hover:text-black"
+                            className="mt-4 rounded-full border border-primary/40 bg-primary/10 px-5 py-2 text-xs font-black uppercase tracking-widest text-primary-text transition-colors hover:bg-primary hover:text-primary-foreground"
                         >
                             Retry
                         </button>
@@ -183,7 +181,7 @@ export default function HomepageEventFeed() {
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {events.map((event: any, i: number) => (
-                            <div key={event.id} className="group relative rounded-2xl border border-border bg-card/40 backdrop-blur-md overflow-hidden hover:border-blue-500/50 transition-all duration-500 hover:-translate-y-1 hover:shadow-[0_10px_40px_-15px_rgba(59,130,246,0.3)] flex flex-col h-full animate-in fade-in slide-in-from-bottom-4" style={{ animationFillMode: 'both', animationDelay: `${i * 100}ms` }}>
+                            <div key={event.id} className="group relative rounded-lg border border-border bg-card/70 overflow-hidden hover:border-primary/50 transition-all duration-500 hover:-translate-y-1 flex flex-col h-full animate-in fade-in slide-in-from-bottom-4" style={{ animationFillMode: 'both', animationDelay: `${i * 100}ms` }}>
                                 {event.imageUrl ? (
                                     <div className="relative h-48 w-full overflow-hidden">
                                         <Image
@@ -196,7 +194,6 @@ export default function HomepageEventFeed() {
                                     </div>
                                 ) : (
                                     <div className="relative h-48 w-full overflow-hidden bg-muted">
-                                        <div className="absolute inset-0 bg-gradient-to-tr from-blue-900/20 to-indigo-900/20" />
                                     </div>
                                 )}
                                 <div className="p-6 flex flex-col flex-1 relative z-10 -mt-2">
@@ -205,13 +202,13 @@ export default function HomepageEventFeed() {
                                     <div className="space-y-2 mb-6">
                                         {event.startDate && (
                                             <div className="flex items-center text-sm text-muted-foreground">
-                                                <Calendar className="h-4 w-4 mr-2 text-blue-400 shrink-0" />
+                                                <Calendar className="h-4 w-4 mr-2 text-primary-text shrink-0" />
                                                 <span>{new Date(event.startDate).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
                                             </div>
                                         )}
                                         {event.location && (
                                             <div className="flex items-center text-sm text-muted-foreground">
-                                                <MapPin className="h-4 w-4 mr-2 text-blue-400 shrink-0" />
+                                                <MapPin className="h-4 w-4 mr-2 text-primary-text shrink-0" />
                                                 <span className="line-clamp-1">{event.location}</span>
                                             </div>
                                         )}
@@ -221,7 +218,7 @@ export default function HomepageEventFeed() {
                                         {event.summary || 'Details coming soon.'}
                                     </p>
 
-                                    <Button asChild className="w-full bg-muted text-foreground border border-border transition-all duration-300 group-hover:bg-gradient-to-r group-hover:from-blue-600 group-hover:to-indigo-600 group-hover:border-transparent group-hover:shadow-[0_0_15px_rgba(79,70,229,0.3)]">
+                                    <Button asChild className="w-full bg-muted text-foreground border border-border transition-all duration-300 group-hover:bg-primary group-hover:text-primary-foreground group-hover:border-primary">
                                         <Link href={`/events/${event.slug || event.id}`}>
                                             Secure Your Spot
                                         </Link>

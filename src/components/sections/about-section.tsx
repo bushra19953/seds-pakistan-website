@@ -74,11 +74,11 @@ export default function AboutSection() {
             <div className="space-y-6">
               {topics.map((topic) => (
                 <div key={topic.title} className="flex items-start gap-4 group hover:scale-105 transition-transform duration-300">
-                  <div className="p-2 bg-accent/10 text-accent rounded-full group-hover:bg-primary/10 group-hover:text-primary transition-colors duration-300">
+                  <div className="p-2 bg-primary/10 text-primary-text rounded-full group-hover:bg-primary/15 transition-colors duration-300">
                     <topic.icon className="h-6 w-6" />
                   </div>
                   <div>
-                    <h3 className="font-accent text-xl font-bold text-foreground group-hover:text-primary transition-colors duration-300">{topic.title}</h3>
+                    <h3 className="font-accent text-xl font-bold text-foreground group-hover:text-primary-text transition-colors duration-300">{topic.title}</h3>
                     <p className="font-body text-foreground/90 text-justify">{topic.description}</p>
                   </div>
                 </div>
@@ -86,7 +86,7 @@ export default function AboutSection() {
             </div>
           </div>
           <div className="slide-in-right">
-            <Card className="bg-transparent border-accent/20 shadow-xl shadow-accent/5">
+            <Card className="bg-transparent border-border">
               <CardContent className="p-2">
                 <div className="h-[400px] flex items-center justify-center bg-black/5 rounded-lg">
                   {scriptLoaded ? (

@@ -99,16 +99,16 @@ export default function NewsAndBlogsSection() {
   return (
     <section
       id="news-and-blogs"
-      className="py-8 bg-black/20 border-y-2 border-primary/50 backdrop-blur-sm"
+      className="py-20 md:py-32 bg-transparent border-y border-border/40"
       aria-labelledby="news-blogs-heading"
     >
       <div className="container mx-auto px-4 md:px-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between mb-6">
           <div className="flex items-center gap-2 mb-4 md:mb-0">
-            <Newspaper className="h-6 w-6 text-primary" />
+            <Newspaper className="h-6 w-6 text-primary-text" />
             <h2
               id="news-blogs-heading"
-              className="font-accent text-lg font-bold tracking-wider text-primary uppercase"
+              className="font-headline text-3xl md:text-4xl font-bold tracking-wide text-foreground uppercase"
             >
               Latest Updates
             </h2>
@@ -117,7 +117,7 @@ export default function NewsAndBlogsSection() {
             <Button
               variant="ghost"
               size="sm"
-              className="font-accent text-primary hover:bg-primary/10"
+              className="font-accent text-primary-text hover:bg-primary/10"
               asChild
             >
               <Link href="/blog" aria-label="View all blog posts">
@@ -142,7 +142,7 @@ export default function NewsAndBlogsSection() {
             {[...Array(3)].map((_, i) => (
               <Card
                 key={i}
-                className="bg-card/80 backdrop-blur-sm border-accent/20"
+                className="bg-card/80 border-border"
                 aria-busy="true"
                 aria-label="Loading news and blog content"
               >
@@ -163,7 +163,7 @@ export default function NewsAndBlogsSection() {
             {displayItems.slice(0, visibleItems).map((item) => (
               <Card
                 key={`${item.type}-${item.id}`}
-                className="bg-card/80 backdrop-blur-sm border-accent/20 hover:border-primary transition-all duration-300 group"
+                className="bg-card/80 border-border hover:border-primary/60 transition-all duration-300 group"
               >
                 <CardContent className="p-4">
                   {item.image_url ? (
@@ -182,7 +182,7 @@ export default function NewsAndBlogsSection() {
                     </div>
                   ) : (
                     <div
-                      className="h-40 bg-gradient-to-br from-primary/10 to-accent/10 rounded-md mb-4 flex items-center justify-center"
+                      className="h-40 bg-gradient-to-br from-primary/10 to-primary/5 rounded-md mb-4 flex items-center justify-center"
                       aria-label="No image available for this item"
                     >
                       {item.type === "news" ? (
@@ -192,7 +192,7 @@ export default function NewsAndBlogsSection() {
                       )}
                     </div>
                   )}
-                  <h3 className="font-headline font-bold text-lg mb-2 line-clamp-2 group-hover:text-primary transition-colors">
+                  <h3 className="font-headline font-bold text-lg mb-2 line-clamp-2 group-hover:text-primary-text transition-colors">
                     {item.title}
                   </h3>
                   <p className="font-body text-muted-foreground text-sm mb-3 line-clamp-2 text-justify">
@@ -215,7 +215,7 @@ export default function NewsAndBlogsSection() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="w-full mt-3 font-accent text-primary hover:bg-primary/10 group-hover:bg-primary/10"
+                    className="w-full mt-3 font-accent text-primary-text hover:bg-primary/10 group-hover:bg-primary/10"
                     asChild
                   >
                     <a

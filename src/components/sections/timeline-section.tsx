@@ -227,7 +227,7 @@ function TimelineEventCard({
 
   const card = (
         <Card className={cn(
-          "group relative bg-card/60 backdrop-blur-2xl border-2 border-border overflow-hidden rounded-2xl transition-all duration-700 hover:shadow-[0_0_40px_rgba(59,130,246,0.15)] hover:border-primary/60 hover:-translate-y-2",
+          "group relative bg-card/60 border border-border overflow-hidden rounded-lg transition-all duration-700 hover:border-primary/60 hover:-translate-y-2",
           !polished &&
             (inView
               ? cn(
@@ -564,7 +564,7 @@ export default function TimelineSection({ variant = 'full' }: TimelineSectionPro
               <div
                 role="alert"
                 data-testid="timeline-error"
-                className="relative z-10 mx-auto w-full max-w-xl rounded-2xl border-2 border-destructive/50 bg-card/60 p-6 text-center backdrop-blur-sm"
+                className="relative z-10 mx-auto w-full max-w-xl rounded-lg border border-destructive/50 bg-card/60 p-6 text-center"
               >
                 <p className="font-accent text-lg font-black tracking-tight text-foreground">
                   Timeline failed to load

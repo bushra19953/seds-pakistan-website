@@ -164,7 +164,7 @@ export default function HomepageEventFeed() {
                         <button
                             type="button"
                             onClick={() => window.location.reload()}
-                            className="mt-4 rounded-full border border-primary/40 bg-primary/10 px-5 py-2 text-xs font-black uppercase tracking-widest text-primary transition-colors hover:bg-primary hover:text-black"
+                            className="mt-4 rounded-full border border-primary/40 bg-primary/10 px-5 py-2 text-xs font-black uppercase tracking-widest text-primary-text transition-colors hover:bg-primary hover:text-primary-foreground"
                         >
                             Retry
                         </button>

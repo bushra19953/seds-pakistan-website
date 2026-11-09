@@ -47,6 +47,21 @@
     --chart-5: 27 87% 67%;
     --radius: 0.5rem;
 
+    /* Global starfield system (src/components/layout/starfield.tsx).
+       HSL triplets like every other token here; consumers compose them
+       as hsl(var(--star-ink) / <alpha>). --star-ink is the star colour:
+       deep-space navy ink on light grounds, where the layer reads as
+       faint chart specks. --star-link is the constellation hairline
+       colour. --space-panel is the deep-space panel ground and stays
+       navy in BOTH themes: the hero's space window sits on it even
+       when the page around it is light. --star-gain is the layer's
+       internal theme-strength multiplier (light grounds get a whisper
+       of the field, dark grounds the full chart). */
+    --star-ink: 222 47% 18%;
+    --star-link: 222 47% 18%;
+    --space-panel: 222 47.4% 11.2%;
+    --star-gain: 0.34;
+
     /* Font families. Every stack ends with the Noto fallbacks so Urdu and
        other Unicode glyphs missing from the brand fonts fall back per glyph
        instead of rendering as empty boxes. The --font-noto-* variables are
@@ -94,6 +109,13 @@
     --input: 217.2 32.6% 17.5%;
     --ring: 220 80% 50%;
     /* Space Blue */
+
+    /* Global starfield system: see the note in :root. On the navy
+       void the stars are near-white chart points at full gain. */
+    --star-ink: 210 40% 96%;
+    --star-link: 214 32% 84%;
+    --space-panel: 222 47.4% 11.2%;
+    --star-gain: 1;
   }
 }
 
@@ -176,6 +198,27 @@
 
   .skip-link:focus {
     top: 0;
+  }
+}
+
+/* Global starfield twinkle (src/components/layout/starfield.tsx).
+   One opacity tween on a single composited layer: no layout, no
+   scroll-linked work. The animation only exists for users who have
+   not asked for reduced motion; everyone else gets the static chart. */
+@media (prefers-reduced-motion: no-preference) {
+  .starfield-twinkle {
+    animation: starfield-twinkle 7s ease-in-out infinite alternate;
+    will-change: opacity;
+  }
+}
+
+@keyframes starfield-twinkle {
+  from {
+    opacity: 0.4;
+  }
+
+  to {
+    opacity: 1;
   }
 }
 

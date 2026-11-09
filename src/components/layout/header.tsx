@@ -209,11 +209,18 @@ export default function Header() {
       animate={hidden ? 'hidden' : 'visible'}
       variants={variants}
       transition={{ type: 'tween', ease: 'easeInOut', duration: 0.25 }}
-      className="sticky top-0 z-50 w-full border-b border-border/50 bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/65 flex items-center justify-between"
+      className="sticky top-0 z-50 w-full border-b border-border/50 bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/65"
       style={{ willChange: 'transform', touchAction: 'manipulation' }}
     >
+      {/* Row grid: same centred container as the page content below
+          (sections use `container mx-auto px-4 md:px-6`), so the logo's
+          left edge and the actions' right edge sit at equal offsets and
+          align with the content column. Three explicit columns keep the
+          nav optically centred and pin logo/actions to the edges at
+          every breakpoint, including mobile where the nav cell is
+          hidden. */}
       <div
-        className={`container flex items-center justify-between px-4 transition-[height] duration-300 motion-reduce:transition-none ${scrolled ? 'h-14 md:h-16' : 'h-16 md:h-20'
+        className={`container mx-auto grid grid-cols-[1fr_auto_1fr] items-center px-4 md:px-6 transition-[height] duration-300 motion-reduce:transition-none ${scrolled ? 'h-14 md:h-16' : 'h-16 md:h-20'
           }`}
       >
         {/* Group 1: Logo (Far Left). Sizing must NOT rely on utilities on
@@ -225,7 +232,7 @@ export default function Header() {
             wordmark: 80px/100px wide renders ~45px/~56px tall, condensed
             72px/80px renders ~40px/~45px. */}
         <div
-          className={`flex items-center justify-start shrink-0 transition-[width] duration-300 motion-reduce:transition-none ${scrolled ? 'w-[72px] md:w-[80px]' : 'w-[80px] md:w-[100px]'
+          className={`col-start-1 justify-self-start flex items-center justify-start shrink-0 transition-[width] duration-300 motion-reduce:transition-none ${scrolled ? 'w-[72px] md:w-[80px]' : 'w-[80px] md:w-[100px]'
             }`}
         >
           <Link href="/" prefetch className="flex w-full items-center">
@@ -244,10 +251,10 @@ export default function Header() {
           </Link>
         </div>
 
-        {/* Group 2: Navigation + Actions (Right) */}
-        <div className="flex items-center gap-4">
-          {/* Primary Navigation */}
-          <nav className="hidden md:flex items-center px-2">
+        {/* Group 2: Primary Navigation (centre cell, optically centred
+            between logo and actions) */}
+        <div className="col-start-2 hidden md:flex justify-self-center">
+          <nav className="flex items-center px-2">
             <div className="flex items-center gap-1">
               {desktopNav.map((item) => {
                 // Plain link item
@@ -327,7 +334,10 @@ export default function Header() {
               })}
             </div>
           </nav>
+        </div>
 
+        {/* Group 3: Actions (Right) */}
+        <div className="col-start-3 flex items-center justify-self-end gap-4">
           {/* Notification bell: the single mounted instance (read-burn
               fix F7), visible at every breakpoint from this row. It
               renders null while signed out, so the logged-out header is

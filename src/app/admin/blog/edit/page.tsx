@@ -317,6 +317,11 @@ const EditBlogPostContent = () => {
                   keywords: blog.keywords || '',
                   newsArticleUrl: blog.news_article_url || '',
                   status: blog.status || 'draft',
+                  // Category pre-fill: without this the form always opened
+                  // on its 'general' default and hid the stored category,
+                  // and (once saves began sending categoryId) a no-touch
+                  // save would have silently reset it back to 'general'.
+                  categoryId: (blog as any).categoryId || 'general',
                   // Emorational component fields (pre-fill from either camelCase or snake_case)
                   launchReadiness: (blog as any).launchReadiness || (blog as any).launch_readiness,
                   dataShowcase: (blog as any).dataShowcase || (blog as any).data_showcase,

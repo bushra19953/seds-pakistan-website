@@ -61,13 +61,13 @@ function StructuredBriefing({ description }: { description: string }) {
     <div className="space-y-3">
       {what && (
         <div className="text-sm sm:text-base text-foreground leading-relaxed break-words">
-          <span className="text-xs font-black uppercase tracking-[0.25em] text-primary/80 block mb-1.5">What</span>
+          <span className="font-accent text-[10px] font-semibold uppercase tracking-[0.25em] text-primary-text block mb-1.5">What</span>
           {what.body}
         </div>
       )}
       {rest.map((s) => (
-        <details key={s.name} className="group bg-card/60 border border-border/60 rounded-xl overflow-hidden">
-          <summary className="flex items-center justify-between gap-2 px-4 py-3 cursor-pointer list-none text-xs font-black uppercase tracking-[0.2em] text-muted-foreground hover:text-foreground transition-colors min-h-[44px]">
+        <details key={s.name} className="group border border-border/60 rounded-lg overflow-hidden">
+          <summary className="flex items-center justify-between gap-2 px-4 py-3 cursor-pointer list-none font-accent text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground hover:text-foreground transition-colors min-h-[44px]">
             <span>{s.name.charAt(0) + s.name.slice(1).toLowerCase()}</span>
             <ChevronDown className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180" />
           </summary>
@@ -116,10 +116,10 @@ const WorkflowStepsList = ({ steps, names, currentTaskId, currentUserId }: any) 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between px-1 sm:px-2">
-          <h4 className="text-xs font-black uppercase tracking-[0.25em] sm:tracking-[0.4em] text-indigo-400 flex items-center gap-2 sm:gap-3">
+          <h4 className="font-accent text-[11px] font-semibold uppercase tracking-[0.25em] sm:tracking-[0.3em] text-primary-text flex items-center gap-2 sm:gap-3">
             <List className="h-4 w-4 shrink-0" /> Operational Mission Sequence
           </h4>
-          <Badge variant="outline" className="text-xs font-mono border-indigo-500/20 text-indigo-400 uppercase h-6 px-3 whitespace-nowrap">
+          <Badge variant="outline" className="text-xs font-code border-border text-muted-foreground uppercase h-6 px-3 whitespace-nowrap">
             {steps.length} Phases
           </Badge>
       </div>
@@ -136,22 +136,22 @@ const WorkflowStepsList = ({ steps, names, currentTaskId, currentUserId }: any) 
           };
           
           return (
-            <div key={step.id} className={`group/step relative rounded-2xl border-2 transition-all duration-500 ${isCurrent ? 'border-primary bg-primary/5 shadow-2xl shadow-primary/5' : 'border-border/60 bg-card/30'}`}>
+            <div key={step.id} className={`group/step relative rounded-lg border transition-all duration-500 ${isCurrent ? 'border-primary/60 dark:bg-primary/[0.04]' : 'border-border/60'}`}>
               <div className="p-4 sm:p-5 flex items-center gap-4 sm:gap-5">
-                <div className={`flex-shrink-0 h-10 w-10 sm:h-12 sm:w-12 rounded-xl flex items-center justify-center text-xs sm:text-sm font-black shadow-lg ${isDone ? 'bg-emerald-500 text-black' : isCurrent ? 'bg-primary text-black scale-110' : 'bg-muted text-muted-foreground'}`}>
+                <div className={`flex-shrink-0 h-10 w-10 sm:h-12 sm:w-12 rounded-lg flex items-center justify-center text-xs sm:text-sm font-accent font-semibold border ${isDone ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-600 dark:text-emerald-400' : isCurrent ? 'bg-primary border-primary text-primary-foreground' : 'bg-muted border-transparent text-muted-foreground'}`}>
                   {isDone ? '✓' : String(idx + 1).padStart(2, '0')}
                 </div>
                 
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-1">
-                    <p className={`font-black uppercase text-xs sm:text-sm leading-tight tracking-tight ${isCurrent ? 'text-primary' : isDone ? 'text-emerald-400' : 'text-foreground/80'}`}>
+                    <p className={`font-heading uppercase text-lg leading-tight tracking-[0.02em] ${isCurrent ? 'text-primary-text' : isDone ? 'text-emerald-600 dark:text-emerald-400' : 'text-foreground/80'}`}>
                         {step.title}
                     </p>
-                    {isCurrent && <Badge className="bg-primary text-black text-xs h-4.5 px-2 font-black animate-pulse">ACTIVE</Badge>}
+                    {isCurrent && <Badge className="bg-primary text-primary-foreground text-xs h-4.5 px-2 font-accent font-semibold animate-pulse">ACTIVE</Badge>}
                   </div>
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-black text-muted-foreground uppercase tracking-[0.15em]">
-                    <span className="flex items-center gap-1.5 text-foreground bg-muted px-2.5 py-1 rounded-lg border border-white/5"><Users className="h-3 w-3 text-primary" /> {assignee.name || 'Pending Assignment'}</span>
-                    <span className="flex items-center gap-1.5 border border-border px-2.5 py-1 rounded-lg"><Clock className="h-3 w-3" /> {step.status}</span>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-accent text-[10px] font-semibold text-muted-foreground uppercase tracking-[0.15em]">
+                    <span className="flex items-center gap-1.5 text-foreground bg-muted px-2.5 py-1 rounded-md border border-border/60"><Users className="h-3 w-3 text-primary-text" /> {assignee.name || 'Pending Assignment'}</span>
+                    <span className="flex items-center gap-1.5 border border-border px-2.5 py-1 rounded-md"><Clock className="h-3 w-3" /> {step.status}</span>
                   </div>
                 </div>
 
@@ -159,12 +159,12 @@ const WorkflowStepsList = ({ steps, names, currentTaskId, currentUserId }: any) 
                     {(assignee.whatsapp || assignee.email) && (
                         <div className="flex items-center gap-2">
                             {assignee.whatsapp && (
-                                <a href={`https://wa.me/${assignee.whatsapp.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer" className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-black transition-all shadow-lg border border-emerald-500/20" onClick={e => e.stopPropagation()}>
+                                <a href={`https://wa.me/${assignee.whatsapp.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer" className="p-2.5 rounded-lg text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 transition-all border border-border hover:border-emerald-500/40" onClick={e => e.stopPropagation()}>
                                     <Phone className="h-4 w-4" />
                                 </a>
                             )}
                             {assignee.email && (
-                                <a href={`mailto:${assignee.email}`} className="p-2.5 rounded-xl bg-indigo-500/10 text-indigo-500 hover:bg-indigo-500 hover:text-black transition-all shadow-lg border border-indigo-500/20" onClick={e => e.stopPropagation()}>
+                                <a href={`mailto:${assignee.email}`} className="p-2.5 rounded-lg text-primary-text hover:bg-primary/10 transition-all border border-border hover:border-primary/40" onClick={e => e.stopPropagation()}>
                                     <Mail className="h-4 w-4" />
                                 </a>
                             )}
@@ -321,11 +321,11 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
 
   return (
     <>
-    <div ref={cardRef} className={`group relative overflow-hidden rounded-3xl sm:rounded-[2.5rem] border-2 transition-all duration-700 hover:bg-card/90 backdrop-blur-2xl ${isYourTurn ? 'border-primary bg-primary/5 shadow-2xl shadow-primary/10' : isCompleted ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-border bg-card/60'}`} onClick={() => setExpandedTaskId(isExpanded ? null : task.id)}>
+    <div ref={cardRef} className={`group relative overflow-hidden rounded-lg border transition-all duration-300 bg-card ${isYourTurn ? 'border-primary/60 dark:bg-primary/[0.04]' : isCompleted ? 'border-emerald-500/30 bg-emerald-500/[0.03]' : 'border-border'}`} onClick={() => setExpandedTaskId(isExpanded ? null : task.id)}>
       
       {/* ── CARD HUD: Mission Timeline ── */}
       {task.workflowId && teamMembers.length > 0 && (
-          <div className="border-b border-border/40 bg-card/40 px-4 sm:px-8 py-6">
+          <div className="border-b border-border/60 bg-muted/40 px-4 sm:px-8 py-6">
               <WorkflowTeamContext members={teamMembers} currentUserId={currentUserId} />
           </div>
       )}
@@ -334,32 +334,32 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
         <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4 lg:gap-8">
           <div className="flex-1 min-w-0 space-y-4 sm:space-y-5">
             <div className="flex items-start gap-3 sm:gap-4">
-              <div className={`flex-shrink-0 h-10 w-10 sm:h-12 sm:w-12 rounded-xl flex items-center justify-center border-2 transition-all duration-700 ${isYourTurn ? 'bg-primary text-black border-primary shadow-xl shadow-primary/30' : isCompleted ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400' : 'bg-card border-border text-muted-foreground'}`}>
+              <div className={`flex-shrink-0 h-10 w-10 sm:h-12 sm:w-12 rounded-lg flex items-center justify-center border transition-all duration-300 ${isYourTurn ? 'bg-primary/15 border-primary/50 text-primary-text' : isCompleted ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-600 dark:text-emerald-400' : 'bg-muted/50 border-border text-muted-foreground'}`}>
                 {isCompleted ? <CheckCircle2 className="h-5 w-5 sm:h-6 sm:w-6" /> : isYourTurn ? <Zap className="h-5 w-5 sm:h-6 sm:w-6 fill-current" /> : getStatusIcon(task.status)}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex flex-wrap items-center gap-2 mb-1.5">
-                  <Badge variant="outline" className="text-xs font-black border-border bg-card/80 text-primary/70 px-2.5 h-6 uppercase tracking-[0.15em] whitespace-nowrap overflow-hidden text-ellipsis">DIRECTIVE # {task.id.slice(0, 8)}</Badge>
-                  <StatusBadge status={isOverdue ? 'overdue' : task.status} size="sm" variant="solid" className="font-black tracking-widest h-6 px-3 text-xs whitespace-nowrap" />
+                  <Badge variant="outline" className="text-xs font-accent font-semibold border-border bg-muted/50 text-primary-text px-2.5 h-6 uppercase tracking-[0.15em] whitespace-nowrap overflow-hidden text-ellipsis">DIRECTIVE # {task.id.slice(0, 8)}</Badge>
+                  <StatusBadge status={isOverdue ? 'overdue' : task.status} size="sm" variant="solid" className="font-accent font-semibold tracking-widest h-6 px-3 text-xs whitespace-nowrap" />
                   {/* Silent-assignee flag: no activity on this task for 2+ days. */}
                   {isSilent && (
-                    <span className="inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-[0.15em] text-amber-300 bg-amber-500/10 border border-amber-500/40 rounded-full px-3 h-6 whitespace-nowrap">
+                    <span className="inline-flex items-center gap-1.5 font-accent text-[10px] font-semibold uppercase tracking-[0.15em] text-amber-700 dark:text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-full px-3 h-6 whitespace-nowrap">
                       <AlertTriangle className="h-3 w-3 shrink-0" />
                       No update in {silentDays > 2 ? `${silentDays} days` : '2+ days'}
                     </span>
                   )}
                 </div>
-                <h3 className="text-[clamp(1.05rem,0.95rem+0.8vw,1.4rem)] font-accent font-black tracking-tight text-foreground leading-snug group-hover:text-primary transition-colors uppercase break-words">{task.title}</h3>
+                <h3 className="text-[clamp(1.5rem,1.2rem+1.2vw,2rem)] font-heading tracking-[0.02em] text-foreground leading-[1.05] group-hover:text-primary-text transition-colors uppercase break-words">{task.title}</h3>
                 
                 {/* ── RESOURCE CHIPS ── */}
                 {hasResources && (
                     <div className="flex flex-wrap gap-2 sm:gap-3 mt-4 sm:mt-6">
                         {Array.isArray(task.resources) ? task.resources.map((res: any, idx: number) => (
-                            <a key={idx} href={res.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-3 py-2 sm:px-4 rounded-xl bg-card border border-border hover:border-primary/50 hover:bg-primary/10 transition-all text-xs font-black uppercase tracking-widest text-muted-foreground hover:text-primary min-h-[44px]" onClick={e => e.stopPropagation()}>
+                            <a key={idx} href={res.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-3 py-2 sm:px-4 rounded-md bg-card border border-border hover:border-primary/50 hover:bg-primary/10 transition-all font-accent text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground hover:text-primary-text min-h-[44px]" onClick={e => e.stopPropagation()}>
                                 {res.type === 'drive' ? <LayoutGrid className="h-3 w-3 sm:h-4 sm:w-4 shrink-0" /> : res.type === 'github' ? <Github className="h-3 w-3 sm:h-4 sm:w-4 shrink-0" /> : <ExternalLink className="h-3 w-3 sm:h-4 sm:w-4 shrink-0" />} <span className="break-words">{res.title}</span>
                             </a>
                         )) : task.resourceLinks?.split('\n').filter(Boolean).map((link: string, idx: number) => (
-                            <a key={idx} href={link.startsWith('http') ? link : `https://${link}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-3 py-2 sm:px-4 rounded-xl bg-card border border-border hover:border-primary/50 text-xs font-black uppercase tracking-widest text-primary hover:bg-primary/5 transition-all min-h-[44px]" onClick={e => e.stopPropagation()}>
+                            <a key={idx} href={link.startsWith('http') ? link : `https://${link}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-3 py-2 sm:px-4 rounded-md bg-card border border-border hover:border-primary/50 font-accent text-[10px] font-semibold uppercase tracking-[0.15em] text-primary-text hover:bg-primary/5 transition-all min-h-[44px]" onClick={e => e.stopPropagation()}>
                                 <ExternalLink className="h-3 w-3 shrink-0" /> <span className="break-words">ATTACHMENT {idx + 1}</span>
                             </a>
                         ))}
@@ -368,18 +368,18 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-2 sm:gap-4">
-              <div className="bg-card/60 border border-border/80 p-3 sm:p-4 rounded-xl shadow-inner min-w-0 overflow-hidden">
-                <p className="text-xs font-black text-muted-foreground uppercase tracking-[0.15em] mb-1 flex items-center gap-1.5 whitespace-nowrap"><Timer className="h-3 w-3 shrink-0" /> Ends In</p>
-                <CountdownTimer expiryDate={task.deadline} hideLabel className="border-none bg-transparent p-0 font-accent text-xs sm:text-sm tracking-tight whitespace-nowrap max-w-full overflow-hidden" />
+            <div className="grid grid-cols-[1.5fr_1fr_1fr] sm:grid-cols-3 divide-x divide-border/70 border-y border-border/70 py-3 sm:py-4">
+              <div className="px-3 sm:px-5 first:pl-0 min-w-0 overflow-hidden">
+                <p className="font-accent text-[10px] font-semibold text-muted-foreground uppercase tracking-[0.25em] mb-1.5 flex items-center gap-1.5 whitespace-nowrap"><Timer className="h-3 w-3 shrink-0 text-primary-text" /> Ends In</p>
+                <CountdownTimer expiryDate={task.deadline} hideLabel className="border-none bg-transparent p-0 font-accent text-[10px] sm:text-[13px] tracking-tight whitespace-nowrap max-w-full" />
               </div>
-              <div className="bg-card/60 border border-border/80 p-3 sm:p-4 rounded-xl shadow-inner min-w-0 overflow-hidden">
-                <p className="text-xs font-black text-muted-foreground uppercase tracking-[0.15em] mb-1 flex items-center gap-1.5 whitespace-nowrap"><Target className="h-3 w-3 shrink-0" /> Bounty</p>
-                <p className="text-lg sm:text-xl font-accent font-black text-foreground whitespace-nowrap">{task.points} <span className="text-xs text-primary/60 tracking-widest">PTS</span></p>
+              <div className="px-3 sm:px-5 min-w-0">
+                <p className="font-accent text-[10px] font-semibold text-muted-foreground uppercase tracking-[0.25em] mb-1.5 flex items-center gap-1.5 whitespace-nowrap"><Target className="h-3 w-3 shrink-0 text-primary-text" /> Bounty</p>
+                <p className="font-heading text-xl sm:text-2xl leading-none text-foreground whitespace-nowrap">{task.points} <span className="font-accent text-[10px] font-semibold text-primary-text tracking-[0.2em]">PTS</span></p>
               </div>
-              <div className="bg-card/60 border border-border/80 p-3 sm:p-4 rounded-xl shadow-inner min-w-0 overflow-hidden">
-                <p className="text-xs font-black text-muted-foreground uppercase tracking-[0.15em] mb-1 flex items-center gap-1.5 whitespace-nowrap"><ActivityIcon className="h-3 w-3 shrink-0" /> Sync</p>
-                <div className="flex items-center gap-2"><div className="flex-1 h-1.5 bg-card rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-primary to-emerald-400" style={{ width: `${syncPercentage}%` }} /></div><span className="text-xs font-mono font-black text-foreground/80">{syncPercentage}%</span></div>
+              <div className="px-3 sm:px-5 min-w-0">
+                <p className="font-accent text-[10px] font-semibold text-muted-foreground uppercase tracking-[0.25em] mb-1.5 flex items-center gap-1.5 whitespace-nowrap"><ActivityIcon className="h-3 w-3 shrink-0 text-primary-text" /> Sync</p>
+                <div className="flex items-center gap-2"><div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden"><div className="h-full bg-primary" style={{ width: `${syncPercentage}%` }} /></div><span className="text-xs font-code font-bold text-foreground/80">{syncPercentage}%</span></div>
               </div>
             </div>
           </div>
@@ -395,16 +395,16 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                   rel="noopener noreferrer"
                   onClick={(e) => e.stopPropagation()}
                   title="Notify assignee via WhatsApp"
-                  className="h-11 w-11 shrink-0 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500 hover:text-black transition-all flex items-center justify-center"
+                  className="h-11 w-11 shrink-0 rounded-lg border border-border text-emerald-600 dark:text-emerald-400 hover:border-emerald-500/50 hover:bg-emerald-500/10 transition-all flex items-center justify-center"
                 >
                   <MessageCircle className="h-4 w-4" />
                 </a>
               )}
-              <Button variant="outline" size="icon" className="h-11 w-11 shrink-0 rounded-xl border-border bg-card/80 text-muted-foreground hover:border-primary transition-all" onClick={(e) => { e.stopPropagation(); onOpenDetail(task); }}><Pencil className="h-4 w-4" /></Button>
+              <Button variant="outline" size="icon" className="h-11 w-11 shrink-0 rounded-lg border-border bg-transparent text-muted-foreground hover:border-primary/50 hover:text-foreground transition-all" onClick={(e) => { e.stopPropagation(); onOpenDetail(task); }}><Pencil className="h-4 w-4" /></Button>
               {viewerIsAssignee && !isCompleted && onOpenProofDrawer && (
-                <Button variant="outline" size="icon" aria-label={`Submit proof for "${task.title}"`} title="Submit proof (drawer)" className="h-11 w-11 shrink-0 rounded-xl border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500 hover:text-black transition-all" onClick={(e) => { e.stopPropagation(); onOpenProofDrawer(task, names); }}><Send className="h-4 w-4" /></Button>
+                <Button variant="outline" size="icon" aria-label={`Submit proof for "${task.title}"`} title="Submit proof (drawer)" className="h-11 w-11 shrink-0 rounded-lg border-primary/40 bg-primary/10 text-primary-text hover:bg-primary hover:text-primary-foreground transition-all" onClick={(e) => { e.stopPropagation(); onOpenProofDrawer(task, names); }}><Send className="h-4 w-4" /></Button>
               )}
-              <Button variant="outline" size="icon" className={`h-11 w-11 shrink-0 rounded-xl border-border bg-card/80 text-muted-foreground hover:border-primary transition-all ${isExpanded ? 'bg-primary text-black border-primary' : ''}`} onClick={(e) => { e.stopPropagation(); setExpandedTaskId(isExpanded ? null : task.id); }}>
+              <Button variant="outline" size="icon" className={`h-11 w-11 shrink-0 rounded-lg border-border bg-transparent text-muted-foreground hover:border-primary/50 hover:text-foreground transition-all ${isExpanded ? 'bg-primary text-primary-foreground border-primary' : ''}`} onClick={(e) => { e.stopPropagation(); setExpandedTaskId(isExpanded ? null : task.id); }}>
                 {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
               </Button>
             </div>
@@ -415,56 +415,56 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
         <div className="mt-6 pt-6 border-t border-border/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
             <div className="flex items-center gap-3 min-w-0">
                 <div className="relative shrink-0">
-                    <Avatar className="h-10 w-10 sm:h-12 sm:w-12 border-2 border-border shadow-xl">
+                    <Avatar className="h-10 w-10 sm:h-12 sm:w-12 border border-border">
                         <AvatarImage src={currentOp.photoURL} />
-                        <AvatarFallback className="bg-card font-black text-xs uppercase">OP</AvatarFallback>
+                        <AvatarFallback className="bg-muted font-accent font-semibold text-xs uppercase">OP</AvatarFallback>
                     </Avatar>
-                    {isYourTurn && <div className="absolute -top-1 -right-1 h-5 w-5 bg-primary rounded-full border-2 border-slate-950 flex items-center justify-center"><Zap className="h-3 w-3 text-black" /></div>}
+                    {isYourTurn && <div className="absolute -top-1 -right-1 h-5 w-5 bg-primary rounded-full border-2 border-card flex items-center justify-center"><Zap className="h-3 w-3 text-primary-foreground" /></div>}
                 </div>
                 <div className="min-w-0">
-                    <p className="font-black text-foreground text-sm sm:text-base tracking-tight leading-tight uppercase truncate">{currentOp.name || 'Pending Assignment'} {isYourTurn && <span className="ml-1.5 text-xs text-primary bg-primary/10 px-2 py-0.5 rounded border border-primary/20 uppercase tracking-widest font-black">YOU</span>}</p>
-                    <p className="text-xs font-bold text-emerald-500 uppercase tracking-[0.15em]">{currentOp.role || 'Personnel Required'}</p>
+                    <p className="flex items-center gap-2 min-w-0"><span className="font-heading text-foreground text-xl leading-none tracking-[0.03em] uppercase truncate">{currentOp.name || 'Pending Assignment'}</span>{isYourTurn && <span className="shrink-0 font-accent text-[10px] font-semibold text-primary-text bg-primary/10 px-2 py-0.5 rounded border border-primary/20 uppercase tracking-[0.15em]">YOU</span>}</p>
+                    <p className="font-accent text-[10px] font-semibold text-primary-text uppercase tracking-[0.2em] mt-1">{currentOp.role || 'Personnel Required'}</p>
                     {(currentOp.whatsapp || currentOp.email) && currentOp.uid !== currentUserId && (
-                        <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1">
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1.5">
                             {currentOp.whatsapp && (
-                                <a href={`https://wa.me/${currentOp.whatsapp.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs font-bold text-emerald-400 hover:text-foreground transition-colors" onClick={e => e.stopPropagation()}><Phone className="h-3 w-3 shrink-0" /> <span className="break-all">{currentOp.whatsapp}</span></a>
+                                <a href={`https://wa.me/${currentOp.whatsapp.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground hover:text-foreground transition-colors" onClick={e => e.stopPropagation()}><Phone className="h-3 w-3 shrink-0 text-emerald-600 dark:text-emerald-400" /> <span className="break-all">{currentOp.whatsapp}</span></a>
                             )}
                             {currentOp.email && (
-                                <a href={`mailto:${currentOp.email}`} className="flex items-center gap-1.5 text-xs font-bold text-indigo-400 hover:text-foreground transition-colors" onClick={e => e.stopPropagation()}><Mail className="h-3 w-3 shrink-0" /> <span className="break-all">{currentOp.email}</span></a>
+                                <a href={`mailto:${currentOp.email}`} className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground hover:text-foreground transition-colors" onClick={e => e.stopPropagation()}><Mail className="h-3 w-3 shrink-0 text-primary-text" /> <span className="break-all">{currentOp.email}</span></a>
                             )}
                         </div>
                     )}
                 </div>
             </div>
 
-            <div className="flex items-center gap-3 shrink-0 opacity-80">
+            <div className="flex items-center gap-3 shrink-0">
                 <div className="text-right">
-                    <p className="font-bold text-foreground/90 text-xs tracking-tight uppercase">Mission Command</p>
-                    <p className="text-xs font-mono text-muted-foreground uppercase">Issued {safeDate(task.createdAt) ? format(safeDate(task.createdAt)!, 'MMM dd, yyyy') : 'Recently'}</p>
+                    <p className="font-accent font-semibold text-foreground/90 text-[10px] tracking-[0.2em] uppercase">Mission Command</p>
+                    <p className="text-[11px] font-code text-muted-foreground uppercase mt-0.5">Issued {safeDate(task.createdAt) ? format(safeDate(task.createdAt)!, 'MMM dd, yyyy') : 'Recently'}</p>
                 </div>
-                <Avatar className="h-9 w-9 border-2 border-border">
+                <Avatar className="h-9 w-9 border border-border">
                     <AvatarImage src={names[task.assignerId]?.photoURL} />
-                    <AvatarFallback className="bg-card text-xs font-black">HQ</AvatarFallback>
+                    <AvatarFallback className="bg-muted text-xs font-accent font-semibold">HQ</AvatarFallback>
                 </Avatar>
             </div>
         </div>
 
         {/* ── SILENT ASSIGNEE CHECK-IN ── */}
         {isSilent && viewerIsAssignee && (
-          <div className="mt-6 rounded-2xl border border-amber-500/40 bg-amber-500/5 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-5" onClick={(e) => e.stopPropagation()}>
+          <div className="mt-6 rounded-lg border border-amber-500/30 bg-amber-500/[0.04] p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-5" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start gap-3 flex-1 min-w-0">
-              <div className="h-10 w-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shrink-0">
-                <AlertTriangle className="h-5 w-5 text-amber-300" />
+              <div className="h-10 w-10 rounded-lg border border-amber-500/30 flex items-center justify-center shrink-0">
+                <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-300" />
               </div>
               <div className="min-w-0">
-                <p className="text-sm font-black text-foreground leading-snug">No update in {silentDays > 2 ? `${silentDays} days` : '2+ days'}.</p>
+                <p className="font-heading text-lg tracking-[0.02em] text-foreground leading-tight">No update in {silentDays > 2 ? `${silentDays} days` : '2+ days'}.</p>
                 <p className="text-xs text-muted-foreground leading-relaxed mt-0.5">Tap the button to let Mission Command know you are still on it, or open this task and log your progress.</p>
               </div>
             </div>
             <Button
               onClick={handleCheckin}
               disabled={isCheckingIn}
-              className="w-full sm:w-auto h-11 px-6 rounded-xl bg-amber-400 text-black font-black uppercase tracking-[0.12em] text-xs hover:bg-amber-300 transition-all shrink-0"
+              className="w-full sm:w-auto h-11 px-6 rounded-lg bg-primary text-primary-foreground font-accent font-semibold uppercase tracking-[0.15em] text-[11px] hover:bg-primary/90 transition-all shrink-0"
             >
               {isCheckingIn ? 'Recording...' : 'Confirm you are on it'}
             </Button>
@@ -481,8 +481,8 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
               {/* ── Operational Briefing (full width) ── */}
               <div className="space-y-6">
                 {task.description && (
-                  <div className="bg-card/50 p-4 sm:p-8 rounded-2xl sm:rounded-3xl border border-border/40 min-w-0">
-                    <h4 className="text-xs font-black uppercase tracking-[0.2em] sm:tracking-[0.4em] text-primary/70 mb-4 sm:mb-6 flex items-center gap-2 sm:gap-3">
+                  <div className="bg-muted/30 p-4 sm:p-8 rounded-lg border border-border/60 min-w-0">
+                    <h4 className="font-accent text-[11px] font-semibold uppercase tracking-[0.25em] sm:tracking-[0.3em] text-primary-text mb-4 sm:mb-6 flex items-center gap-2 sm:gap-3">
                         <ClipboardList className="h-4 w-4 shrink-0" /> Operational Briefing
                     </h4>
                     <StructuredBriefing description={task.description} />
@@ -503,7 +503,7 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
 
               {/* ── Mission Sequence (full width) ── */}
               {task.workflowId && (
-                <div className="bg-card/30 p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-border/40 min-w-0 overflow-hidden">
+                <div className="p-4 sm:p-6 rounded-lg border border-border/60 min-w-0 overflow-hidden">
                   <WorkflowStepsList steps={steps} names={names} currentTaskId={task.id} currentUserId={currentUserId} />
                 </div>
               )}
@@ -511,15 +511,15 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
 
             {/* Phase 3: Collaborative Uplink */}
             {task.workflowId && (
-              <div className="bg-card/80 p-4 sm:p-10 rounded-3xl sm:rounded-[4rem] border-2 border-border/80 shadow-2xl space-y-6 sm:space-y-10 animate-in slide-in-from-bottom-12 duration-1000 min-w-0 overflow-hidden">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b-2 border-border/60 pb-6 sm:pb-8 sm:px-4">
+              <div className="bg-card p-4 sm:p-10 rounded-lg border border-border space-y-6 sm:space-y-10 animate-in slide-in-from-bottom-12 duration-1000 min-w-0 overflow-hidden">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border/60 pb-6 sm:pb-8 sm:px-4">
                     <div className="space-y-2 min-w-0">
-                        <h4 className="text-sm sm:text-base font-black uppercase tracking-[0.2em] sm:tracking-[0.5em] text-indigo-400 flex items-center gap-2 sm:gap-4"><MessageSquare className="h-5 w-5 sm:h-6 sm:w-6 shrink-0" /> <span className="break-words">Collaborative Mission Uplink</span></h4>
-                        <p className="text-xs text-muted-foreground font-bold uppercase tracking-[0.15em] sm:tracking-[0.2em]">Secured real-time sequence coordination</p>
+                        <h4 className="font-accent text-sm sm:text-base font-semibold uppercase tracking-[0.25em] sm:tracking-[0.3em] text-primary-text flex items-center gap-2 sm:gap-4"><MessageSquare className="h-5 w-5 sm:h-6 sm:w-6 shrink-0" /> <span className="break-words">Collaborative Mission Uplink</span></h4>
+                        <p className="font-accent text-[10px] text-muted-foreground font-semibold uppercase tracking-[0.2em]">Secured real-time sequence coordination</p>
                     </div>
-                    <Badge className="bg-indigo-600 text-white font-black px-4 sm:px-6 py-2 tracking-widest animate-pulse border-2 border-border rounded-xl shadow-lg shadow-indigo-500/20 whitespace-nowrap self-start sm:self-auto">UPLINK ENCRYPTED</Badge>
+                    <Badge className="bg-muted text-muted-foreground font-accent font-semibold px-4 sm:px-6 py-2 tracking-[0.2em] animate-pulse border border-border rounded-md whitespace-nowrap self-start sm:self-auto">UPLINK ENCRYPTED</Badge>
                 </div>
-                <div className="rounded-2xl sm:rounded-[2.5rem] overflow-hidden border border-white/5 bg-black/20 shadow-inner">
+                <div className="rounded-lg overflow-hidden border border-border bg-muted/30">
                     <ErrorBoundary fallback={<div className="p-32 text-center text-red-500 uppercase font-black text-xl tracking-[0.5em]">Link Failure. Re-authenticate directive.</div>}>
                         <DynamicChat 
                             workflowId={task.workflowId} 
@@ -770,46 +770,46 @@ export function AssignedTasks({ userId, initialTasks, initialTaskId }: { userId:
     <Card className="mt-8 border-none shadow-none bg-transparent">
       <CardHeader className="px-0 pt-0 flex flex-row items-center justify-between pb-8">
         <div className="space-y-1">
-          <CardTitle className="flex items-center gap-4 text-3xl sm:text-4xl font-black tracking-tighter uppercase text-foreground leading-none">
-            <div className="p-3 bg-primary/10 rounded-xl border-2 border-primary/20 shadow-2xl shadow-primary/10">
-              <Zap className="h-10 w-10 text-primary animate-pulse fill-primary/20" />
+          <CardTitle className="flex items-center gap-4 font-heading text-4xl sm:text-5xl tracking-[0.02em] uppercase text-foreground leading-none">
+            <div className="p-2.5 bg-primary/10 rounded-lg border border-primary/30">
+              <Zap className="h-6 w-6 text-primary-text" />
             </div>
             <div className="flex flex-col">
                 <span>Mission Control</span>
-                {!loading && <span className="text-xs font-mono font-black border-primary/40 bg-primary/10 text-primary uppercase tracking-[0.4em] px-4 py-1 rounded-full mt-2 border max-w-fit">{normalized.length} ACTIVE DIRECTIVES</span>}
+                {!loading && <span className="font-accent text-[10px] font-semibold border-primary/40 bg-primary/10 text-primary-text uppercase tracking-[0.3em] px-4 py-1 rounded-full mt-2 border max-w-fit">{normalized.length} ACTIVE DIRECTIVES</span>}
             </div>
           </CardTitle>
         </div>
-        <Button variant="outline" size="icon" onClick={() => setManualRefresh(prev => prev + 1)} className="h-14 w-14 rounded-2xl border-border bg-card/50 hover:bg-primary transition-all shadow-2xl group"><RefreshCw className={`h-6 w-6 group-hover:rotate-180 transition-transform duration-500 ${loading ? 'animate-spin' : ''}`} /></Button>
+        <Button variant="outline" size="icon" onClick={() => setManualRefresh(prev => prev + 1)} className="h-11 w-11 rounded-lg border-border bg-card hover:border-primary/50 transition-all group"><RefreshCw className={`h-5 w-5 group-hover:rotate-180 transition-transform duration-500 ${loading ? 'animate-spin' : ''}`} /></Button>
       </CardHeader>
       
       {!loading && normalized.length > 0 && (
         <div className="flex flex-col sm:flex-row gap-4 mb-8 px-1 items-center">
           <div className="flex flex-col sm:flex-row gap-4 flex-1 w-full">
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-full max-w-[240px] bg-card/80 border-2 border-border hover:border-primary/50 h-12 text-xs font-black uppercase tracking-[0.2em] rounded-2xl shadow-2xl px-6"><div className="flex items-center gap-3"><Filter className="h-4 w-4 text-primary" /><SelectValue placeholder="Status" /></div></SelectTrigger>
-                <SelectContent className="bg-card border-2 border-border text-foreground shadow-2xl"><SelectItem value="all">ALL STATUSES</SelectItem><SelectItem value="pending">STANDBY (TO DO)</SelectItem><SelectItem value="in-progress">ACTIVE (IN PROGRESS)</SelectItem><SelectItem value="submitted-for-review">IN REVIEW</SelectItem><SelectItem value="overdue">OVERDUE</SelectItem></SelectContent>
+                <SelectTrigger className="w-full max-w-[240px] bg-card border border-border hover:border-primary/50 h-11 font-accent text-[11px] font-semibold uppercase tracking-[0.2em] rounded-lg px-5"><div className="flex items-center gap-3"><Filter className="h-4 w-4 text-primary-text" /><SelectValue placeholder="Status" /></div></SelectTrigger>
+                <SelectContent className="bg-card border border-border text-foreground"><SelectItem value="all">ALL STATUSES</SelectItem><SelectItem value="pending">STANDBY (TO DO)</SelectItem><SelectItem value="in-progress">ACTIVE (IN PROGRESS)</SelectItem><SelectItem value="submitted-for-review">IN REVIEW</SelectItem><SelectItem value="overdue">OVERDUE</SelectItem></SelectContent>
             </Select>
             {uniqueProjects.length > 0 && (
                 <Select value={projectFilter} onValueChange={setProjectFilter}>
-                    <SelectTrigger className="w-full max-w-[260px] bg-card/80 border-2 border-border hover:border-primary/50 h-12 text-xs font-black uppercase tracking-[0.2em] rounded-2xl shadow-2xl px-6"><div className="flex items-center gap-3"><Target className="h-4 w-4 text-amber-500" /><SelectValue placeholder="Project" /></div></SelectTrigger>
-                    <SelectContent className="bg-card border-2 border-border text-foreground shadow-2xl"><SelectItem value="all">ALL PROJECTS</SelectItem><SelectItem value="uncategorized">AUTONOMOUS DIRECTIVES</SelectItem>{uniqueProjects.map(p => (<SelectItem key={p.id} value={p.id}>{p.title}</SelectItem>))}</SelectContent>
+                    <SelectTrigger className="w-full max-w-[260px] bg-card border border-border hover:border-primary/50 h-11 font-accent text-[11px] font-semibold uppercase tracking-[0.2em] rounded-lg px-5"><div className="flex items-center gap-3"><Target className="h-4 w-4 text-primary-text" /><SelectValue placeholder="Project" /></div></SelectTrigger>
+                    <SelectContent className="bg-card border border-border text-foreground"><SelectItem value="all">ALL PROJECTS</SelectItem><SelectItem value="uncategorized">AUTONOMOUS DIRECTIVES</SelectItem>{uniqueProjects.map(p => (<SelectItem key={p.id} value={p.id}>{p.title}</SelectItem>))}</SelectContent>
                 </Select>
             )}
           </div>
-          <div className="flex items-center bg-card/80 border-2 border-border rounded-2xl p-1.5 h-14 backdrop-blur-md shadow-2xl">
-            <Button variant="ghost" size="sm" className={`h-full px-6 text-xs font-black uppercase tracking-widest gap-3 transition-all duration-500 rounded-xl ${viewMode === 'grid' ? 'bg-primary text-black shadow-xl shadow-primary/20' : 'text-muted-foreground hover:text-muted-foreground'}`} onClick={() => setViewMode('grid')}><LayoutGrid className="h-4 w-4" /> Grid</Button>
-            <Button variant="ghost" size="sm" className={`h-full px-6 text-xs font-black uppercase tracking-widest gap-3 transition-all duration-500 rounded-xl ${viewMode === 'list' ? 'bg-primary text-black shadow-xl shadow-primary/20' : 'text-muted-foreground hover:text-muted-foreground'}`} onClick={() => setViewMode('list')}><List className="h-4 w-4" /> List</Button>
+          <div className="flex items-center bg-card border border-border rounded-lg p-1 h-11">
+            <Button variant="ghost" size="sm" className={`h-full px-5 font-accent text-[11px] font-semibold uppercase tracking-[0.15em] gap-2 transition-all duration-300 rounded-md ${viewMode === 'grid' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`} onClick={() => setViewMode('grid')}><LayoutGrid className="h-4 w-4" /> Grid</Button>
+            <Button variant="ghost" size="sm" className={`h-full px-5 font-accent text-[11px] font-semibold uppercase tracking-[0.15em] gap-2 transition-all duration-300 rounded-md ${viewMode === 'list' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`} onClick={() => setViewMode('list')}><List className="h-4 w-4" /> List</Button>
           </div>
         </div>
       )}
 
       <CardContent className="px-0">
-        {!loading && normalized.length === 0 ? <div className="text-center py-32 border-4 border-dashed rounded-[4rem] border-border/40 bg-card/10"><CheckCircle2 className="h-24 w-24 mx-auto text-slate-800/50 mb-8" /><p className="text-3xl font-accent font-black text-slate-600 uppercase tracking-[0.3em]">All Systems Nominal.</p><p className="text-sm text-slate-700 font-mono mt-2 uppercase tracking-widest">No active mission directives detected.</p></div> : (
+        {!loading && normalized.length === 0 ? <div className="text-center py-24 border border-dashed rounded-lg border-border"><CheckCircle2 className="h-16 w-16 mx-auto text-muted-foreground/40 mb-6" /><p className="font-heading text-3xl text-muted-foreground uppercase tracking-[0.05em]">All Systems Nominal.</p><p className="text-sm text-muted-foreground font-code mt-2 uppercase tracking-widest">No active mission directives detected.</p></div> : (
           <div className="space-y-8">
             {visibleMissions.map(group => (
               <div key={group.id} className="animate-in fade-in slide-in-from-bottom-8 duration-1000">
-                <div className="flex items-center justify-center mb-6 mt-8 relative"><div className="absolute inset-0 flex items-center"><div className="w-full border-t-2 border-border/40"></div></div><Badge variant="outline" className="relative tracking-[0.3em] text-xs font-black uppercase py-2 px-6 bg-card border-2 border-border text-primary shadow-[0_0_50px_rgba(59,130,246,0.1)] flex items-center gap-3 rounded-full border-t-white/10 max-w-[92%] text-center justify-center"><div className="h-2.5 w-2.5 rounded-full bg-primary animate-pulse shadow-[0_0_15px_rgba(59,130,246,1)]" />{group.title}</Badge></div>
+                <div className="flex items-center justify-center mb-6 mt-8 relative"><div className="absolute inset-0 flex items-center"><div className="w-full border-t border-border/60"></div></div><Badge variant="outline" className="relative tracking-[0.3em] font-accent text-[10px] font-semibold uppercase py-2 px-6 bg-card border border-border text-primary-text flex items-center gap-3 rounded-full max-w-[92%] text-center justify-center"><div className="h-2 w-2 rounded-full bg-primary animate-pulse" />{group.title}</Badge></div>
                 <div className="space-y-6">
                     {group.tasks.map((task: any) => (<TaskCard key={task.id} task={task} isOwner={isOwner} isAdmin={isAdmin} currentUserId={currentUser?.uid} onTaskUpdated={() => setManualRefresh(prev => prev + 1)} expandedTaskId={expandedTaskId} setExpandedTaskId={setExpandedTaskId} onOpenDetail={(t: any, tab?: string) => onOpenDetail(t, tab as any)} onOpenProofDrawer={onOpenProofDrawer} />))}
                 </div>
@@ -820,7 +820,7 @@ export function AssignedTasks({ userId, initialTasks, initialTaskId }: { userId:
                 <Button
                   variant="outline"
                   onClick={() => setRenderBudget(prev => prev + TASK_RENDER_BUDGET)}
-                  className="h-12 px-8 rounded-2xl border-2 border-border bg-card/80 text-xs font-black uppercase tracking-[0.2em] hover:border-primary/50"
+                  className="h-11 px-8 rounded-lg border border-border bg-card font-accent text-[11px] font-semibold uppercase tracking-[0.2em] hover:border-primary/50"
                 >
                   Show more directives ({hiddenTaskCount} remaining)
                 </Button>

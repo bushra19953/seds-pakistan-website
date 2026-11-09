@@ -567,8 +567,8 @@ export function OptimizedProfile({
       <DynamicNotifications />
 
       {/* 1. Header Card */}
-      <div className="relative rounded-3xl overflow-hidden border border-border bg-background/80 backdrop-blur-md shadow-2xl">
-        {/* Cover banner or default gradient */}
+      <div className="relative rounded-lg overflow-hidden border border-border bg-card shadow-sm">
+        {/* Cover banner or default deep-space panel */}
         <div className="absolute inset-0 h-40 pointer-events-none">
           {profile?.bannerURL ? (
             <>
@@ -576,7 +576,7 @@ export function OptimizedProfile({
               <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
             </>
           ) : (
-            <div className="h-full w-full bg-gradient-to-r from-blue-900/40 to-purple-900/40" />
+            <div className="h-full w-full bg-[hsl(var(--space-panel))] border-b-2 border-primary" />
           )}
         </div>
         {isOwnProfile && (
@@ -612,8 +612,8 @@ export function OptimizedProfile({
         <div className="relative pt-16 px-6 pb-6 flex flex-col md:flex-row items-start md:items-end gap-6">
           {/* Avatar */}
           <div className="relative group shrink-0">
-            <div className="absolute -inset-0.5 rounded-full bg-gradient-to-br from-primary to-purple-600 opacity-75 blur-sm group-hover:opacity-100 transition duration-500"></div>
-            <Avatar className="h-32 w-32 border-4 border-black relative z-10">
+            <div className="absolute -inset-1 rounded-full border border-primary/50 pointer-events-none"></div>
+            <Avatar className="h-32 w-32 border-4 border-card relative z-10">
               <AvatarImage src={profile?.photoURL || undefined} className="object-cover" />
               <AvatarFallback className="text-4xl font-heading bg-muted text-muted-foreground">
                 {profile?.displayName?.charAt(0) || 'U'}
@@ -623,7 +623,7 @@ export function OptimizedProfile({
               <button
                 onClick={handleRefreshPhoto}
                 disabled={refreshingPhoto}
-                className="absolute bottom-1 right-1 z-20 p-2 rounded-full bg-muted text-foreground hover:bg-primary transition-colors border border-slate-700 shadow-md"
+                className="absolute bottom-1 right-1 z-20 p-2 rounded-full bg-card text-muted-foreground hover:text-primary-text transition-colors border border-border shadow-md"
                 title="Refresh Photo"
               >
                 <RefreshCw className={`h-4 w-4 ${refreshingPhoto ? 'animate-spin' : ''}`} />
@@ -634,17 +634,17 @@ export function OptimizedProfile({
           {/* Info */}
           <div className="flex-1 mb-2">
             <div className="flex flex-col">
-              <h1 className="text-3xl md:text-5xl font-heading font-bold text-foreground tracking-wide text-glow mb-2">
+              <h1 className="text-3xl md:text-5xl font-heading font-bold text-foreground md:text-white tracking-[0.02em] mb-2">
                 {profile?.displayName || 'Unknown User'}
               </h1>
               <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
                 {chapter?.name && (
-                  <Badge variant="outline" className="bg-blue-500/10 text-blue-400 border-blue-500/20 backdrop-blur-sm gap-1 pl-2">
-                    <MapPin className="h-3 w-3" /> {chapter.name}
+                  <Badge variant="outline" className="bg-transparent text-muted-foreground border-border gap-1 pl-2">
+                    <MapPin className="h-3 w-3 text-primary-text" /> {chapter.name}
                   </Badge>
                 )}
 
-                <Badge variant="outline" className="bg-purple-500/10 text-purple-400 border-purple-500/20 backdrop-blur-sm gap-1 pl-2 uppercase">
+                <Badge variant="outline" className="bg-primary/10 text-primary-text border-primary/30 gap-1 pl-2 uppercase">
                   <Shield className="h-3 w-3" /> {profile?.customGrantTitle || getRoleDisplayName(profile?.role, uid)}
                 </Badge>
                 {(() => {
@@ -686,12 +686,11 @@ export function OptimizedProfile({
                     });
                     setIsEditing(true);
                   }}
-                  variant="secondary"
-                  className="gap-2 shadow-lg hover:shadow-primary/20 transition-all font-heading tracking-wide"
+                  className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90 transition-all font-heading tracking-wide"
                 >
                   <Edit3 className="h-4 w-4" /> Edit Profile
                 </Button>
-                <Button variant="destructive" size="icon" onClick={handleLogout} title="Logout">
+                <Button variant="ghost" size="icon" onClick={handleLogout} title="Logout" className="text-muted-foreground hover:text-destructive-text hover:bg-destructive/10">
                   <LogOut className="h-4 w-4" />
                 </Button>
               </>
@@ -699,7 +698,7 @@ export function OptimizedProfile({
 
             {hasSiteAdminAccess(currentUserRole || 'member') && (
               <Link href="/admin">
-                <Button variant="outline" className="gap-2 border-border hover:bg-muted text-foreground">
+                <Button variant="outline" className="gap-2 border-border hover:bg-muted text-foreground font-heading tracking-wide">
                   <Shield className="h-4 w-4" /> Admin
                 </Button>
               </Link>
@@ -713,26 +712,22 @@ export function OptimizedProfile({
 
         {/* LEFT COLUMN: Identity & Stats */}
         <div className="lg:col-span-4 space-y-6">
-          {/* Stats Cards */}
-          <div className="grid grid-cols-3 gap-4">
-            <Card className="bg-background/80 border-white/5 backdrop-blur-sm">
-              <CardContent className="p-4 flex flex-col items-center justify-center text-center">
-                <div className="text-3xl font-heading text-yellow-500 tabular-nums mb-1">{profile?.points || 0}</div>
-                <div className="text-xs uppercase tracking-widest text-muted-foreground font-bold">Points</div>
-              </CardContent>
-            </Card>
-            <Card className="bg-background/80 border-white/5 backdrop-blur-sm">
-              <CardContent className="p-4 flex flex-col items-center justify-center text-center">
-                <div className={`text-3xl font-heading tabular-nums mb-1 ${efficiency >= 80 ? 'text-green-500' : 'text-orange-500'}`}>{efficiency}%</div>
-                <div className="text-xs uppercase tracking-widest text-muted-foreground font-bold">Efficiency</div>
-              </CardContent>
-            </Card>
-            <Card className="bg-background/80 border-white/5 backdrop-blur-sm">
-              <CardContent className="p-4 flex flex-col items-center justify-center text-center">
-                <div className="text-3xl font-heading text-cyan-400 tabular-nums mb-1">{profile?.totalHoursWorked || 0}h</div>
-                <div className="text-xs uppercase tracking-widest text-muted-foreground font-bold">Hours</div>
-              </CardContent>
-            </Card>
+          {/* Stats: one instrument panel, hairline-divided readouts */}
+          <div className="flex items-stretch rounded-lg border border-border bg-card overflow-hidden">
+            <div className="flex-1 px-3 py-4 text-center min-w-0">
+              <div className="font-accent text-[10px] uppercase tracking-[0.25em] text-muted-foreground mb-1.5">Points</div>
+              <div className="font-heading text-4xl leading-none text-primary-text tabular-nums">{profile?.points || 0}</div>
+            </div>
+            <div className="w-px bg-border shrink-0" />
+            <div className="flex-1 px-3 py-4 text-center min-w-0">
+              <div className="font-accent text-[10px] uppercase tracking-[0.25em] text-muted-foreground mb-1.5">Efficiency</div>
+              <div className="font-heading text-4xl leading-none text-foreground tabular-nums">{efficiency}%</div>
+            </div>
+            <div className="w-px bg-border shrink-0" />
+            <div className="flex-1 px-3 py-4 text-center min-w-0">
+              <div className="font-accent text-[10px] uppercase tracking-[0.25em] text-muted-foreground mb-1.5">Hours</div>
+              <div className="font-heading text-4xl leading-none text-foreground tabular-nums">{profile?.totalHoursWorked || 0}h</div>
+            </div>
           </div>
 
           {/* Vacation & Submissions (Own Profile Only) */}
@@ -746,16 +741,16 @@ export function OptimizedProfile({
           )}
 
           {/* Bio & Details */}
-          <Card className="border-border bg-background/80 backdrop-blur-md overflow-hidden">
-            <CardHeader className="bg-muted pb-4">
-              <CardTitle className="text-lg font-heading tracking-wide flex items-center gap-2">
-                <User className="h-4 w-4 text-primary" /> Identity
+          <Card className="border-border bg-card overflow-hidden">
+            <CardHeader className="border-b border-border pb-4">
+              <CardTitle className="font-accent text-xs uppercase tracking-[0.25em] flex items-center gap-2">
+                <User className="h-4 w-4 text-primary-text" /> Identity
               </CardTitle>
             </CardHeader>
             <CardContent className="pt-6 space-y-6">
               {/* About */}
               <div>
-                <h4 className="text-xs font-bold uppercase text-muted-foreground mb-2">Details</h4>
+                <h4 className="font-accent text-[10px] uppercase tracking-[0.25em] text-muted-foreground mb-2">Details</h4>
                 <dl className="space-y-2 text-sm">
                   {profile?.university && (
                     <div className="flex justify-between">
@@ -786,8 +781,8 @@ export function OptimizedProfile({
               <Separator className="bg-muted" />
               {/* Bio */}
               {profile?.bio && (
-                <div className="prose prose-sm prose-invert max-w-none">
-                  <h4 className="text-xs font-bold uppercase text-muted-foreground mb-2">Bio</h4>
+                <div className="prose prose-sm dark:prose-invert max-w-none">
+                  <h4 className="font-accent text-[10px] uppercase tracking-[0.25em] text-muted-foreground mb-2">Bio</h4>
                   <p className="text-muted-foreground leading-relaxed font-body">
                     {profile.bio}
                   </p>
@@ -798,10 +793,10 @@ export function OptimizedProfile({
 
               {/* Skills */}
               <div>
-                <h4 className="text-xs font-bold uppercase text-muted-foreground mb-3">Capabilities</h4>
+                <h4 className="font-accent text-[10px] uppercase tracking-[0.25em] text-muted-foreground mb-3">Capabilities</h4>
                 <div className="flex flex-wrap gap-2">
                   {(profileData?.skills || []).map((s: any) => (
-                    <Badge key={s.id} variant="secondary" className="bg-muted hover:bg-muted text-muted-foreground font-normal">
+                    <Badge key={s.id} variant="outline" className="bg-transparent border-border text-muted-foreground font-normal">
                       {s.name}
                     </Badge>
                   ))}
@@ -813,14 +808,14 @@ export function OptimizedProfile({
               <div className="flex gap-2 pt-2">
                 {profile?.githubUrl && (
                   <Link href={profile.githubUrl} target="_blank" className="flex-1">
-                    <Button variant="outline" size="sm" className="w-full gap-2 border-border bg-black/20 hover:bg-muted">
+                    <Button variant="outline" size="sm" className="w-full gap-2 border-border hover:border-primary/50 hover:text-primary-text">
                       <Github className="h-4 w-4" /> GitHub
                     </Button>
                   </Link>
                 )}
                 {profile?.linkedinUrl && (
                   <Link href={profile.linkedinUrl} target="_blank" className="flex-1">
-                    <Button variant="outline" size="sm" className="w-full gap-2 border-border bg-black/20 hover:bg-muted">
+                    <Button variant="outline" size="sm" className="w-full gap-2 border-border hover:border-primary/50 hover:text-primary-text">
                       <Linkedin className="h-4 w-4" /> LinkedIn
                     </Button>
                   </Link>
@@ -831,8 +826,8 @@ export function OptimizedProfile({
 
               <div>
                 <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-xs font-bold uppercase text-muted-foreground">Events Attended</h4>
-                  <Badge variant="secondary" className="bg-primary/20 text-primary hover:bg-primary/30 text-[10px]">
+                  <h4 className="font-accent text-[10px] uppercase tracking-[0.25em] text-muted-foreground">Events Attended</h4>
+                  <Badge variant="secondary" className="bg-primary/10 text-primary-text hover:bg-primary/20 text-[10px]">
                     {deduplicatedEventsAttended.length}
                   </Badge>
                 </div>
@@ -841,8 +836,8 @@ export function OptimizedProfile({
                   {deduplicatedEventsAttended.length > 0 ? (
                     deduplicatedEventsAttended.slice(0, 3).map((event: any) => (
                       <Link key={event.eventId} href={`/events/ticket/${event.ticketId}`}>
-                        <div className="flex items-center gap-3 p-2 rounded-lg bg-muted hover:bg-muted transition-colors group">
-                          <div className="h-10 w-10 shrink-0 rounded bg-muted flex items-center justify-center border border-white/5 group-hover:border-primary/50 overflow-hidden relative">
+                        <div className="flex items-center gap-3 p-2 rounded-lg border border-border/70 hover:border-primary/40 transition-colors group">
+                          <div className="h-10 w-10 shrink-0 rounded bg-muted/50 flex items-center justify-center border border-border group-hover:border-primary/50 overflow-hidden relative">
                             {event.uniqueTicketUrl ? (
                               <Image
                                 src={event.uniqueTicketUrl}
@@ -859,13 +854,13 @@ export function OptimizedProfile({
                             <p className="text-sm font-medium text-foreground truncate">{event.eventTitle}</p>
                             <p className="text-[10px] text-muted-foreground font-mono truncate">{event.ticketId}</p>
                           </div>
-                          <ArrowRight className="h-3 w-3 text-slate-600 group-hover:text-primary transition-colors shrink-0" />
+                          <ArrowRight className="h-3 w-3 text-muted-foreground group-hover:text-primary-text transition-colors shrink-0" />
                         </div>
                       </Link>
                     ))
                   ) : (
-                    <div className="text-center py-6 rounded-lg border border-dashed border-border bg-muted">
-                      <Ticket className="h-6 w-6 text-slate-600 mx-auto mb-2 opacity-20" />
+                    <div className="text-center py-6 rounded-lg border border-dashed border-border">
+                      <Ticket className="h-6 w-6 text-muted-foreground mx-auto mb-2 opacity-40" />
                       <p className="text-[10px] text-muted-foreground">No events attended yet.</p>
                     </div>
                   )}
@@ -882,7 +877,7 @@ export function OptimizedProfile({
 
           {/* Legal / Warnings Small */}
           {(isOwnProfile || sectionStatuses?.warnings?.success === false) && (
-            <Card className="border-border bg-background/80 backdrop-blur-md">
+            <Card className="border-border bg-card">
               <CardContent className="p-4 space-y-2">
                 {/* Terms Status */}
                 <div className="flex items-center justify-between text-sm">
@@ -913,23 +908,23 @@ export function OptimizedProfile({
         {/* RIGHT COLUMN: Tabs Content */}
         <div className="lg:col-span-8">
           <Tabs defaultValue="mission-control" className="w-full">
-            <TabsList className="w-full justify-start bg-background/80 border border-border p-1.5 h-auto rounded-xl backdrop-blur-md mb-6 gap-2 flex-wrap">
-              <TabsTrigger value="mission-control" className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-black text-muted-foreground py-2.5 px-4 rounded-lg transition-all font-heading tracking-wide">
+            <TabsList className="w-full justify-start bg-card border border-border p-1.5 h-auto rounded-lg mb-6 gap-2 flex-wrap">
+              <TabsTrigger value="mission-control" className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-muted-foreground hover:text-foreground py-2.5 px-4 rounded-md transition-all font-heading tracking-wide">
                 <Zap className="h-4 w-4" /> Mission Control
               </TabsTrigger>
-              <TabsTrigger value="my-team" className="flex items-center gap-2 data-[state=active]:bg-emerald-500 data-[state=active]:text-black text-muted-foreground py-2.5 px-4 rounded-lg transition-all font-heading tracking-wide">
+              <TabsTrigger value="my-team" className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-muted-foreground hover:text-foreground py-2.5 px-4 rounded-md transition-all font-heading tracking-wide">
                 <Users className="h-4 w-4" /> My Team
               </TabsTrigger>
-              <TabsTrigger value="projects" className="flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:text-black text-muted-foreground py-2.5 px-4 rounded-lg transition-all font-heading tracking-wide">
+              <TabsTrigger value="projects" className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-muted-foreground hover:text-foreground py-2.5 px-4 rounded-md transition-all font-heading tracking-wide">
                 <Rocket className="h-4 w-4" /> Projects
               </TabsTrigger>
-              <TabsTrigger value="certificates" className="flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:text-black text-muted-foreground py-2.5 px-4 rounded-lg transition-all font-heading tracking-wide">
+              <TabsTrigger value="certificates" className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-muted-foreground hover:text-foreground py-2.5 px-4 rounded-md transition-all font-heading tracking-wide">
                 <Trophy className="h-4 w-4" /> Credentials
               </TabsTrigger>
-              <TabsTrigger value="tickets" className="flex items-center gap-2 data-[state=active]:bg-cyan-500 data-[state=active]:text-black text-muted-foreground py-2.5 px-4 rounded-lg transition-all font-heading tracking-wide">
+              <TabsTrigger value="tickets" className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-muted-foreground hover:text-foreground py-2.5 px-4 rounded-md transition-all font-heading tracking-wide">
                 <Ticket className="h-4 w-4" /> Tickets
               </TabsTrigger>
-              <TabsTrigger value="orders" className="flex items-center gap-2 data-[state=active]:bg-amber-500 data-[state=active]:text-black text-muted-foreground py-2.5 px-4 rounded-lg transition-all font-heading tracking-wide">
+              <TabsTrigger value="orders" className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-muted-foreground hover:text-foreground py-2.5 px-4 rounded-md transition-all font-heading tracking-wide">
                 <ShoppingBag className="h-4 w-4" /> Orders
               </TabsTrigger>
             </TabsList>
@@ -938,8 +933,8 @@ export function OptimizedProfile({
             <TabsContent value="mission-control" className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
               {/* Warnings Section (Extended) */}
               {warnings && warnings.length > 0 && (
-                <Card className="border-amber-500/50 bg-amber-950/20">
-                  <CardHeader className="pb-3"><CardTitle className="text-amber-500 flex items-center gap-2"><AlertTriangle className="h-5 w-5" /> Active Directives & Warnings</CardTitle></CardHeader>
+                <Card className="border-amber-500/40 bg-amber-500/5">
+                  <CardHeader className="pb-3"><CardTitle className="text-amber-600 dark:text-amber-500 font-heading tracking-wide flex items-center gap-2"><AlertTriangle className="h-5 w-5" /> Active Directives & Warnings</CardTitle></CardHeader>
                   <CardContent>
                     <div className="space-y-2">
                       {warnings.map((w: any) => (
@@ -981,7 +976,7 @@ export function OptimizedProfile({
             <TabsContent value="projects" className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
               {/* Badges Row */}
               {badges && badges.length > 0 && (
-                <div className="flex flex-wrap gap-4 mb-6 p-4 rounded-xl border border-border bg-muted">
+                <div className="flex flex-wrap gap-4 mb-6 p-4 rounded-lg border border-border bg-card">
                   {badges.map((b: any) => (
                     b.imageUrl ? (
                       <div key={b.slug} className="flex flex-col items-center gap-1 group">
@@ -1000,27 +995,27 @@ export function OptimizedProfile({
               <div className="grid grid-cols-1 gap-4">
                 {projects && projects.length > 0 ? projects.map((project: any) => (
                   <Link key={project.id} href={`/projects/detail?slug=${project.id}`}>
-                    <Card className="group border-border bg-background/80 hover:bg-muted transition-all hover:border-primary/50 overflow-hidden">
+                    <Card className="group border-border bg-card transition-all hover:border-primary/40 overflow-hidden">
                       <div className="flex md:items-center gap-5 p-5">
                         <div className="relative h-20 w-20 shrink-0 rounded-lg overflow-hidden bg-muted">
                           <Image src={project.imageUrl || '/images/placeholder-project.jpg'} alt={project.title} fill sizes="80px" className="object-cover group-hover:scale-110 transition duration-700" />
                         </div>
                         <div className="flex-1">
-                          <h3 className="text-xl font-heading font-bold text-foreground mb-1 group-hover:text-primary transition-colors">{project.title}</h3>
+                          <h3 className="text-xl font-heading font-bold text-foreground mb-1 group-hover:text-primary-text transition-colors">{project.title}</h3>
                           <p className="text-muted-foreground text-sm line-clamp-2 md:line-clamp-1 mb-2">{project.description}</p>
                           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                            <Activity className="h-3 w-3" /> Active Project
+                            <Activity className="h-3 w-3 text-primary-text" /> Active Project
                           </div>
                         </div>
                         <div className="hidden md:block">
-                          <ArrowRight className="h-5 w-5 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
+                          <ArrowRight className="h-5 w-5 text-muted-foreground group-hover:text-primary-text group-hover:translate-x-1 transition-all" />
                         </div>
                       </div>
                     </Card>
                   </Link>
                 )) : (
-                  <div className="text-center py-12 border border-dashed border-border rounded-xl bg-muted">
-                    <Rocket className="h-10 w-10 text-slate-600 mx-auto mb-3" />
+                  <div className="text-center py-12 border border-dashed border-border rounded-lg">
+                    <Rocket className="h-10 w-10 text-muted-foreground/50 mx-auto mb-3" />
                     <p className="text-muted-foreground">No active project assignments.</p>
                   </div>
                 )}

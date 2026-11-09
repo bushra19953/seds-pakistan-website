@@ -130,7 +130,7 @@ function statusBadgeClass(status: string | undefined): string {
     const s = (status || 'pending').toLowerCase();
     if (s === 'approved') return 'border-green-500/30 bg-green-500/10 text-green-600';
     if (s === 'rejected') return 'border-red-500/30 bg-red-500/10 text-red-600';
-    if (s === 'completed') return 'border-blue-500/30 bg-blue-500/10 text-blue-600';
+    if (s === 'completed') return 'border-green-500/30 bg-green-500/10 text-green-600';
     if (s === 'cancelled') return 'border-border bg-muted text-muted-foreground';
     return 'border-amber-500/30 bg-amber-500/10 text-amber-600';
 }
@@ -165,16 +165,16 @@ function LeaveRequestsList({
 }) {
     return (
         <div id="leave-requests" className="space-y-3">
-            <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-widest text-muted-foreground">
-                <ListChecks className="h-4 w-4" /> My Leave Requests
+            <h3 className="flex items-center gap-2 font-accent text-[10px] font-semibold uppercase tracking-[0.25em] text-muted-foreground">
+                <ListChecks className="h-4 w-4 text-primary-text" /> My Leave Requests
             </h3>
             {loading ? (
                 <div className="space-y-2">
-                    <Skeleton className="h-16 w-full rounded-xl" />
-                    <Skeleton className="h-16 w-full rounded-xl" />
+                    <Skeleton className="h-16 w-full rounded-lg" />
+                    <Skeleton className="h-16 w-full rounded-lg" />
                 </div>
             ) : error ? (
-                <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm">
+                <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm">
                     <p className="flex items-center gap-2 font-medium text-red-600">
                         <AlertCircle className="h-4 w-4" /> Could not load your leave requests.
                     </p>
@@ -184,7 +184,7 @@ function LeaveRequestsList({
                     </Button>
                 </div>
             ) : requests.length === 0 ? (
-                <p className="rounded-xl border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
+                <p className="rounded-lg border border-border p-3 text-sm text-muted-foreground">
                     You have no leave requests yet. Approved requests show here with their status.
                 </p>
             ) : (
@@ -194,7 +194,7 @@ function LeaveRequestsList({
                         const end = formatLeaveDate(req.endDate);
                         const created = formatLeaveDate(req.createdAt);
                         return (
-                            <li key={req.id} className="rounded-xl border border-border bg-muted/40 p-3">
+                            <li key={req.id} className="rounded-lg border border-border/70 p-3">
                                 <div className="flex flex-wrap items-center justify-between gap-2">
                                     <span className="flex items-center gap-2 text-sm font-medium">
                                         <CalendarDays className="h-4 w-4 text-muted-foreground" />
@@ -433,8 +433,8 @@ export default function VacationToggle() {
                     <CardDescription>Loading your leave status...</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-2">
-                    <Skeleton className="h-6 w-2/3 rounded-xl" />
-                    <Skeleton className="h-10 w-full rounded-xl" />
+                    <Skeleton className="h-6 w-2/3 rounded-lg" />
+                    <Skeleton className="h-10 w-full rounded-lg" />
                 </CardContent>
             </Card>
         );
@@ -464,8 +464,8 @@ export default function VacationToggle() {
                     <CardDescription>Loading your leave status...</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-2">
-                    <Skeleton className="h-6 w-2/3 rounded-xl" />
-                    <Skeleton className="h-10 w-full rounded-xl" />
+                    <Skeleton className="h-6 w-2/3 rounded-lg" />
+                    <Skeleton className="h-10 w-full rounded-lg" />
                 </CardContent>
             </Card>
         );
@@ -492,12 +492,12 @@ export default function VacationToggle() {
     }
 
     return (
-        <Card>
-            <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                    <Palmtree className="h-5 w-5" /> Leave
+        <Card className="border-border bg-card overflow-hidden">
+            <CardHeader className="border-b border-border pb-4">
+                <CardTitle className="flex items-center gap-2 font-accent text-xs font-semibold uppercase tracking-[0.25em]">
+                    <Palmtree className="h-4 w-4 text-primary-text" /> Leave
                 </CardTitle>
-                <CardDescription>
+                <CardDescription className="pt-2">
                     {isOnLeave
                         ? 'You are on leave. New tasks cannot be assigned to you until you return.'
                         : 'Apply for leave, or check the status of your requests.'}
@@ -514,7 +514,7 @@ export default function VacationToggle() {
                 ) : null}
 
                 {returnResult ? (
-                    <div className="rounded-xl border border-green-500/30 bg-green-500/10 p-3 text-sm">
+                    <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-3 text-sm">
                         <p className="flex items-center gap-2 font-medium text-green-600">
                             <CheckCircle2 className="h-4 w-4" /> Welcome back. Your return from leave is complete.
                         </p>
@@ -562,7 +562,7 @@ export default function VacationToggle() {
                             your covering officer stay with them unless the admin moves them back.
                         </p>
                         {returnError ? (
-                            <p className="flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-600">
+                            <p className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-600">
                                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /> {returnError}
                             </p>
                         ) : null}
@@ -605,7 +605,7 @@ export default function VacationToggle() {
                             <span className="text-sm text-muted-foreground">You are not on leave.</span>
                         </div>
                         <div className="space-y-2">
-                            <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground">
+                            <h3 className="font-accent text-[10px] font-semibold uppercase tracking-[0.25em] text-muted-foreground">
                                 Apply for Leave
                             </h3>
                             <p className="text-sm text-muted-foreground">
@@ -613,12 +613,12 @@ export default function VacationToggle() {
                                 It does not move your current tasks automatically, so ask an admin to
                                 reassign them to your covering officer.
                             </p>
-                            <Button asChild className="gap-2">
+                            <Button asChild className="gap-2 font-accent text-[11px] font-semibold uppercase tracking-[0.15em]">
                                 <Link href="/profile/leave">Apply for Leave</Link>
                             </Button>
                         </div>
                         {returnError ? (
-                            <p className="flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-600">
+                            <p className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-600">
                                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /> {returnError}
                             </p>
                         ) : null}

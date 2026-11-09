@@ -1,0 +1,7 @@
+# ads.txt — SEDS Pakistan (sedspakistan.live)
+# No advertising partner is authorised yet, so there are no seller lines.
+# When the society's Google AdSense account exists, add its line here in
+# the form: google.com, pub-XXXXXXXXXXXXXXXX, DIRECT, f08c47fec0942fa0
+# Replace the X's with the real publisher ID from that account. Never
+# invent a publisher ID: an ads.txt line with a made-up ID authorises a
+# stranger to sell this site's ad space.

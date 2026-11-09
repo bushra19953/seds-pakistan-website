@@ -245,8 +245,8 @@ export function TaskHistory({ userId }: TaskHistoryProps) {
             <CardHeader className="px-0 pt-0">
                 <div className="flex items-center justify-between">
                     <div>
-                        <CardTitle className="flex items-center gap-2 text-xl font-black tracking-tight uppercase text-muted-foreground">
-                            <History className="h-5 w-5" />
+                        <CardTitle className="flex items-center gap-2 font-heading text-2xl tracking-[0.03em] uppercase text-foreground">
+                            <History className="h-5 w-5 text-primary-text" />
                             Mission Archives
                         </CardTitle>
                         <CardDescription className="text-sm font-medium">
@@ -257,7 +257,7 @@ export function TaskHistory({ userId }: TaskHistoryProps) {
                         variant="outline"
                         size="sm"
                         onClick={toggleExpand}
-                        className="border-slate-700 hover:bg-muted"
+                        className="border-border hover:border-primary/50 hover:bg-muted"
                     >
                         {loading ? (
                             <>Loading...</>

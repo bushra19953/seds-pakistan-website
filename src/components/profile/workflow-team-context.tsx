@@ -31,17 +31,17 @@ export function WorkflowTeamContext({ members, currentUserId }: WorkflowTeamCont
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/70 flex items-center gap-2">
-          <Info className="h-3 w-3" /> Mission Squad Context
+        <h4 className="font-accent text-[10px] font-semibold uppercase tracking-[0.25em] text-muted-foreground flex items-center gap-2">
+          <Info className="h-3 w-3 text-primary-text" /> Mission Squad Context
         </h4>
-        <Badge variant="outline" className="text-[9px] font-mono border-primary/20 bg-primary/5 text-primary/80">
+        <Badge variant="outline" className="text-[9px] font-code border-border text-muted-foreground">
           {members.length} UNITS ASSIGNED
         </Badge>
       </div>
 
       <div className="relative flex items-center justify-between gap-2 py-4 px-2 overflow-x-auto no-scrollbar">
         {/* Connection Line */}
-        <div className="absolute top-1/2 left-8 right-8 h-[2px] bg-muted -translate-y-1/2 z-0" />
+        <div className="absolute top-1/2 left-8 right-8 h-px bg-border -translate-y-1/2 z-0" />
 
         {sortedMembers.map((member, idx) => {
           const isYou = member.uid === currentUserId;
@@ -56,14 +56,14 @@ export function WorkflowTeamContext({ members, currentUserId }: WorkflowTeamCont
                   <TooltipTrigger asChild>
                     <div className="relative">
                       <div className={`
-                        h-12 w-12 rounded-2xl border-2 p-0.5 transition-all duration-500
-                        ${isActive ? 'border-primary shadow-[0_0_15px_rgba(59,130,246,0.4)] scale-110 bg-primary/10' : 
-                          isDone ? 'border-emerald-500 bg-emerald-500/10' : 
-                          'border-slate-800 bg-card'}
+                        h-12 w-12 rounded-lg border p-0.5 transition-all duration-500
+                        ${isActive ? 'border-primary scale-110 bg-primary/10' : 
+                          isDone ? 'border-emerald-500/60 bg-emerald-500/10' : 
+                          'border-border bg-card'}
                       `}>
-                        <Avatar className="h-full w-full rounded-xl">
+                        <Avatar className="h-full w-full rounded-md">
                           <AvatarImage src={member.photoURL} alt={member.name} />
-                          <AvatarFallback className="bg-muted text-[10px] font-black">
+                          <AvatarFallback className="bg-muted text-[10px] font-accent font-semibold">
                             {member.name.substring(0, 2).toUpperCase()}
                           </AvatarFallback>
                         </Avatar>
@@ -71,21 +71,21 @@ export function WorkflowTeamContext({ members, currentUserId }: WorkflowTeamCont
 
                       {/* Status Icon Overlay */}
                       <div className={`
-                        absolute -bottom-1 -right-1 h-5 w-5 rounded-full border-2 border-slate-950 flex items-center justify-center
+                        absolute -bottom-1 -right-1 h-5 w-5 rounded-full border-2 border-card flex items-center justify-center
                         ${isDone ? 'bg-emerald-500' : isActive ? 'bg-primary' : 'bg-muted'}
                       `}>
-                        {isDone ? <CheckCircle2 className="h-3 w-3 text-black" /> : 
-                         isActive ? <Clock className="h-3 w-3 text-black animate-pulse" /> : 
+                        {isDone ? <CheckCircle2 className="h-3 w-3 text-primary-foreground" /> : 
+                         isActive ? <Clock className="h-3 w-3 text-primary-foreground animate-pulse" /> : 
                          <AlertCircle className="h-3 w-3 text-muted-foreground" />}
                       </div>
                     </div>
                   </TooltipTrigger>
-                  <TooltipContent className="bg-slate-950 border-slate-800 text-foreground p-3 space-y-2">
+                  <TooltipContent className="bg-card border-border text-foreground p-3 space-y-2">
                     <div className="space-y-0.5">
-                      <p className="text-xs font-black uppercase tracking-wider">{member.name} {isYou && '(YOU)'}</p>
+                      <p className="font-accent text-[11px] font-semibold uppercase tracking-wider">{member.name} {isYou && '(YOU)'}</p>
                       <p className="text-[10px] text-muted-foreground">{member.role || member.position || 'Team Member'}</p>
                     </div>
-                    <div className="pt-2 border-t border-slate-800 flex gap-2">
+                    <div className="pt-2 border-t border-border flex gap-2">
                       {member.whatsapp && (
                         <a 
                           href={`https://wa.me/${member.whatsapp.replace(/[^0-9]/g, '')}`} 
@@ -107,7 +107,7 @@ export function WorkflowTeamContext({ members, currentUserId }: WorkflowTeamCont
                       <Link
                         href={`/profile/unified?uid=${member.uid}`}
                         prefetch={false}
-                        className="p-1.5 rounded-lg bg-muted text-muted-foreground hover:bg-white hover:text-black transition-colors"
+                        className="p-1.5 rounded-lg bg-muted text-muted-foreground hover:bg-primary hover:text-primary-foreground transition-colors"
                       >
                         <Info className="h-3.5 w-3.5" />
                       </Link>
@@ -117,10 +117,10 @@ export function WorkflowTeamContext({ members, currentUserId }: WorkflowTeamCont
               </TooltipProvider>
 
               <div className="text-center space-y-0.5">
-                <p className={`text-[9px] font-black uppercase tracking-widest truncate max-w-[70px] ${isActive ? 'text-primary' : 'text-muted-foreground'}`}>
+                <p className={`font-accent text-[9px] font-semibold uppercase tracking-[0.15em] truncate max-w-[70px] ${isActive ? 'text-primary-text' : 'text-muted-foreground'}`}>
                   {isYou ? 'YOU' : member.name.split(' ')[0]}
                 </p>
-                <p className="text-[8px] font-mono text-muted-foreground/50 uppercase tracking-tighter">
+                <p className="text-[8px] font-code text-muted-foreground/60 uppercase tracking-tighter">
                   STEP {member.sequenceIndex + 1}
                 </p>
               </div>

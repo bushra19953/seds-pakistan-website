@@ -74,8 +74,11 @@ export default function AdSlot({
 
   if (!config) return null;
 
+  // Only reachable when ads are enabled: reserve the unit's height so an
+  // ad loading late never shifts the article (CLS). The disabled state
+  // above renders nothing at all — no box, no reserved space.
   return (
-    <div className={className} data-ad-placement={placement}>
+    <div className={`${className} min-h-[160px]`} data-ad-placement={placement}>
       <Script
         src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${config.client}`}
         strategy="afterInteractive"

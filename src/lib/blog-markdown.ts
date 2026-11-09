@@ -38,14 +38,14 @@ function getPurifier(): Purifier | null {
   if (purifier || purifierUnavailable) return purifier;
   try {
     if (typeof window !== 'undefined') {
-      purifier = createDOMPurify(window as unknown as Window);
+      purifier = createDOMPurify(window as unknown as any);
     } else {
       // Server: DOMPurify needs a DOM. jsdom is already in the dependency
       // tree (jest environment), so bind to a throwaway jsdom window
       // exactly like isomorphic-dompurify does.
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { JSDOM } = require('jsdom');
-      purifier = createDOMPurify(new JSDOM('').window as unknown as Window);
+      purifier = createDOMPurify(new JSDOM('').window as unknown as any);
     }
     if (!purifier || !(purifier as unknown as { isSupported?: boolean }).isSupported) {
       purifier = null;
@@ -108,7 +108,7 @@ function renderInline(text: string): string {
     keep(
       `<img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}"${
         title ? ` title="${escapeHtml(title)}"` : ''
-      } loading="lazy">`,
+      } loading="lazy" decoding="async">`,
     ),
   );
   out = out.replace(/\[([^\]]+)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)/g, (_m, label: string, href: string, title?: string) =>
@@ -372,6 +372,17 @@ export function splitHtmlAtSection(
   return { leadHtml, restHtml };
 }
 
+/**
+ * Body images load lazily with async decoding so a long article never
+ * blocks on its figures. Applies to both render paths (the markdown
+ * renderer already emits the attributes; this covers raw-HTML bodies).
+ */
+export function withLazyImages(html: string): string {
+  return html
+    .replace(/<img\b(?![^>]*\bloading=)/gi, '<img loading="lazy" decoding="async"')
+    .replace(/<img\b(?=[^>]*\bloading=)(?![^>]*\bdecoding=)/gi, '<img decoding="async"');
+}
+
 export interface RenderedBlogBody {
   /** Full sanitized article HTML. */
   html: string;
@@ -398,9 +409,11 @@ export function renderBlogBody(
     return { html: '', leadHtml: '', restHtml: null, wordCount: 0, readingMinutes: 0 };
   }
 
-  const html = looksLikeHtmlBody(raw)
-    ? sanitizeBlogHtml(raw)
-    : sanitizeBlogHtml(renderMarkdownSubset(stripDuplicateTitleHeading(raw, opts?.title)));
+  const html = withLazyImages(
+    looksLikeHtmlBody(raw)
+      ? sanitizeBlogHtml(raw)
+      : sanitizeBlogHtml(renderMarkdownSubset(stripDuplicateTitleHeading(raw, opts?.title))),
+  );
 
   const wordCount = countHtmlWords(html);
   const { leadHtml, restHtml } = splitHtmlAtSection(html);

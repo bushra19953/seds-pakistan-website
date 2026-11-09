@@ -64,6 +64,15 @@ describe('markdown rendering', () => {
     expect(html).toContain('alt="Tiangong station"');
   });
 
+  it('marks body images lazy + async-decoded on both render paths', () => {
+    const fromMarkdown = renderBlogBody('![x](https://example.com/a.jpg)').html;
+    expect(fromMarkdown).toContain('loading="lazy"');
+    expect(fromMarkdown).toContain('decoding="async"');
+    const fromHtml = renderBlogBody('<p>lead</p><p><img src="https://example.com/b.jpg" alt="b"></p>').html;
+    expect(fromHtml).toContain('loading="lazy"');
+    expect(fromHtml).toContain('decoding="async"');
+  });
+
   it('paragraph-wraps plain text bodies split by blank lines', () => {
     const { html } = renderBlogBody('First plain paragraph.\n\nSecond plain paragraph.');
     expect(html).toContain('<p>First plain paragraph.</p>');

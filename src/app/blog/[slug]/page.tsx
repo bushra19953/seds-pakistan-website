@@ -22,17 +22,34 @@ export async function generateMetadata(
       };
     }
 
+    const canonical = `https://sedspakistan.live/blog/${blog.slug || slug}`;
+    const description = blog.metaDescription || blog.summary || blog.body?.substring(0, 160);
+    // Cover image when the post has one; otherwise the site's default
+    // OG card, so a share of a cover-less post still carries an image.
+    const shareImage = blog.thumbnailUrl || 'https://sedspakistan.live/images/og-image.jpg';
+
     return {
       title: blog.metaTitle || blog.title,
-      description: blog.metaDescription || blog.summary || blog.body?.substring(0, 160),
+      description,
       keywords: blog.keywords,
+      alternates: {
+        canonical,
+      },
       openGraph: {
         title: blog.title,
-        description: blog.summary || blog.body?.substring(0, 160),
-        images: blog.thumbnailUrl ? [blog.thumbnailUrl] : [],
+        description,
+        url: canonical,
+        images: [shareImage],
         type: 'article',
         publishedTime: blog.publishedAt ? new Date(blog.publishedAt as any).toISOString() : undefined,
         authors: blog.authorName ? [blog.authorName] : [],
+      },
+      twitter: {
+        card: 'summary_large_image',
+        title: blog.title,
+        description,
+        images: [shareImage],
+        creator: '@SEDSPakistan',
       },
     };
   } catch (error) {

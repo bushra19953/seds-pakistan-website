@@ -52,12 +52,12 @@ export default function FiltersClient() {
   };
 
   return (
-    <Card>
+    <Card className="lg:sticky lg:top-24">
       <CardContent className="pt-6">
-        <h2 className="text-lg font-semibold mb-4">Filters</h2>
-        <div className="space-y-4">
+        <h2 className="font-headline uppercase tracking-wide text-2xl text-foreground mb-5">Filters</h2>
+        <div className="space-y-5">
           <div>
-            <label className="text-sm font-medium mb-2 block">Search</label>
+            <label className="font-accent text-[11px] uppercase tracking-[0.2em] text-muted-foreground mb-2 block">Search</label>
             <Input
               placeholder="Search posts..."
               value={searchTerm}
@@ -65,7 +65,7 @@ export default function FiltersClient() {
             />
           </div>
           <div>
-            <label className="text-sm font-medium mb-2 block">Category</label>
+            <label className="font-accent text-[11px] uppercase tracking-[0.2em] text-muted-foreground mb-2 block">Category</label>
             <SelectErrorBoundary type="category" label="Category">
               <Select value={selectedCategory} onValueChange={setSelectedCategory}>
                 <SelectTrigger>
@@ -89,7 +89,7 @@ export default function FiltersClient() {
             </SelectErrorBoundary>
           </div>
           <div>
-            <label className="text-sm font-medium mb-2 block">Author</label>
+            <label className="font-accent text-[11px] uppercase tracking-[0.2em] text-muted-foreground mb-2 block">Author</label>
             <SelectErrorBoundary type="author" label="Author">
               <Select
                 value={selectedAuthor}

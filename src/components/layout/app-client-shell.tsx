@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { ThemeProvider } from "@/components/theme-provider";
 import { FirebaseClientProvider } from "@/firebase/client-provider";
 import HeaderVisibility from "@/components/layout/header-visibility";
+import Starfield from "@/components/layout/starfield";
 import { Toaster } from "@/components/ui/toaster";
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
@@ -65,9 +66,27 @@ function AuthorityListener() {
   return null;
 }
 
+// The signed-in operating system (admin console, profile workspace,
+// mission/task surfaces, account utilities) is an app shell, not the
+// public site: the global starfield never mounts there. Everything
+// else is a public page and shares the one seeded sky.
+const APP_SHELL_PREFIXES = [
+  '/admin',
+  '/profile',
+  '/tasks',
+  '/user',
+  '/notifications',
+  '/copilot',
+  '/organizations-admin',
+  '/meetings',
+  '/banned',
+  '/site-paused',
+];
+
 export default function AppClientShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isAdminRoute = pathname?.startsWith('/admin');
+  const isAppShellRoute = APP_SHELL_PREFIXES.some((prefix) => pathname?.startsWith(prefix));
   const isProfileRoute = pathname?.startsWith('/profile');
   const isHome = pathname === '/';
   // Disable Vanta on heavy pages to improve performance
@@ -83,6 +102,15 @@ export default function AppClientShell({ children }: { children: React.ReactNode
     <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
       {/* Only load VantaBackground on non-admin/non-profile routes to prevent performance issues */}
       {!shouldDisableVanta && <VantaBackground />}
+      {/* Global starfield: one seeded sky behind every public page.
+          Mounted AFTER VantaBackground on purpose: both layers are
+          fixed at z-0, so DOM order decides paint order, and Vanta's
+          opaque WebGL canvas (desktop, routes where it still runs)
+          would otherwise bury the seeded chart under its own sky a
+          few seconds after load. The chart is transparent between
+          its stars, so Vanta's ambient motion still reads beneath
+          it; everywhere Vanta is disabled, the chart is the sky. */}
+      {!isAppShellRoute && <Starfield />}
       <FirebaseClientProvider>
         <AuthorityListener />
         <MandatoryProfileCheck />

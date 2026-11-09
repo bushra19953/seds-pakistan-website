@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { Metadata } from 'next';
 import BlogSlugPageClient from './page-client';
 import { getBlogBySlug, getRelatedBlogs } from '@/lib/server/blog-server';
+import { renderBlogBody } from '@/lib/blog-markdown';
 
 // Generate metadata for SEO
 export async function generateMetadata(
@@ -21,17 +22,34 @@ export async function generateMetadata(
       };
     }
 
+    const canonical = `https://sedspakistan.live/blog/${blog.slug || slug}`;
+    const description = blog.metaDescription || blog.summary || blog.body?.substring(0, 160);
+    // Cover image when the post has one; otherwise the site's default
+    // OG card, so a share of a cover-less post still carries an image.
+    const shareImage = blog.thumbnailUrl || 'https://sedspakistan.live/images/og-image.jpg';
+
     return {
       title: blog.metaTitle || blog.title,
-      description: blog.metaDescription || blog.summary || blog.body?.substring(0, 160),
+      description,
       keywords: blog.keywords,
+      alternates: {
+        canonical,
+      },
       openGraph: {
         title: blog.title,
-        description: blog.summary || blog.body?.substring(0, 160),
-        images: blog.thumbnailUrl ? [blog.thumbnailUrl] : [],
+        description,
+        url: canonical,
+        images: [shareImage],
         type: 'article',
         publishedTime: blog.publishedAt ? new Date(blog.publishedAt as any).toISOString() : undefined,
         authors: blog.authorName ? [blog.authorName] : [],
+      },
+      twitter: {
+        card: 'summary_large_image',
+        title: blog.title,
+        description,
+        images: [shareImage],
+        creator: '@SEDSPakistan',
       },
     };
   } catch (error) {
@@ -68,6 +86,30 @@ export default async function BlogSlugPage({
   // (same category, published, excluding self and soft-deleted posts).
   const related = await getRelatedBlogs(blog);
 
+  // Render the stored body (markdown / HTML / plain text) to sanitized
+  // HTML here on the server, so the first paint — and every crawler —
+  // gets the full article. The client component used to sanitize the raw
+  // body itself and returned '' until hydration, which is why readers
+  // saw literal markdown and "No content available".
+  const bodyRender = renderBlogBody(blog.body, { title: blog.title });
+
+  // Format the publish date on the server in UTC so the readout is part
+  // of the first paint and cannot hydration-mismatch.
+  const gbDate = (value: unknown): string => {
+    if (!value) return '';
+    const d = new Date(value as string);
+    if (Number.isNaN(d.getTime())) return '';
+    return new Intl.DateTimeFormat('en-GB', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      timeZone: 'UTC',
+    }).format(d);
+  };
+  const publishedLabel = gbDate(blog.publishedAt || blog.createdAt);
+  const updatedLabel =
+    blog.updatedAt && blog.updatedAt !== blog.createdAt ? gbDate(blog.updatedAt) : '';
+
   return (
     <Suspense fallback={
       <div className="relative flex min-h-screen flex-col items-center justify-center">
@@ -77,7 +119,15 @@ export default async function BlogSlugPage({
         </div>
       </div>
     }>
-      <BlogSlugPageClient blog={blog} related={related} />
+      <BlogSlugPageClient
+        blog={blog}
+        related={related}
+        bodyHtml={bodyRender.leadHtml}
+        bodyRestHtml={bodyRender.restHtml}
+        readingMinutes={bodyRender.readingMinutes}
+        publishedLabel={publishedLabel}
+        updatedLabel={updatedLabel}
+      />
     </Suspense>
   );
 }

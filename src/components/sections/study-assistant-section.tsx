@@ -66,7 +66,7 @@ export default function StudyAssistantSection() {
   };
 
   return (
-    <section id="study-assistant" className="py-16 md:py-24 bg-background/50 backdrop-blur-sm">
+    <section id="study-assistant" className="py-20 md:py-32 bg-transparent">
       <div className="container mx-auto px-4 md:px-6">
         <div className="max-w-3xl mx-auto text-center animate-in fade-in slide-in-from-bottom-12 duration-500">
           <div className="mb-8">
@@ -80,7 +80,7 @@ export default function StudyAssistantSection() {
                   <button
                     type="button"
                     aria-label="What is this AI feature?"
-                    className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-primary/10 text-primary font-bold"
+                    className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-primary/10 text-primary-text font-bold"
                   >
                     !
                   </button>
@@ -103,7 +103,7 @@ export default function StudyAssistantSection() {
             </Alert>
           )}
 
-          <Card className="border-accent/20 shadow-xl shadow-accent/10">
+          <Card className="border-border">
             <CardContent className="p-6">
               <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-4">
                 <div className="flex-grow space-y-2">

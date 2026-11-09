@@ -273,7 +273,7 @@ export default function CredibilityMarquee({ data: propData }: CredibilityMarque
   // Error state
   if (error && !data) {
     return (
-      <section className="py-12 bg-gradient-to-r from-muted/20 via-background to-muted/20 border-y border-border/20">
+      <section className="py-12 bg-muted/20 border-y border-border/20">
         <div className="container mx-auto px-4 md:px-6">
           <div className="text-center">
             <h2 className="text-2xl md:text-3xl font-bold text-glow mb-4">
@@ -298,7 +298,7 @@ export default function CredibilityMarquee({ data: propData }: CredibilityMarque
   // Loading state
   if (loading && !data) {
     return (
-      <section className="py-12 bg-gradient-to-r from-muted/20 via-background to-muted/20 border-y border-border/20">
+      <section className="py-12 bg-muted/20 border-y border-border/20">
         <div className="container mx-auto px-4 md:px-6">
           <div className="text-center mb-8">
             <h2 className="text-2xl md:text-3xl font-bold text-glow mb-2">
@@ -372,7 +372,7 @@ export default function CredibilityMarquee({ data: propData }: CredibilityMarque
 
   if (!hasAnyOrganizations) {
     return (
-      <section className="py-12 bg-gradient-to-r from-muted/20 via-background to-muted/20 border-y border-border/20">
+      <section className="py-12 bg-muted/20 border-y border-border/20">
         <div className="container mx-auto px-4 md:px-6">
           <div className="text-center">
             <h2 className="text-2xl md:text-3xl font-bold text-glow mb-4">

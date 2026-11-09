@@ -132,6 +132,11 @@ const EditBlogPostContent = () => {
         news_article_url: values.newsArticleUrl?.trim() || null,
         summary: values.summary?.trim() || '',
         thumbnail_url: values.thumbnailUrl?.trim() || '',
+        // Category was collected by the form but never sent: every edit
+        // save left the stored categoryId untouched (or normalised to
+        // 'general' on read), so a chosen category appeared to revert.
+        // Mirror the create page, which has always sent it.
+        categoryId: values.categoryId || 'general',
         // Restoring an archived post: the REST DELETE sets `deleted` together
         // with status 'archived'. Saving the post back to a live status must
         // clear the flag, or the post stays hidden from the admin list under

@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { Metadata } from 'next';
 import BlogSlugPageClient from './page-client';
 import { getBlogBySlug, getRelatedBlogs } from '@/lib/server/blog-server';
+import { renderBlogBody } from '@/lib/blog-markdown';
 
 // Generate metadata for SEO
 export async function generateMetadata(
@@ -68,6 +69,25 @@ export default async function BlogSlugPage({
   // (same category, published, excluding self and soft-deleted posts).
   const related = await getRelatedBlogs(blog);
 
+  // Render the stored body (markdown / HTML / plain text) to sanitized
+  // HTML here on the server, so the first paint — and every crawler —
+  // gets the full article. The client component used to sanitize the raw
+  // body itself and returned '' until hydration, which is why readers
+  // saw literal markdown and "No content available".
+  const bodyRender = renderBlogBody(blog.body, { title: blog.title });
+
+  // Format the publish date on the server in UTC so the readout is part
+  // of the first paint and cannot hydration-mismatch.
+  const publishedSource = blog.publishedAt || blog.createdAt;
+  const publishedLabel = publishedSource
+    ? new Intl.DateTimeFormat('en-GB', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+        timeZone: 'UTC',
+      }).format(new Date(publishedSource as unknown as string))
+    : '';
+
   return (
     <Suspense fallback={
       <div className="relative flex min-h-screen flex-col items-center justify-center">
@@ -77,7 +97,14 @@ export default async function BlogSlugPage({
         </div>
       </div>
     }>
-      <BlogSlugPageClient blog={blog} related={related} />
+      <BlogSlugPageClient
+        blog={blog}
+        related={related}
+        bodyHtml={bodyRender.leadHtml}
+        bodyRestHtml={bodyRender.restHtml}
+        readingMinutes={bodyRender.readingMinutes}
+        publishedLabel={publishedLabel}
+      />
     </Suspense>
   );
 }

@@ -634,7 +634,7 @@ export function OptimizedProfile({
           {/* Info */}
           <div className="flex-1 mb-2">
             <div className="flex flex-col">
-              <h1 className="text-3xl md:text-5xl font-heading font-bold text-foreground tracking-[0.02em] mb-2">
+              <h1 className="text-3xl md:text-5xl font-heading font-bold text-white tracking-[0.02em] mb-2">
                 {profile?.displayName || 'Unknown User'}
               </h1>
               <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">

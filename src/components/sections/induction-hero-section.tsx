@@ -68,6 +68,15 @@ export default function InductionHeroSection() {
   // its normal label (fail-safe: nothing renders as open pre-fetch).
   const { window: intakeWindow, state: intakeState } = useIntakeWindow('induction');
   const applicationsClosed = intakeState !== 'open';
+  // Resolved non-open states (closed, scheduled, cancelled, none)
+  // state the fact exactly once: the disabled primary-slot button
+  // carries the label, the secondary slot renders nothing and the
+  // countdown stays silent. The hero used to say it three times —
+  // two disabled buttons plus the red countdown line. While loading,
+  // showClosedIndicator is false and both disabled placeholders
+  // render with their normal labels (fail-safe: nothing reads as
+  // closed before the window resolves).
+  const showClosedIndicator = applicationsClosed && intakeState !== 'loading';
   const ctaDisabledLabel =
     intakeState === 'loading'
       ? 'Apply Now'
@@ -183,27 +192,30 @@ export default function InductionHeroSection() {
   return (
     <section
       id="induction-hero"
-      className="relative w-full overflow-hidden border-none z-10 bg-transparent flex items-center justify-center min-h-[94vh] py-24"
+      className="relative w-full overflow-hidden border-none z-10 bg-transparent flex flex-col items-center justify-center min-h-[94vh] pt-10 pb-20 md:pt-12 md:pb-24"
       aria-labelledby="induction-hero-heading"
     >
-      {/* ===== ORBITING SATELLITES (Persistent) ===== */}
-      <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden" aria-hidden="true">
-        <div className="absolute inset-0 md:-translate-y-[8%]">
-          <OrbitingPartners partners={partners} />
-        </div>
+      {/* ===== ORBITING SATELLITES (own stage above the copy) =====
+          The orbit gets its own band at the top of the hero and the
+          copy flows underneath it. Satellites used to orbit through
+          the headline and the paragraph (founder's screenshot: chips
+          sitting on the text, the nucleus behind the headline); in
+          flow, no satellite can cross a line of copy on any viewport,
+          and the readability scrim the old layering needed is gone.
+          The stage reserves the mobile strip's height so the partner
+          chips arriving async do not shove the headline down. */}
+      <div className="relative z-0 w-full shrink-0 min-h-[11.5rem] md:min-h-0 md:h-[360px]" aria-hidden="true">
+        <OrbitingPartners partners={partners} />
       </div>
-
-      {/* ===== READABILITY SCRIM (dims badges passing behind text) ===== */}
-      <div className="absolute inset-0 z-10 pointer-events-none bg-[radial-gradient(ellipse_60%_55%_at_50%_42%,rgba(2,6,23,0.72),transparent_75%)]" aria-hidden="true" />
 
       {/* ===== CONTENT (Fades in Theater Mode) ===== */}
       <motion.div
-        className="relative z-20 flex flex-col items-center justify-center text-center px-4 md:px-6 w-full"
+        className="relative z-20 flex flex-col items-center justify-center text-center px-4 md:px-6 w-full mt-4 md:mt-6"
         animate={{ opacity: isUIHidden ? 0 : 1, filter: isUIHidden ? 'blur(8px)' : 'blur(0px)' }}
         transition={{ duration: shouldReduceMotion ? 0 : 0.8, ease: "easeInOut" }}
       >
         <motion.div
-          className="flex flex-col items-center gap-8 max-w-5xl mx-auto"
+          className="flex flex-col items-center gap-6 md:gap-8 max-w-5xl mx-auto"
           variants={heroSequence}
           initial={shouldReduceMotion ? false : 'hidden'}
           animate="show"
@@ -243,7 +255,7 @@ export default function InductionHeroSection() {
             Hands-on <span className="text-foreground font-black underline decoration-white/40 underline-offset-4">CubeSat</span>, Rover, Rocketry, Mission Design workshops, and international collaborations.
           </motion.p>
 
-          <motion.div variants={heroRise} className="flex flex-col sm:flex-row items-center justify-center gap-6 mt-8 w-full max-w-2xl mx-auto">
+          <motion.div variants={heroRise} className="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-6 w-full max-w-2xl mx-auto">
             {applicationsClosed ? (
               <Button
                 size="lg"
@@ -267,18 +279,25 @@ export default function InductionHeroSection() {
               </AuthGuardedButton>
             )}
 
-            {applicationsClosed ? (
-              <Button size="lg" variant="outline" disabled className="h-16 px-10 font-accent tracking-widest uppercase text-base rounded-2xl flex-1 w-full sm:w-auto">
-                <span className="flex items-center gap-3">
-                  {joinDisabledLabel}
-                </span>
+            {/* Secondary slot: renders while loading (disabled
+                placeholder) and while open (Join The Tribe). In a
+                resolved non-open state it renders nothing — the
+                primary slot already carries the one closed
+                indicator. */}
+            {!showClosedIndicator && (
+              applicationsClosed ? (
+                <Button size="lg" variant="outline" disabled className="h-16 px-10 font-accent tracking-widest uppercase text-base rounded-2xl flex-1 w-full sm:w-auto">
+                  <span className="flex items-center gap-3">
+                    {joinDisabledLabel}
+                  </span>
+                </Button>
+              ) : (
+              <Button asChild size="lg" variant="outline" className="h-16 px-10 font-accent tracking-widest uppercase text-base border-2 border-white/25 text-foreground hover:border-white/60 hover:bg-white/5 bg-slate-950/40 backdrop-blur-2xl rounded-2xl transition-all duration-500 group flex-1 w-full sm:w-auto">
+                <Link href="/apply" className="flex items-center gap-3">
+                  Join The Tribe <ChevronRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
+                </Link>
               </Button>
-            ) : (
-            <Button asChild size="lg" variant="outline" className="h-16 px-10 font-accent tracking-widest uppercase text-base border-2 border-white/25 text-foreground hover:border-white/60 hover:bg-white/5 bg-slate-950/40 backdrop-blur-2xl rounded-2xl transition-all duration-500 group flex-1 w-full sm:w-auto">
-              <Link href="/apply" className="flex items-center gap-3">
-                Join The Tribe <ChevronRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
-              </Link>
-            </Button>
+              )
             )}
 
             {settingsLoading ? (
@@ -295,7 +314,7 @@ export default function InductionHeroSection() {
           </motion.div>
 
           {settings?.enableChapterRegistration && (
-            <motion.div variants={heroRise} className="mt-12 pointer-events-auto w-full max-w-lg">
+            <motion.div variants={heroRise} className="pointer-events-auto w-full max-w-lg">
               <Link
                 href="/register-chapter"
                 className="group flex items-center justify-between p-4 rounded-2xl border border-border bg-card/40 hover:bg-card/60 hover:border-white/40 transition-all duration-500 backdrop-blur-3xl shadow-2xl overflow-hidden relative"
@@ -327,6 +346,10 @@ export default function InductionHeroSection() {
 // Real-time countdown to the resolved intake window's closesAt
 // (data-driven, Workstream E). The hook state flips open -> closed at
 // closesAt; this component only renders the remaining-time boxes.
+// In every non-open state it renders nothing: the hero's disabled
+// primary CTA already carries the one closed/scheduled indicator
+// (showClosedIndicator in the hero), and this component used to
+// repeat the fact as a second line under the buttons.
 function ApplicationCountdown() {
   const { window: intakeWindow, state: intakeState } = useIntakeWindow('induction');
   const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
@@ -351,30 +374,14 @@ function ApplicationCountdown() {
     return () => clearInterval(timer);
   }, [closesAtMs]);
 
-  if (intakeState === 'loading') {
+  if (intakeState !== 'open') {
+    // Loading, scheduled, closed, cancelled, none: silent. The one
+    // non-open indicator lives in the hero's CTA row.
     return null;
   }
 
-  if (intakeState === 'scheduled') {
-    return (
-      <div className="mt-6 text-center">
-        <p className="text-sm text-muted-foreground">
-          {formatIntakeScheduledLine(intakeWindow?.opensAt)}
-        </p>
-      </div>
-    );
-  }
-
-  if (intakeState !== 'open') {
-    return (
-      <div className="mt-6 text-center">
-        <p className="text-red-400 font-bold">Applications are now closed</p>
-      </div>
-    );
-  }
-
   return (
-    <div className="mt-6 text-center">
+    <div className="text-center">
       <p className="text-sm text-muted-foreground mb-2">Applications close in</p>
       <div className="flex items-center justify-center gap-3">
         {[

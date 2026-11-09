@@ -31,7 +31,18 @@ const CATEGORY_ORDER = [
 
 export function OrbitingPartners({ partners, className }: OrbitingPartnersProps) {
     const [isMobile, setIsMobile] = useState(true);
+    const [viewportWidth, setViewportWidth] = useState(0);
     const shouldReduceMotion = useReducedMotion();
+
+    // Ring scale: the orbit now lives in its own stage band above the
+    // hero copy, so the ellipses are sized to the stage and to the
+    // viewport width — a satellite must never be clipped by the
+    // section edge (the old full-hero orbit swept chips through the
+    // headline and off the sides). At 1280px and up the system runs
+    // at full size; below that it scales down to 0.55 minimum.
+    const orbitScale = viewportWidth === 0
+        ? 1
+        : Math.min(1, Math.max(0.55, viewportWidth / 1280));
 
     // Group partners by category
     const groupedPartners = useMemo(() => {
@@ -49,11 +60,31 @@ export function OrbitingPartners({ partners, className }: OrbitingPartnersProps)
     }, [groupedPartners]);
 
     useEffect(() => {
-        const handleResize = () => setIsMobile(window.innerWidth < 768);
+        const handleResize = () => {
+            setIsMobile(window.innerWidth < 768);
+            setViewportWidth(window.innerWidth);
+        };
         handleResize();
         window.addEventListener('resize', handleResize);
         return () => window.removeEventListener('resize', handleResize);
     }, []);
+
+    // Ellipse geometry per ring, shared by the SVG orbit lines and
+    // the satellites so they can never drift apart. Vertical radii
+    // keep the whole satellite band inside the stage: outer ring
+    // ry 127 + chip extent ~29px fits the 360px desktop stage.
+    //   0: 185 x 52 (Technology)
+    //   1: 241 x 67
+    //   2: 297 x 82
+    //   3: 353 x 97
+    //   4: 409 x 112
+    //   5: 465 x 127
+    const ringGeometry = useMemo(() => {
+        return activeRings.map((_, index) => ({
+            rx: Math.round((185 + index * 56) * orbitScale),
+            ry: Math.round((52 + index * 15) * orbitScale),
+        }));
+    }, [activeRings, orbitScale]);
 
     // Pause the orbit engine while the hero is off-screen. Every
     // OrbitingObject runs a useAnimationFrame callback; without this
@@ -75,29 +106,43 @@ export function OrbitingPartners({ partners, className }: OrbitingPartnersProps)
     }, []);
 
     if (isMobile) {
-        // Show simplified static horizontal scroll on mobile
+        // Static labeled chip grid on mobile. Every chip carries the
+        // partner's full name underneath: the previous strip rendered
+        // name.substring(0, 3) inside the circle for partners without
+        // a logo image (and ignored rawSvg entirely), which read as
+        // clipped text ("Cub", "Pla", "Mis"). Nothing is truncated
+        // now — the label wraps to three lines if it has to.
         return (
-            <div className={cn("w-full py-4", className)}>
-                <div className="flex items-center justify-center gap-3 flex-wrap px-4 max-w-md mx-auto">
+            <div className={cn("w-full py-2", className)}>
+                <div className="flex items-start justify-center gap-x-1 gap-y-3 flex-wrap px-4 max-w-md mx-auto">
                     {partners.slice(0, 8).map((partner) => (
-                        <div
-                            key={partner.id}
-                            className="w-12 h-12 rounded-full bg-white/90 dark:bg-slate-800/90 shadow-md p-1.5 flex items-center justify-center border border-border"
-                        >
-                            {partner.logoUrl ? (
-                                <Image
-                                    src={partner.logoUrl}
-                                    alt={partner.name}
-                                    width={36}
-                                    height={36}
-                                    className="object-contain rounded-full"
-                                    loading="lazy"
-                                />
-                            ) : (
-                                <span className="text-[8px] text-muted-foreground font-bold">
-                                    {partner.name.substring(0, 3)}
-                                </span>
-                            )}
+                        <div key={partner.id} className="flex w-[4.25rem] flex-col items-center gap-1.5">
+                            <div
+                                className="w-12 h-12 shrink-0 rounded-full bg-white/90 dark:bg-slate-800/90 shadow-md p-1.5 flex items-center justify-center border border-border overflow-hidden"
+                            >
+                                {partner.rawSvg ? (
+                                    <div
+                                        className="w-full h-full text-slate-800 dark:text-slate-100"
+                                        dangerouslySetInnerHTML={{ __html: partner.rawSvg }}
+                                    />
+                                ) : partner.logoUrl ? (
+                                    <Image
+                                        src={partner.logoUrl}
+                                        alt={partner.name}
+                                        width={36}
+                                        height={36}
+                                        className="object-contain rounded-full"
+                                        loading="lazy"
+                                    />
+                                ) : (
+                                    <span className="text-[10px] text-slate-700 dark:text-slate-200 font-bold uppercase">
+                                        {partner.name.split(/\s+/).slice(0, 2).map((w) => w.charAt(0)).join('')}
+                                    </span>
+                                )}
+                            </div>
+                            <span className="text-[9px] leading-tight text-center text-foreground/75 line-clamp-3">
+                                {partner.name}
+                            </span>
                         </div>
                     ))}
                 </div>
@@ -133,15 +178,7 @@ export function OrbitingPartners({ partners, className }: OrbitingPartnersProps)
             {/* Using shared SVG container for lines to ensure sync */}
             <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible">
                 {activeRings.map((category, index) => {
-                    // Math for this ring
-                    // Kept compact so satellites orbit the heading zone and
-                    // do not sweep through the paragraph or CTA buttons below.
-                    // 0: 210 (Technology)
-                    // 1: 280
-                    // 2: 350
-                    // 3: 420
-                    const rx = 210 + (index * 70);
-                    const ry = 70 + (index * 20); // Aspect ratio scaling
+                    const { rx, ry } = ringGeometry[index];
 
                     return (
                         <ellipse
@@ -158,8 +195,7 @@ export function OrbitingPartners({ partners, className }: OrbitingPartnersProps)
             {/* Render Satellites logic separately to use Refs */}
             {activeRings.map((category, index) => {
                 const items = groupedPartners[category];
-                const rx = 210 + (index * 70);
-                const ry = 70 + (index * 20);
+                const { rx, ry } = ringGeometry[index];
 
                 // Speed: Outer rings slower
                 // 0: 45s

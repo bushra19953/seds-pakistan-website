@@ -243,15 +243,15 @@ function TimelineEventCard({
 
           <CardHeader className="p-7 relative z-10">
             <div className="flex items-center gap-5 mb-5">
-               <div className="px-4 py-1.5 rounded-lg bg-primary/10 border border-primary/30 shadow-[0_0_15px_rgba(59,130,246,0.1)]">
-                 <p className="font-accent text-xl font-black text-primary tracking-tighter">{displayYear}</p>
+               <div className="px-4 py-1.5 rounded-lg bg-primary/10 border border-primary/30">
+                 <p className="font-accent text-xl font-black text-primary-text tracking-tighter">{displayYear}</p>
                </div>
-               <div className="p-2.5 bg-card border border-border rounded-xl text-primary group-hover:bg-primary group-hover:text-black transition-all duration-500 shadow-inner">
+               <div className="p-2.5 bg-card border border-border rounded-xl text-primary-text group-hover:bg-primary group-hover:text-primary-foreground transition-all duration-500 shadow-inner">
                  <Icon className="w-5 h-5" />
                </div>
             </div>
 
-            <CardTitle className="text-2xl font-accent font-black tracking-tight text-foreground/90 group-hover:text-primary transition-colors duration-300">
+            <CardTitle className="text-2xl font-accent font-black tracking-tight text-foreground/90 group-hover:text-primary-text transition-colors duration-300">
               {event.title}
             </CardTitle>
 
@@ -523,8 +523,8 @@ export default function TimelineSection({ variant = 'full' }: TimelineSectionPro
                through the middle of the right-pushed cards. Teaser surfaces
                keep this treatment; the full page uses the progress spine. */
             <div className="absolute left-5 md:left-1/2 h-full w-[2px] -translate-x-1/2 overflow-hidden" aria-hidden="true">
-              <div className="h-full w-full bg-gradient-to-b from-primary/50 via-emerald-500/50 to-primary/5 shadow-[0_0_15px_rgba(59,130,246,0.3)]" />
-              <div className="absolute top-0 left-0 w-full h-20 bg-white/40 blur-md animate-infinite-scroll" />
+              <div className="h-full w-full bg-gradient-to-b from-primary/50 via-primary/30 to-primary/5" />
+              <div className="absolute top-0 left-0 w-full h-20 bg-primary/40 blur-md animate-infinite-scroll" />
             </div>
           ) : (
             /* Progress spine: a quiet track with one gold fill whose height
@@ -576,7 +576,7 @@ export default function TimelineSection({ variant = 'full' }: TimelineSectionPro
                 <button
                   type="button"
                   onClick={() => window.location.reload()}
-                  className="mt-4 rounded-full border border-primary/40 bg-primary/10 px-5 py-2 text-xs font-black uppercase tracking-widest text-primary transition-colors hover:bg-primary hover:text-black"
+                  className="mt-4 rounded-full border border-primary/40 bg-primary/10 px-5 py-2 text-xs font-black uppercase tracking-widest text-primary-text transition-colors hover:bg-primary hover:text-primary-foreground"
                 >
                   Retry
                 </button>
@@ -620,7 +620,7 @@ export default function TimelineSection({ variant = 'full' }: TimelineSectionPro
                             <span className="font-accent text-sm font-black uppercase tracking-widest text-foreground">
                               {month.label}
                             </span>
-                            <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 font-mono text-[11px] font-bold text-primary">
+                            <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 font-mono text-[11px] font-bold text-primary-text">
                               {month.events.length} {month.events.length === 1 ? 'entry' : 'entries'}
                             </span>
                             <ChevronDown
@@ -651,7 +651,7 @@ export default function TimelineSection({ variant = 'full' }: TimelineSectionPro
                               onClick={() =>
                                 setRevealedMonths((prev) => ({ ...prev, [month.key]: true }))
                               }
-                              className="rounded-full border border-border bg-card/60 px-5 py-2 text-xs font-black uppercase tracking-widest text-muted-foreground transition-colors hover:border-primary/60 hover:text-primary"
+                              className="rounded-full border border-border bg-card/60 px-5 py-2 text-xs font-black uppercase tracking-widest text-muted-foreground transition-colors hover:border-primary/60 hover:text-primary-text"
                             >
                               Show more ({hiddenCount} more)
                             </button>
@@ -668,7 +668,7 @@ export default function TimelineSection({ variant = 'full' }: TimelineSectionPro
             <div className="relative z-10 mt-16 text-center">
               <Link
                 href="/timeline"
-                className="inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/10 px-6 py-3 text-sm font-black uppercase tracking-widest text-primary transition-colors hover:bg-primary hover:text-black"
+                className="inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/10 px-6 py-3 text-sm font-black uppercase tracking-widest text-primary-text transition-colors hover:bg-primary hover:text-primary-foreground"
               >
                 View the full timeline <ArrowRight className="h-4 w-4" />
               </Link>

@@ -109,8 +109,8 @@ export default function SkillsFeaturedSection() {
                       (() => { const Ico = Icon(String(s.iconKey), String(s.category)); return <Ico className="h-6 w-6 mb-2 text-primary" />; })()
                     )}
                     <div className="mb-2 text-xs text-muted-foreground">{s.category || "Uncategorized"}</div>
-                    <div className="text-xl font-headline mb-1">{s.name}</div>
-                    <div className={`text-xs rounded px-2 py-0.5 w-fit mt-2 ${s.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-700'}`}>{s.status || 'active'}</div>
+                    <div className="text-xl font-headline tracking-wide mb-1">{s.name}</div>
+                    <div className={`text-xs rounded px-2 py-0.5 w-fit mt-2 ${s.status === 'active' ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' : 'bg-muted text-muted-foreground'}`}>{s.status || 'active'}</div>
                   </CardContent>
                 </Card>
               </Link>

@@ -250,19 +250,18 @@ export default function Header() {
           className={`container mx-auto grid grid-cols-[1fr_auto_1fr] items-center rounded-2xl border border-border bg-background/80 px-4 shadow-[0_18px_38px_-14px_rgba(3,7,18,0.65)] backdrop-blur-xl supports-[backdrop-filter]:bg-background/70 transition-[height] duration-300 motion-reduce:transition-none md:px-5 ${scrolled ? 'h-[4.75rem] md:h-24' : 'h-[5.25rem] md:h-28'
             }`}
         >
-          {/* Group 1: Logo (Far Left). The wordmark artwork is mostly
-              dark cosmos letters, so painted straight onto the navy
-              dock it reads small and dim no matter how big its box is
-              (the founder's "unreasonably small" complaint). It
-              therefore sits on a light instrument plate — the
-              documented foreground tone — so the full wordmark paints
-              at full contrast and the lockup reads confidently.
+          {/* Group 1: Logo (Far Left). The wordmark is a transparent
+              PNG and sits straight on the dock — a light plate behind
+              it shipped briefly on 2026-11-09 and the founder rejected
+              it the same morning ("it was png"); never re-add a
+              background behind the logo.
               The header uses the TRIMMED asset (logo-header.*): the
               original 667x374 logo.png bakes in transparent padding
               (letters occupy only ~(153,136)-(514,239)), so even a big
-              box showed small letters. The trimmed 387x127 (~3.05:1)
-              crop is nearly all letters; the footer keeps the
-              original asset untouched.
+              box showed small letters — that padding, not the CSS
+              size, was the "unreasonably small" complaint. The trimmed
+              387x127 (~3.05:1) crop is nearly all letters; the footer
+              keeps the original asset untouched.
               Sizing must NOT rely on utilities on the <img>:
               OptimizedLogo hardcodes style width/height 'auto' inline,
               which outranks className utilities, so the img renders at
@@ -271,14 +270,12 @@ export default function Header() {
               box — the same pattern the footer uses.
               Width-led box for the 3.05:1 trimmed wordmark: 128px/
               176px wide renders ~42px/~58px tall, condensed 112px/
-              152px renders ~37px/~50px; the plate hugs that box with
-              10px horizontal / 6px vertical padding, so the lockup
-              lands at ~148x54 mobile and ~196x70 desktop. */}
+              152px renders ~37px/~50px. */}
           <div className="col-start-1 justify-self-start shrink-0">
             <Link
               href="/"
               prefetch
-              className="flex items-center rounded-xl bg-[hsl(210_40%_96%)] px-2.5 py-1.5 shadow-[0_8px_20px_-8px_rgba(3,7,18,0.55)] ring-1 ring-[rgba(3,7,18,0.1)]"
+              className="flex items-center"
             >
               <span
                 className={`block transition-[width] duration-300 motion-reduce:transition-none ${scrolled ? 'w-[112px] md:w-[152px]' : 'w-[128px] md:w-[176px]'

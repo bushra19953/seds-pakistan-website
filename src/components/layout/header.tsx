@@ -250,32 +250,45 @@ export default function Header() {
           className={`container mx-auto grid grid-cols-[1fr_auto_1fr] items-center rounded-2xl border border-border bg-background/80 px-4 shadow-[0_18px_38px_-14px_rgba(3,7,18,0.65)] backdrop-blur-xl supports-[backdrop-filter]:bg-background/70 transition-[height] duration-300 motion-reduce:transition-none md:px-5 ${scrolled ? 'h-[4.75rem] md:h-24' : 'h-[5.25rem] md:h-28'
             }`}
         >
-          {/* Group 1: Logo (Far Left). Sizing must NOT rely on utilities
-              on the <img>: OptimizedLogo hardcodes style width/height
-              'auto' inline, which outranks className utilities, so the
-              img renders at its intrinsic 667x374 unless the caller
-              overrides the style (later {...props} spread wins) inside a
+          {/* Group 1: Logo (Far Left). The wordmark artwork is mostly
+              dark cosmos letters, so painted straight onto the navy
+              dock it reads small and dim no matter how big its box is
+              (the founder's "unreasonably small" complaint). It
+              therefore sits on a light instrument plate — the
+              documented foreground tone — so the full wordmark paints
+              at full contrast and the lockup reads confidently.
+              Sizing must NOT rely on utilities on the <img>:
+              OptimizedLogo hardcodes style width/height 'auto' inline,
+              which outranks className utilities, so the img renders at
+              its intrinsic 667x374 unless the caller overrides the
+              style (later {...props} spread wins) inside a
               definite-width box — the same pattern the footer uses.
               Width-led box for the 1.78:1 wordmark: 110px/150px wide
               renders ~62px/~84px tall, condensed 96px/128px renders
-              ~54px/~72px. */}
-          <div
-            className={`col-start-1 justify-self-start flex items-center justify-start shrink-0 transition-[width] duration-300 motion-reduce:transition-none ${scrolled ? 'w-[96px] md:w-[128px]' : 'w-[110px] md:w-[150px]'
-              }`}
-          >
-            <Link href="/" prefetch className="flex w-full items-center">
-              <OptimizedLogo
-                src="/assets/logo.png"
-                webpSrc="/assets/logo.webp"
-                avifSrc="/assets/logo.avif"
-                alt="SEDS Logo"
-                width={128}
-                height={72}
-                priority
-                sizes="(max-width: 768px) 110px, 150px"
-                className="object-contain"
-                style={{ width: '100%', height: 'auto' }}
-              />
+              ~54px/~72px; the plate hugs that box plus its padding. */}
+          <div className="col-start-1 justify-self-start shrink-0">
+            <Link
+              href="/"
+              prefetch
+              className="flex items-center rounded-xl bg-[hsl(210_40%_96%)] px-3 py-1.5 shadow-[0_8px_20px_-8px_rgba(3,7,18,0.55)] ring-1 ring-[rgba(3,7,18,0.1)] md:px-3.5 md:py-2"
+            >
+              <span
+                className={`block transition-[width] duration-300 motion-reduce:transition-none ${scrolled ? 'w-[96px] md:w-[128px]' : 'w-[110px] md:w-[150px]'
+                  }`}
+              >
+                <OptimizedLogo
+                  src="/assets/logo.png"
+                  webpSrc="/assets/logo.webp"
+                  avifSrc="/assets/logo.avif"
+                  alt="SEDS Logo"
+                  width={128}
+                  height={72}
+                  priority
+                  sizes="(max-width: 768px) 110px, 150px"
+                  className="object-contain"
+                  style={{ width: '100%', height: 'auto' }}
+                />
+              </span>
             </Link>
           </div>
 

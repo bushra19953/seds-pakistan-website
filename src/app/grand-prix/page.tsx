@@ -1,4 +1,3 @@
-import { Fraunces, Manrope } from 'next/font/google';
 import Image from 'next/image';
 import Link from 'next/link';
 import StarryBackground from '@/components/starry-background';
@@ -29,32 +28,18 @@ import {
   ZimbabweFlag,
 } from './flags';
 
-// PERF: no italic Fraunces is rendered anywhere on this route (no italic
-// class, font-style, or <em>/<i> in the route), so the italic face is not
-// loaded — it previously cost a preloaded ~45 KB variable font file.
-const display = Fraunces({
-  subsets: ['latin'],
-  weight: ['500', '600', '700'],
-  variable: '--gp-display',
-});
-
-const body = Manrope({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700', '800'],
-  variable: '--gp-body',
-});
-
-const IVORY = '#F5F0E4';
-const GOLD = '#C9A45C';
-const GOLD_LIGHT = '#E8CF8F';
-const displayFont = '[font-family:var(--gp-display)]';
+// This page speaks the site's own type system (Bebas display, Orbitron
+// labels, Courier Prime body, inherited from the root layout) and the
+// site's coral signal colour, in both themes. The old page-local Fraunces
+// / Manrope / gold sub-brand is gone: one world, every page.
+const displayFont = 'font-headline';
 
 const iconProps = {
   width: 30,
   height: 30,
   viewBox: '0 0 24 24',
   fill: 'none',
-  stroke: GOLD_LIGHT,
+  stroke: 'currentColor',
   strokeWidth: 1.4,
   strokeLinecap: 'round',
   strokeLinejoin: 'round',
@@ -130,12 +115,9 @@ const FAMILY = [
 
 export default function GrandPrixPage() {
   return (
-    <div
-      className={`relative flex min-h-screen flex-col ${display.variable} ${body.variable} [font-family:var(--gp-body)]`}
-      style={{ color: IVORY }}
-    >
+    <div className="relative flex min-h-screen flex-col text-foreground">
       <StarryBackground />
-      <div aria-hidden="true" className="pointer-events-none fixed inset-0 opacity-55">
+      <div aria-hidden="true" className="pointer-events-none fixed inset-0 hidden opacity-55 dark:block">
         {/* next/image (priority + responsive variants) instead of a CSS
             background: the raw backdrop is a 403 KB full-size JPG that every
             visitor, phone included, used to download at full resolution. */}
@@ -148,30 +130,31 @@ export default function GrandPrixPage() {
           className="object-cover object-[center_top]"
         />
       </div>
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_55%_40%_at_50%_-5%,rgba(201,164,92,0.14),transparent),linear-gradient(180deg,rgba(6,9,16,0.35),rgba(6,9,16,0.78))]" />
+      {/* Dark-only deep-space film over the nebula, kept light enough that
+          the star layer reads through the plain ground below the hero.
+          Light mode drops the film and the nebula entirely: the page sits
+          on the site's light ground with the same type and hairlines. */}
+      <div className="pointer-events-none fixed inset-0 hidden bg-[radial-gradient(ellipse_55%_40%_at_50%_-5%,rgba(233,113,76,0.08),transparent),linear-gradient(180deg,rgba(6,9,16,0.22),rgba(6,9,16,0.52))] dark:block" />
       <main className="container relative z-10 mx-auto flex-1 px-4 py-16 sm:py-20">
         <div className="mx-auto max-w-3xl">
           <FadeRise>
             <div className="flex items-center justify-center gap-4">
-              <span className="h-px w-12 bg-gradient-to-r from-transparent to-[#C9A45C]/80" />
-              <p
-                className="text-center text-[11px] font-extrabold uppercase tracking-[0.42em]"
-                style={{ color: GOLD_LIGHT }}
-              >
+              <span className="h-px w-12 bg-gradient-to-r from-transparent to-primary/70" />
+              <p className="text-center font-accent text-[11px] font-semibold uppercase tracking-[0.32em] text-primary-text">
                 SEDS Pakistan and SEDS Sri Lanka
               </p>
-              <span className="h-px w-12 bg-gradient-to-l from-transparent to-[#C9A45C]/80" />
+              <span className="h-px w-12 bg-gradient-to-l from-transparent to-primary/70" />
             </div>
           </FadeRise>
           <FadeRise delay={0.12}>
             <h1
-              className={`mt-6 bg-gradient-to-r from-[#E8CF8F] via-[#C9A45C] to-[#E8CF8F] bg-clip-text text-center text-4xl font-semibold leading-[1.08] text-transparent sm:text-[3.4rem] ${displayFont}`}
+              className={`mt-6 text-center text-5xl leading-[0.98] tracking-[0.02em] sm:text-7xl ${displayFont}`}
             >
               {SERIES_NAME}
             </h1>
           </FadeRise>
           <FadeRise delay={0.24}>
-            <p className="mx-auto mt-5 max-w-2xl text-center text-[15px] leading-relaxed text-[#CFC8B8]">
+            <p className="mx-auto mt-5 max-w-2xl text-center text-[15px] leading-relaxed text-[#57503E] dark:text-[#CFC8B8]">
               A joint bilateral engineering initiative co-hosted by SEDS Pakistan and SEDS Sri Lanka. Six
               intensive virtual masterclasses connecting collegiate engineers with real-world astronautics,
               propulsion dynamics, and space mission design.
@@ -190,17 +173,16 @@ export default function GrandPrixPage() {
                 <span className="flex aspect-[7/4] w-36 items-center justify-center overflow-hidden rounded-md shadow-[0_18px_44px_rgba(0,0,0,0.5)] ring-1 ring-[#C9A45C]/45 sm:w-60">
                   <PakistanFlag className="h-full w-full object-cover object-center" />
                 </span>
-                <figcaption className="mt-3 text-[11px] font-extrabold uppercase tracking-[0.32em] text-[#CBBFA5]">
+                <figcaption className="mt-3 font-accent text-[11px] font-semibold uppercase tracking-[0.28em] text-[#6B5E3F] dark:text-[#CBBFA5]">
                   Pakistan
                 </figcaption>
-                <p lang="ur" dir="rtl" className="mt-1.5 text-[13px] leading-relaxed text-[#CBBFA5]">
+                <p lang="ur" dir="rtl" className="mt-1.5 text-[13px] leading-relaxed text-[#6B5E3F] dark:text-[#CBBFA5]">
                   خوش آمدید
                 </p>
               </figure>
               <span
                 aria-hidden="true"
-                className={`mt-[19px] flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#C9A45C]/50 bg-white/[0.04] text-xl sm:mt-[46px] ${displayFont}`}
-                style={{ color: GOLD_LIGHT }}
+                className={`mt-[19px] flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-primary/50 bg-primary/[0.05] text-xl text-primary-text sm:mt-[46px] dark:bg-white/[0.04] ${displayFont}`}
               >
                 &times;
               </span>
@@ -208,10 +190,10 @@ export default function GrandPrixPage() {
                 <span className="flex aspect-[7/4] w-36 items-center justify-center overflow-hidden rounded-md shadow-[0_18px_44px_rgba(0,0,0,0.5)] ring-1 ring-[#C9A45C]/45 sm:w-60">
                   <SriLankaFlag className="h-full w-full object-cover object-[65%_50%]" />
                 </span>
-                <figcaption className="mt-3 text-[11px] font-extrabold uppercase tracking-[0.32em] text-[#CBBFA5]">
+                <figcaption className="mt-3 font-accent text-[11px] font-semibold uppercase tracking-[0.28em] text-[#6B5E3F] dark:text-[#CBBFA5]">
                   Sri Lanka
                 </figcaption>
-                <p lang="si" className="mt-1.5 text-[13px] leading-relaxed text-[#CBBFA5]">
+                <p lang="si" className="mt-1.5 text-[13px] leading-relaxed text-[#6B5E3F] dark:text-[#CBBFA5]">
                   ආයුබෝවන්
                 </p>
               </figure>
@@ -219,108 +201,94 @@ export default function GrandPrixPage() {
           </FadeRise>
           <OrbitRings />
           <div className="mt-8 flex items-center justify-center gap-3" aria-hidden="true">
-            <span className="h-px w-24 bg-white/15" />
-            <span className="block h-1.5 w-1.5 rotate-45" style={{ backgroundColor: GOLD }} />
-            <span className="h-px w-24 bg-white/15" />
+            <span className="h-px w-24 bg-[#1A1610]/15 dark:bg-white/15" />
+            <span className="block h-1.5 w-1.5 rotate-45 bg-primary" />
+            <span className="h-px w-24 bg-[#1A1610]/15 dark:bg-white/15" />
           </div>
 
-          <section aria-labelledby="disciplines-heading" className="mt-14">
-            <h2
-              id="disciplines-heading"
-              className={`text-center text-3xl font-semibold ${displayFont}`}
-              style={{ color: GOLD_LIGHT }}
-            >
+          <section aria-labelledby="disciplines-heading" className="mt-16">
+            <h2 id="disciplines-heading" className={`text-center text-4xl ${displayFont}`}>
               Three Engineering Disciplines
             </h2>
             <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
               {DISCIPLINES.map((discipline) => (
                 <SpotlightCard
                   key={discipline.name}
-                  className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-6 text-center shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-md"
+                  className="rounded-lg border border-[#1A1610]/10 bg-white px-5 py-6 text-center dark:border-white/10 dark:bg-white/[0.04] dark:backdrop-blur-md"
                 >
-                  <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-[#C9A45C]/50 bg-white/[0.03]">
+                  <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-primary/40 bg-primary/[0.05] text-primary">
                     {discipline.icon}
                   </span>
-                  <p className={`mt-4 text-xl font-semibold leading-snug ${displayFont}`} style={{ color: IVORY }}>
-                    {discipline.name}
+                  <p className={`mt-4 text-2xl leading-snug ${displayFont}`}>{discipline.name}</p>
+                  <p className="mt-2 text-[13px] leading-relaxed text-[#57503E] dark:text-[#CFC8B8]">
+                    {discipline.line}
                   </p>
-                  <p className="mt-2 text-[13px] leading-relaxed text-[#CFC8B8]">{discipline.line}</p>
                 </SpotlightCard>
               ))}
             </div>
           </section>
 
-          <section aria-labelledby="curriculum-heading" className="mt-14">
-            <h2
-              id="curriculum-heading"
-              className={`text-center text-3xl font-semibold ${displayFont}`}
-              style={{ color: GOLD_LIGHT }}
-            >
+          <section aria-labelledby="curriculum-heading" className="mt-16">
+            <h2 id="curriculum-heading" className={`text-center text-4xl ${displayFont}`}>
               Curriculum
             </h2>
             <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
               {MODULES.map((module, i) => (
                 <SpotlightCard
                   key={module.id}
-                  className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-5 shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-md"
+                  className="rounded-lg border border-[#1A1610]/10 bg-white px-5 py-5 dark:border-white/10 dark:bg-white/[0.04] dark:backdrop-blur-md"
                 >
-                  <p className="text-[11px] font-extrabold uppercase tracking-[0.24em] text-[#CBBFA5]">
+                  <p className="font-accent text-[11px] font-semibold uppercase tracking-[0.22em] text-primary-text">
                     Module {String(i + 1).padStart(2, '0')}
                   </p>
-                  <p className={`mt-2 text-xl font-semibold leading-snug ${displayFont}`} style={{ color: IVORY }}>
-                    {module.title}
-                  </p>
+                  <p className={`mt-2 text-2xl leading-snug ${displayFont}`}>{module.title}</p>
                 </SpotlightCard>
               ))}
             </div>
-            <p className="mx-auto mt-8 max-w-2xl text-center text-sm leading-relaxed text-[#CFC8B8]">
+            <p className="mx-auto mt-8 max-w-2xl text-center text-sm leading-relaxed text-[#57503E] dark:text-[#CFC8B8]">
               This series represents Phase 1 of our bilateral roadmap. Subsequent phases, fabrication, or
               flight campaigns are evaluated post-Phase 1.
             </p>
           </section>
 
-          <section aria-labelledby="patrons-heading" className="mt-14">
-            <h2
-              id="patrons-heading"
-              className={`text-center text-3xl font-semibold ${displayFont}`}
-              style={{ color: GOLD_LIGHT }}
-            >
+          <section aria-labelledby="patrons-heading" className="mt-16">
+            <h2 id="patrons-heading" className={`text-center text-4xl ${displayFont}`}>
               Patrons
             </h2>
             <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <SpotlightCard className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-6 text-center shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-md">
-                <p className="text-[11px] font-extrabold uppercase tracking-[0.24em] text-[#CBBFA5]">Patron</p>
-                <p className={`mt-2 text-xl font-semibold leading-snug ${displayFont}`} style={{ color: IVORY }}>
-                  Dr. Najam Abbas Naqvi
+              <SpotlightCard className="rounded-lg border border-[#1A1610]/10 bg-white px-5 py-6 text-center dark:border-white/10 dark:bg-white/[0.04] dark:backdrop-blur-md">
+                <p className="font-accent text-[11px] font-semibold uppercase tracking-[0.22em] text-primary-text">
+                  Patron
                 </p>
-                <p className="mt-2 text-[13px] leading-relaxed text-[#CFC8B8]">Patron, SEDS Pakistan</p>
+                <p className={`mt-2 text-2xl leading-snug ${displayFont}`}>Dr. Najam Abbas Naqvi</p>
+                <p className="mt-2 text-[13px] leading-relaxed text-[#57503E] dark:text-[#CFC8B8]">
+                  Patron, SEDS Pakistan
+                </p>
               </SpotlightCard>
-              <SpotlightCard className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-6 text-center shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-md">
-                <p className="text-[11px] font-extrabold uppercase tracking-[0.24em] text-[#CBBFA5]">
+              <SpotlightCard className="rounded-lg border border-[#1A1610]/10 bg-white px-5 py-6 text-center dark:border-white/10 dark:bg-white/[0.04] dark:backdrop-blur-md">
+                <p className="font-accent text-[11px] font-semibold uppercase tracking-[0.22em] text-primary-text">
                   International Patron
                 </p>
-                <p className={`mt-2 text-xl font-semibold leading-snug ${displayFont}`} style={{ color: IVORY }}>
-                  Professor Shufan Wu
-                </p>
-                <p className="mt-2 text-[13px] leading-relaxed text-[#CFC8B8]">
+                <p className={`mt-2 text-2xl leading-snug ${displayFont}`}>Professor Shufan Wu</p>
+                <p className="mt-2 text-[13px] leading-relaxed text-[#57503E] dark:text-[#CFC8B8]">
                   Chair Professor, Shanghai Jiao Tong University
                 </p>
               </SpotlightCard>
             </div>
           </section>
 
-          <section aria-labelledby="family-heading" className="mt-14">
+          <section aria-labelledby="family-heading" className="mt-16">
             <div className="flex items-center justify-center gap-4">
-              <span className="h-px w-10 bg-gradient-to-r from-transparent to-[#C9A45C]/60" />
+              <span className="h-px w-10 bg-gradient-to-r from-transparent to-primary/60" />
               <h2
                 id="family-heading"
-                className="text-center text-[11px] font-extrabold uppercase tracking-[0.32em] text-[#CBBFA5]"
+                className="text-center font-accent text-[11px] font-semibold uppercase tracking-[0.28em] text-[#6B5E3F] dark:text-[#CBBFA5]"
               >
                 Part of the Global SEDS Family
               </h2>
-              <span className="h-px w-10 bg-gradient-to-l from-transparent to-[#C9A45C]/60" />
+              <span className="h-px w-10 bg-gradient-to-l from-transparent to-primary/60" />
             </div>
-            <p className="mx-auto mt-4 max-w-xl text-center text-[13px] leading-relaxed text-[#CFC8B8]">
+            <p className="mx-auto mt-4 max-w-xl text-center text-[13px] leading-relaxed text-[#57503E] dark:text-[#CFC8B8]">
               SEDS Pakistan and SEDS Sri Lanka belong to a worldwide family of SEDS chapters spanning
               22 nations, connecting space-minded students across borders.
             </p>
@@ -330,7 +298,7 @@ export default function GrandPrixPage() {
                   <span className="flex h-9 items-center justify-center sm:h-10">
                     <Flag className="block h-full w-auto rounded-[3px] shadow-[0_8px_20px_rgba(0,0,0,0.4)] ring-1 ring-white/15" />
                   </span>
-                  <figcaption className="mt-1.5 text-[9px] font-bold uppercase tracking-[0.14em] text-[#A79E8B]">
+                  <figcaption className="mt-1.5 text-[9px] font-bold uppercase tracking-[0.14em] text-[#7A7260] dark:text-[#A79E8B]">
                     {name}
                   </figcaption>
                 </figure>
@@ -341,11 +309,11 @@ export default function GrandPrixPage() {
           <div className="mt-12 text-center">
             <Link
               href="/grand-prix/register"
-              className="inline-flex h-[52px] items-center rounded-full bg-[linear-gradient(120deg,#E8CF8F,#C9A45C_45%,#A87F35)] px-10 text-sm font-extrabold uppercase tracking-[0.14em] text-[#171106] shadow-[0_16px_40px_rgba(201,164,92,0.35)] transition hover:brightness-110"
+              className="inline-flex h-[52px] items-center rounded-full bg-primary px-10 font-accent text-sm font-semibold uppercase tracking-[0.14em] text-primary-foreground transition hover:bg-primary/90"
             >
               Enrol now
             </Link>
-            <p className="mt-4 text-xs text-[#8E887A]">
+            <p className="mt-4 text-xs text-[#7A7260] dark:text-[#8E887A]">
               Registration open until Nov 15, 2026, 23:59 PKT. Late admission Nov 21-28, 2026.
             </p>
           </div>

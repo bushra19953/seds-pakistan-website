@@ -236,7 +236,7 @@ export default function GrandPrixPage() {
               {DISCIPLINES.map((discipline) => (
                 <SpotlightCard
                   key={discipline.name}
-                  className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-6 text-center shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-md"
+                  className="rounded-2xl border border-foreground/10 bg-white/[0.04] px-5 py-6 text-center shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-md"
                 >
                   <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-[#C9A45C]/50 bg-white/[0.03]">
                     {discipline.icon}
@@ -262,7 +262,7 @@ export default function GrandPrixPage() {
               {MODULES.map((module, i) => (
                 <SpotlightCard
                   key={module.id}
-                  className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-5 shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-md"
+                  className="rounded-2xl border border-foreground/10 bg-white/[0.04] px-5 py-5 shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-md"
                 >
                   <p className="text-[11px] font-extrabold uppercase tracking-[0.24em] text-[#CBBFA5]">
                     Module {String(i + 1).padStart(2, '0')}
@@ -288,14 +288,14 @@ export default function GrandPrixPage() {
               Patrons
             </h2>
             <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <SpotlightCard className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-6 text-center shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-md">
+              <SpotlightCard className="rounded-2xl border border-foreground/10 bg-white/[0.04] px-5 py-6 text-center shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-md">
                 <p className="text-[11px] font-extrabold uppercase tracking-[0.24em] text-[#CBBFA5]">Patron</p>
                 <p className={`mt-2 text-xl font-semibold leading-snug ${displayFont}`} style={{ color: IVORY }}>
                   Dr. Najam Abbas Naqvi
                 </p>
                 <p className="mt-2 text-[13px] leading-relaxed text-[#CFC8B8]">Patron, SEDS Pakistan</p>
               </SpotlightCard>
-              <SpotlightCard className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-6 text-center shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-md">
+              <SpotlightCard className="rounded-2xl border border-foreground/10 bg-white/[0.04] px-5 py-6 text-center shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-md">
                 <p className="text-[11px] font-extrabold uppercase tracking-[0.24em] text-[#CBBFA5]">
                   International Patron
                 </p>

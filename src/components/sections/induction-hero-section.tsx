@@ -227,7 +227,7 @@ export default function InductionHeroSection() {
               className="text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-accent font-black tracking-tighter 
                          text-foreground relative drop-shadow-[0_2px_12px_rgba(0,0,0,0.45)] leading-[0.95]"
             >
-              <motion.span variants={heroLine} className="block text-white" aria-hidden="true">
+              <motion.span variants={heroLine} className="block text-foreground" aria-hidden="true">
                 {['JOIN', 'SEDS', 'PAKISTAN'].map((word, i, arr) => (
                   <motion.span key={word} variants={heroWord} className="inline-block will-change-transform">
                     {word}
@@ -235,7 +235,7 @@ export default function InductionHeroSection() {
                   </motion.span>
                 ))}
               </motion.span>
-              <motion.span variants={heroLine} className="block mt-2 text-white" aria-hidden="true">
+              <motion.span variants={heroLine} className="block mt-2 text-foreground" aria-hidden="true">
                 {['BUILD', 'THE', 'FUTURE'].map((word, i, arr) => (
                   <motion.span key={word} variants={heroWord} className="inline-block will-change-transform">
                     {word}
@@ -245,14 +245,14 @@ export default function InductionHeroSection() {
               </motion.span>
             </motion.h1>
             <motion.div variants={heroRise} className="flex items-center justify-center gap-4 text-[10px] md:text-xs font-black uppercase tracking-[0.5em] text-muted-foreground">
-              <div className="h-px w-8 md:w-12 bg-white/20" />
+              <div className="h-px w-8 md:w-12 bg-foreground/20" />
               <span>Operational Readiness: Nominal</span>
-              <div className="h-px w-8 md:w-12 bg-white/20" />
+              <div className="h-px w-8 md:w-12 bg-foreground/20" />
             </motion.div>
           </div>
 
           <motion.p variants={heroRise} className="max-w-3xl text-base md:text-2xl text-foreground/80 font-body leading-relaxed px-4">
-            Hands-on <span className="text-foreground font-black underline decoration-white/40 underline-offset-4">CubeSat</span>, Rover, Rocketry, Mission Design workshops, and international collaborations.
+            Hands-on <span className="text-foreground font-black underline decoration-foreground/40 underline-offset-4">CubeSat</span>, Rover, Rocketry, Mission Design workshops, and international collaborations.
           </motion.p>
 
           <motion.div variants={heroRise} className="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-6 w-full max-w-2xl mx-auto">
@@ -292,7 +292,7 @@ export default function InductionHeroSection() {
                   </span>
                 </Button>
               ) : (
-              <Button asChild size="lg" variant="outline" className="h-16 px-10 font-accent tracking-widest uppercase text-base border-2 border-white/25 text-foreground hover:border-white/60 hover:bg-white/5 bg-slate-950/40 backdrop-blur-2xl rounded-2xl transition-all duration-500 group flex-1 w-full sm:w-auto">
+              <Button asChild size="lg" variant="outline" className="h-16 px-10 font-accent tracking-widest uppercase text-base border-2 border-foreground/25 text-foreground hover:border-foreground/60 hover:bg-foreground/5 bg-slate-950/40 backdrop-blur-2xl rounded-2xl transition-all duration-500 group flex-1 w-full sm:w-auto">
                 <Link href="/apply" className="flex items-center gap-3">
                   Join The Tribe <ChevronRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
                 </Link>
@@ -305,7 +305,7 @@ export default function InductionHeroSection() {
               // Donate button popping in late and shifting the layout
               <div aria-hidden className="h-16 px-8 invisible rounded-2xl flex-1 w-full sm:w-auto" />
             ) : settings?.enableDonations ? (
-              <Button asChild size="lg" className="h-16 px-8 font-accent tracking-widest uppercase text-sm bg-slate-950/40 text-foreground/80 border-2 border-white/20 hover:bg-white/10 hover:text-foreground backdrop-blur-2xl transition-all duration-500 rounded-2xl group">
+              <Button asChild size="lg" className="h-16 px-8 font-accent tracking-widest uppercase text-sm bg-slate-950/40 text-foreground/80 border-2 border-foreground/20 hover:bg-foreground/10 hover:text-foreground backdrop-blur-2xl transition-all duration-500 rounded-2xl group">
                 <Link href="/donate" className="flex items-center gap-2">
                   Donate <Heart className="h-4 w-4 transition-transform group-hover:scale-125 fill-current" />
                 </Link>
@@ -317,17 +317,17 @@ export default function InductionHeroSection() {
             <motion.div variants={heroRise} className="pointer-events-auto w-full max-w-lg">
               <Link
                 href="/register-chapter"
-                className="group flex items-center justify-between p-4 rounded-2xl border border-border bg-card/40 hover:bg-card/60 hover:border-white/40 transition-all duration-500 backdrop-blur-3xl shadow-2xl overflow-hidden relative"
+                className="group flex items-center justify-between p-4 rounded-2xl border border-border bg-card/40 hover:bg-card/60 hover:border-foreground/40 transition-all duration-500 backdrop-blur-3xl shadow-2xl overflow-hidden relative"
               >
                 <div className="flex flex-col items-start gap-1 relative z-10">
                   <span className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground transition-colors">Academic Network</span>
                   <span className="text-sm font-medium text-foreground/90">University or School Representative?</span>
                 </div>
-                <div className="px-4 py-2 rounded-xl bg-white/10 text-foreground border border-white/20 group-hover:bg-white/20 transition-all duration-500 font-accent font-black text-[10px] uppercase tracking-widest flex items-center gap-2">
+                <div className="px-4 py-2 rounded-xl bg-foreground/10 text-foreground border border-foreground/20 group-hover:bg-foreground/20 transition-all duration-500 font-accent font-black text-[10px] uppercase tracking-widest flex items-center gap-2">
                   Establish Chapter <ChevronRight className="w-4 h-4" />
                 </div>
                 {/* Visual scanline effect */}
-                <div className="absolute top-0 left-0 w-full h-[1px] bg-white/20 -translate-y-full group-hover:animate-scan-slow" />
+                <div className="absolute top-0 left-0 w-full h-[1px] bg-foreground/20 -translate-y-full group-hover:animate-scan-slow" />
               </Link>
             </motion.div>
           )}
@@ -391,7 +391,7 @@ function ApplicationCountdown() {
           { label: 'Secs', value: timeLeft.seconds },
         ].map((unit) => (
           <div key={unit.label} className="flex flex-col items-center">
-            <div className="w-16 h-16 rounded-xl bg-white/5 border border-white/15 flex items-center justify-center">
+            <div className="w-16 h-16 rounded-xl bg-foreground/5 border border-foreground/15 flex items-center justify-center">
               <span className="text-2xl font-black text-foreground">{String(unit.value).padStart(2, '0')}</span>
             </div>
             <span className="text-xs text-muted-foreground mt-1">{unit.label}</span>

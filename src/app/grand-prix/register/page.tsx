@@ -59,9 +59,9 @@ const GOLD = '#C9A45C';
 const GOLD_LIGHT = '#E8CF8F';
 
 const fieldClass =
-  'h-12 rounded-lg border-white/15 bg-white/[0.05] px-4 text-[15px] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition-colors placeholder:text-[#8E887A] focus-visible:border-[#C9A45C]/70 focus-visible:bg-white/[0.08] focus-visible:ring-2 focus-visible:ring-[#C9A45C]/40';
+  'h-12 rounded-lg border-foreground/15 bg-white/[0.05] px-4 text-[15px] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition-colors placeholder:text-[#8E887A] focus-visible:border-[#C9A45C]/70 focus-visible:bg-white/[0.08] focus-visible:ring-2 focus-visible:ring-[#C9A45C]/40';
 const selectClass =
-  'flex h-12 w-full rounded-lg border border-white/15 bg-white/[0.05] px-4 py-2 text-[15px] transition-colors focus:bg-white/[0.08] focus:outline-none focus:ring-2 focus:ring-[#C9A45C]/40 [&>option]:bg-[#101623] [&>option]:text-[#F5F0E4]';
+  'flex h-12 w-full rounded-lg border border-foreground/15 bg-white/[0.05] px-4 py-2 text-[15px] transition-colors focus:bg-white/[0.08] focus:outline-none focus:ring-2 focus:ring-[#C9A45C]/40 [&>option]:bg-[#101623] [&>option]:text-[#F5F0E4]';
 const labelClass =
   'text-[11px] font-bold uppercase tracking-[0.18em] text-[#CBBFA5]';
 const cardClass =
@@ -407,7 +407,7 @@ export default function GrandPrixRegisterPage() {
                           className={`rounded-lg border px-4 py-3 text-left text-sm leading-relaxed transition ${
                             passType === p
                               ? 'border-[#C9A45C]/80 bg-[#C9A45C]/10 shadow-[0_10px_30px_rgba(201,164,92,0.22)]'
-                              : 'border-white/15 bg-white/[0.05] hover:border-white/35'
+                              : 'border-foreground/15 bg-white/[0.05] hover:border-foreground/35'
                           }`}
                           style={{ color: IVORY }}
                         >

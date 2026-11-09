@@ -5,7 +5,11 @@
 // chart, sparse and precise, never a snow globe. On the dark theme the
 // stars are near-white points on the navy void; on the light theme the
 // same field becomes faint navy-ink specks (texture, never dirt) via
-// the --star-ink / --star-gain tokens in globals.css.
+// the --star-ink / --star-gain tokens in globals.css. Charts that sit
+// on a --space-panel ground instead of the page ground (the orbit
+// stage) take --star-on-panel / --star-link-on-panel: the panel is
+// navy in both themes, so its chart is the near-white one in both
+// themes too. See the W5 treatment rule in globals.css.
 //
 // Perf is by construction:
 // - Pure server component, zero hooks, zero client JS of its own.

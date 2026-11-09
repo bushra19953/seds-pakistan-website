@@ -56,10 +56,21 @@
        navy in BOTH themes: the hero's space window sits on it even
        when the page around it is light. --star-gain is the layer's
        internal theme-strength multiplier (light grounds get a whisper
-       of the field, dark grounds the full chart). */
+       of the field, dark grounds the full chart).
+       W5 treatment rule (Kublai light-mode audit): a star chart is
+       always read against the ground it actually sits on, never
+       against the page theme. Charts on the page ground use
+       --star-ink / --star-link (they flip with the theme). Charts
+       drawn ON a --space-panel ground (the orbit stage) use
+       --star-on-panel / --star-link-on-panel, which are the near-white
+       chart values in BOTH themes because the panel itself never
+       flips. Bare white is never a star colour: on a light page
+       ground it is invisible. */
     --star-ink: 222 47% 18%;
     --star-link: 222 47% 18%;
     --space-panel: 222 47.4% 11.2%;
+    --star-on-panel: 210 40% 96%;
+    --star-link-on-panel: 214 32% 84%;
     --star-gain: 0.34;
 
     /* Font families. Every stack ends with the Noto fallbacks so Urdu and
@@ -111,10 +122,14 @@
     /* Space Blue */
 
     /* Global starfield system: see the note in :root. On the navy
-       void the stars are near-white chart points at full gain. */
+       void the stars are near-white chart points at full gain. The
+       on-panel values match :root exactly: a --space-panel ground is
+       the same navy here, so its chart never changes. */
     --star-ink: 210 40% 96%;
     --star-link: 214 32% 84%;
     --space-panel: 222 47.4% 11.2%;
+    --star-on-panel: 210 40% 96%;
+    --star-link-on-panel: 214 32% 84%;
     --star-gain: 1;
   }
 }

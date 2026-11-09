@@ -257,34 +257,42 @@ export default function Header() {
               therefore sits on a light instrument plate — the
               documented foreground tone — so the full wordmark paints
               at full contrast and the lockup reads confidently.
+              The header uses the TRIMMED asset (logo-header.*): the
+              original 667x374 logo.png bakes in transparent padding
+              (letters occupy only ~(153,136)-(514,239)), so even a big
+              box showed small letters. The trimmed 387x127 (~3.05:1)
+              crop is nearly all letters; the footer keeps the
+              original asset untouched.
               Sizing must NOT rely on utilities on the <img>:
               OptimizedLogo hardcodes style width/height 'auto' inline,
               which outranks className utilities, so the img renders at
-              its intrinsic 667x374 unless the caller overrides the
-              style (later {...props} spread wins) inside a
-              definite-width box — the same pattern the footer uses.
-              Width-led box for the 1.78:1 wordmark: 110px/150px wide
-              renders ~62px/~84px tall, condensed 96px/128px renders
-              ~54px/~72px; the plate hugs that box plus its padding. */}
+              its intrinsic size unless the caller overrides the style
+              (later {...props} spread wins) inside a definite-width
+              box — the same pattern the footer uses.
+              Width-led box for the 3.05:1 trimmed wordmark: 128px/
+              176px wide renders ~42px/~58px tall, condensed 112px/
+              152px renders ~37px/~50px; the plate hugs that box with
+              10px horizontal / 6px vertical padding, so the lockup
+              lands at ~148x54 mobile and ~196x70 desktop. */}
           <div className="col-start-1 justify-self-start shrink-0">
             <Link
               href="/"
               prefetch
-              className="flex items-center rounded-xl bg-[hsl(210_40%_96%)] px-3 py-1.5 shadow-[0_8px_20px_-8px_rgba(3,7,18,0.55)] ring-1 ring-[rgba(3,7,18,0.1)] md:px-3.5 md:py-2"
+              className="flex items-center rounded-xl bg-[hsl(210_40%_96%)] px-2.5 py-1.5 shadow-[0_8px_20px_-8px_rgba(3,7,18,0.55)] ring-1 ring-[rgba(3,7,18,0.1)]"
             >
               <span
-                className={`block transition-[width] duration-300 motion-reduce:transition-none ${scrolled ? 'w-[96px] md:w-[128px]' : 'w-[110px] md:w-[150px]'
+                className={`block transition-[width] duration-300 motion-reduce:transition-none ${scrolled ? 'w-[112px] md:w-[152px]' : 'w-[128px] md:w-[176px]'
                   }`}
               >
                 <OptimizedLogo
-                  src="/assets/logo.png"
-                  webpSrc="/assets/logo.webp"
-                  avifSrc="/assets/logo.avif"
+                  src="/assets/logo-header.png"
+                  webpSrc="/assets/logo-header.webp"
+                  avifSrc="/assets/logo-header.avif"
                   alt="SEDS Logo"
-                  width={128}
-                  height={72}
+                  width={387}
+                  height={127}
                   priority
-                  sizes="(max-width: 768px) 110px, 150px"
+                  sizes="(max-width: 768px) 128px, 176px"
                   className="object-contain"
                   style={{ width: '100%', height: 'auto' }}
                 />

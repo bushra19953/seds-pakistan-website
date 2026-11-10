@@ -8,6 +8,7 @@ import {
     primaryIdentitySet,
     primaryIdentityUpdate,
 } from '@/lib/server/supa-identity-primary';
+import { mirrorDeleteViaSeam, mirrorSetViaSeam } from '@/lib/supa/seam-tasks-lists';
 
 import { type PermissionKey } from '@/config/permissions.config';
 
@@ -81,7 +82,21 @@ export async function POST(request: NextRequest) {
             const existingDoc = existingSnapshot.docs[0];
             const existingData = existingDoc.data();
             if (existingData.type !== type) {
-                await existingDoc.ref.update({ type, updatedAt: new Date() });
+                const updatedAt = new Date();
+                await existingDoc.ref.update({ type, updatedAt });
+                // MIRROR (split-brain fix): /api/profile/my-team reads
+                // reporting_relationships seam-first from the Supabase
+                // mirror (fs_reporting_relationships) through this same
+                // seam, so a Firestore-only write left profile team
+                // views on the pre-edit state. Mirror the full
+                // post-update doc image; mirrorSetViaSeam is
+                // best-effort (flag OFF / adapter absent / mirror error
+                // all resolve quietly) and never fails the request.
+                await mirrorSetViaSeam('reporting_relationships', existingDoc.id, {
+                    ...existingData,
+                    type,
+                    updatedAt
+                });
                 return NextResponse.json({
                     success: true,
                     relationship: { id: existingDoc.id, subordinateId, managerId, type },
@@ -118,6 +133,12 @@ export async function POST(request: NextRequest) {
         };
 
         const docRef = await db.collection('reporting_relationships').add(newRelData);
+
+        // MIRROR (split-brain fix): see the POST update path above —
+        // copy the new relationship into fs_reporting_relationships
+        // under the same doc id so my-team's seam-first read sees it.
+        // Best-effort; never fails the request.
+        await mirrorSetViaSeam('reporting_relationships', docRef.id, { ...newRelData });
 
         return NextResponse.json({
             success: true,
@@ -175,6 +196,14 @@ export async function DELETE(request: NextRequest) {
             });
             await batch.commit();
             deletedFromCollection = true;
+            // MIRROR (split-brain fix): delete the same doc ids from
+            // the Supabase mirror (fs_reporting_relationships) — the
+            // my-team seam-first read otherwise keeps serving removed
+            // lines from the pre-edit mirror state. Best-effort;
+            // mirrorDeleteViaSeam never throws.
+            for (const doc of snapshot.docs) {
+                await mirrorDeleteViaSeam('reporting_relationships', doc.id);
+            }
             console.log('[Relationships DELETE] Deleted', snapshot.docs.length, 'docs from reporting_relationships');
         } else {
             console.log('[Relationships DELETE] No docs found in reporting_relationships');

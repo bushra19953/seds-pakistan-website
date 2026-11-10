@@ -461,6 +461,24 @@ export async function mirrorSetViaSeam(
   }
 }
 
+/**
+ * Mirror a Firestore delete into Supabase. Same contract as
+ * mirrorSetViaSeam: flag OFF, adapter absent, or mirror error all
+ * resolve quietly (logged) and never fail the caller's request.
+ */
+export async function mirrorDeleteViaSeam(
+  collectionPath: string,
+  id: string,
+): Promise<void> {
+  const adapter = await getTasksSupaAdapter();
+  if (!adapter) return;
+  try {
+    await adapter.deleteDoc(collectionPath, id);
+  } catch (e) {
+    console.warn(`[seam-tasks-lists] mirror deleteDoc ${collectionPath}/${id} failed (Firestore delete already applied):`, e);
+  }
+}
+
 /** Local SUPA_PRIMARY fallback, mirroring flags.ts: BOTH env lists must name the surface ('*' counts). */
 function localIsSupaPrimary(surface: string): boolean {
   if (!localUseSupa(surface)) return false;

@@ -541,6 +541,17 @@ function HierarchyCanvasInner({ chapterId, focusRequest }: { chapterId: string; 
                 throw new Error(result.error || `Server error: ${r.status}`);
             }
 
+            if (result.deleted === false) {
+                // Server removed nothing (no relationship doc and no
+                // matching legacy managerId) - keep the edge and say so
+                // instead of claiming a permanent removal.
+                console.warn('[Hierarchy] DELETE removed nothing:', { subordinateId, managerId, result });
+                setSaveStatus('error');
+                showErrorToast('Could not remove that line');
+                setTimeout(() => setSaveStatus('idle'), 2000);
+                return;
+            }
+
             // SUCCESS - NOW update UI (server-confirmed)
             setEdges((eds: Edge[]) => eds.filter((ed: Edge) => ed.id !== edge.id) as any);
             setNodes((nds: Node[]) => nds.map((n: Node) =>

@@ -187,9 +187,14 @@ export async function DELETE(request: NextRequest) {
             const userData = userDoc.data();
             if (userData?.managerId === managerId) {
                 console.log('[Relationships DELETE] Clearing legacy managerId field on user:', subordinateId);
-                // WRITE PRIMACY (G-USER-2, U-09 — (b) no reverse
-                // mirror, same field family as U-08): adapter-only
-                // under isSupaPrimary('users').
+                // WRITE PRIMACY (G-USER-2, U-09): adapter-first under
+                // isSupaPrimary('users'). Unlike U-08's field family this
+                // clear ALSO lands on the Firestore doc as a best-effort
+                // reverse mirror: the hierarchy READ path
+                // (api/admin/hierarchy/users) reads Firestore only and
+                // synthesises an edge from users/{uid}.managerId, so an
+                // adapter-only clear left the stale Firestore field in
+                // place and the removed line redrew on every reload.
                 const clearPayload = {
                     managerId: null,
                     managerIdClearedAt: new Date(),
@@ -197,6 +202,11 @@ export async function DELETE(request: NextRequest) {
                 };
                 if (await identityPrimaryFlagOn('users')) {
                     await primaryIdentityUpdate('users', 'users', subordinateId, clearPayload);
+                    try {
+                        await db.collection('users').doc(subordinateId).update(clearPayload);
+                    } catch (mirrorErr) {
+                        console.error('[Relationships DELETE] Firestore reverse mirror (legacy managerId clear) failed after Supa primary commit:', mirrorErr);
+                    }
                 } else {
                     await db.collection('users').doc(subordinateId).update(clearPayload);
                 }
